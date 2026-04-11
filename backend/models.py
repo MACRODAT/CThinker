@@ -18,11 +18,11 @@ class Department(Base):
 
 class PromptTemplate(Base):
     __tablename__ = "prompt_templates"
-    id = Column(String, primary_key=True, index=True) # Mode name e.g. "Creator"
-    name = Column(String, nullable=True) # For display purposes
+    id = Column(String, primary_key=True, index=True)
+    name = Column(String, nullable=True)
     system_prompt = Column(Text)
     user_prompt_template = Column(Text, nullable=True)
-    custom_directives = Column(Text, nullable=True)  # Injected when this mode is active
+    custom_directives = Column(Text, nullable=True)
 
 class Setting(Base):
     __tablename__ = "settings"
@@ -98,3 +98,18 @@ class AgentTool(Base):
     description = Column(Text)
     enabled = Column(Boolean, default=True)
     config_json = Column(Text, default="{}")
+
+# ── System Logger ─────────────────────────────────────────────────────────────
+# Stores every meaningful engine event: ticks, LLM calls, tool use, points, errors.
+# Level  : INFO | TICK | LLM | TOOL | POINT | WARN | ERROR
+# Category: ENGINE | AGENT | LLM | TOOL | SYSTEM
+class SystemLog(Base):
+    __tablename__ = "system_logs"
+    id       = Column(Integer, primary_key=True, autoincrement=True)
+    time     = Column(String, default=get_stamp, index=True)
+    level    = Column(String, default="INFO")
+    category = Column(String, default="ENGINE")
+    agent_id = Column(String, nullable=True, index=True)
+    dept_id  = Column(String, nullable=True)
+    event    = Column(String)
+    details  = Column(Text, default="{}")

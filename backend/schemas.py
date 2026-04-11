@@ -13,7 +13,6 @@ class PromptTemplateBase(BaseModel):
 
 class PromptTemplateResponse(PromptTemplateBase):
     id: str
-
     class Config:
         from_attributes = True
 
@@ -22,7 +21,6 @@ class SettingBase(BaseModel):
 
 class SettingResponse(SettingBase):
     key: str
-
     class Config:
         from_attributes = True
 
@@ -36,7 +34,6 @@ class ThreadResponse(ThreadBase):
     status: str
     created: str
     budget: int
-
     class Config:
         from_attributes = True
 
@@ -61,7 +58,6 @@ class AgentResponse(AgentBase):
     born: str
     wallet_current: int
     memory: str
-
     class Config:
         from_attributes = True
 
@@ -72,7 +68,6 @@ class DepartmentBase(BaseModel):
 class DepartmentResponse(DepartmentBase):
     id: str
     ledger_current: int
-
     class Config:
         from_attributes = True
 
@@ -88,7 +83,6 @@ class MessageResponse(MessageBase):
     thread_id: str
     when: str
     points: int
-
     class Config:
         from_attributes = True
 
@@ -98,7 +92,6 @@ class LogActionResponse(BaseModel):
     when: str
     what: str
     points: Optional[int]
-
     class Config:
         from_attributes = True
 
@@ -109,12 +102,15 @@ class CustomPromptEntryCreate(BaseModel):
 class CustomPromptEntryResponse(CustomPromptEntryCreate):
     id: int
     created: str
-
     class Config:
         from_attributes = True
 
 class ChatRequest(BaseModel):
     message: str
+
+class ToolInvokeRequest(BaseModel):
+    agent_id: str
+    args: str
 
 class AgentToolUpdate(BaseModel):
     enabled: Optional[bool] = None
@@ -126,6 +122,17 @@ class AgentToolResponse(BaseModel):
     description: str
     enabled: bool
     config_json: str
+    class Config:
+        from_attributes = True
 
+class SystemLogResponse(BaseModel):
+    id: int
+    time: str
+    level: str
+    category: str
+    agent_id: Optional[str]
+    dept_id: Optional[str]
+    event: str
+    details: str
     class Config:
         from_attributes = True
