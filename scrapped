@@ -1,0 +1,695 @@
+// import { useState, useEffect, useRef, useCallback } from "react";
+
+// // ─── Constants ───────────────────────────────────────────────────────────────
+// const DEPT_META = {
+//   HF:  { name: "Health & Wellness",    color: "#4ade80", dim: "#052e16" },
+//   ING: { name: "Engineering",          color: "#22d3ee", dim: "#0c2030" },
+//   STP: { name: "Strategic Planning",   color: "#fb923c", dim: "#2d1500" },
+//   UIT: { name: "Useful Intelligence",  color: "#c084fc", dim: "#1e0a30" },
+//   FIN: { name: "Financing",            color: "#fbbf24", dim: "#1c1600" },
+// };
+
+// const THREAD_COSTS = { Memo: 25, Strategy: 100, Endeavor: 100 };
+// const DEPT_DAILY   = 500;   // demo-scaled
+// const AGENT_DAILY  = 50;    // demo-scaled
+
+// const mkId  = () => Math.random().toString(36).slice(2, 8).toUpperCase();
+// const stamp = () => new Date().toISOString();
+// const hhmm  = (iso) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+// // ─── Seed Data ────────────────────────────────────────────────────────────────
+// function buildInitial() {
+//   const departments = Object.fromEntries(
+//     Object.keys(DEPT_META).map((id) => [id, {
+//       name_id: id, ledger: { current: DEPT_DAILY, log: [] }, ceo_name_id: null, agents: [],
+//     }])
+//   );
+
+//   const agents = {
+//     ATLAS: { name_id: "Atlas Prime",  born: stamp(), department: "ING", is_ceo: true,  ticks: 22, wallet: { current: AGENT_DAILY, log: [] }, mode: "Creator",          log_actions: [], memory: "", own_threads: [] },
+//     VERA:  { name_id: "Vera Nexus",   born: stamp(), department: "STP", is_ceo: true,  ticks: 35, wallet: { current: AGENT_DAILY, log: [] }, mode: "Points Accounter", log_actions: [], memory: "", own_threads: [] },
+//     KIRO:  { name_id: "Kiro Banks",   born: stamp(), department: "FIN", is_ceo: true,  ticks: 28, wallet: { current: AGENT_DAILY, log: [] }, mode: "Invester",         log_actions: [], memory: "", own_threads: [] },
+//     SANA:  { name_id: "Sana Vell",    born: stamp(), department: "HF",  is_ceo: true,  ticks: 50, wallet: { current: AGENT_DAILY, log: [] }, mode: "Creator",          log_actions: [], memory: "", own_threads: [] },
+//     ORYN:  { name_id: "Oryn Flux",    born: stamp(), department: "UIT", is_ceo: true,  ticks: 18, wallet: { current: AGENT_DAILY, log: [] }, mode: "Custom",           log_actions: [], memory: "", own_threads: [] },
+//     PIKE:  { name_id: "Pike Render",  born: stamp(), department: "ING", is_ceo: false, ticks: 60, wallet: { current: AGENT_DAILY, log: [] }, mode: "Creator",          log_actions: [], memory: "", own_threads: [] },
+//     MIRI:  { name_id: "Miri Solv",    born: stamp(), department: "FIN", is_ceo: false, ticks: 45, wallet: { current: AGENT_DAILY, log: [] }, mode: "Invester",         log_actions: [], memory: "", own_threads: [] },
+//     TOVA:  { name_id: "Tova Bright",  born: stamp(), department: "UIT", is_ceo: false, ticks: 80, wallet: { current: AGENT_DAILY, log: [] }, mode: "Points Accounter", log_actions: [], memory: "", own_threads: [] },
+//   };
+
+//   departments.ING.ceo_name_id = "ATLAS";
+//   departments.STP.ceo_name_id = "VERA";
+//   departments.FIN.ceo_name_id = "KIRO";
+//   departments.HF.ceo_name_id  = "SANA";
+//   departments.UIT.ceo_name_id = "ORYN";
+
+//   Object.entries(agents).forEach(([id, a]) => {
+//     if (a.department) departments[a.department].agents.push(id);
+//   });
+
+//   return { heartbeat: 0, departments, agents, threads: {}, feed: [], view: "overview" };
+// }
+
+// // ─── App ──────────────────────────────────────────────────────────────────────
+// export default function CThinker() {
+//   const [state, setState]   = useState(buildInitial);
+//   const stateRef            = useRef(state);
+//   stateRef.current          = state;
+//   const inFlight            = useRef(new Set());
+//   const lastLlm             = useRef({});
+
+//   // ── Heartbeat ──
+//   useEffect(() => {
+//     const id = setInterval(() => {
+//       setState((s) => {
+//         const hb   = (s.heartbeat + 1) % 3600;
+//         const ticking = Object.entries(s.agents).filter(([, a]) => hb > 0 && hb % a.ticks === 0);
+//         let ns = { ...s, heartbeat: hb };
+
+//         ticking.forEach(([aid, agent]) => {
+//           const dept = agent.department ? ns.departments[agent.department] : null;
+//           const canTick = dept ? dept.ledger.current >= 1 : agent.wallet.current >= 1;
+//           if (!canTick) return;
+
+//           if (dept) {
+//             ns = { ...ns, departments: { ...ns.departments, [agent.department]: {
+//               ...dept, ledger: { current: dept.ledger.current - 1,
+//                 log: [...dept.ledger.log, { time: stamp(), who: aid, why: "tick", amount: -1 }] }
+//             }}};
+//           } else {
+//             ns = { ...ns, agents: { ...ns.agents, [aid]: { ...agent,
+//               wallet: { ...agent.wallet, current: agent.wallet.current - 1 } } } };
+//           }
+
+//           ns = { ...ns, feed: [
+//             { id: mkId(), time: hhmm(stamp()), agent: agent.name_id, dept: agent.department, msg: `[${agent.mode}] tick fired`, type: "tick" },
+//             ...ns.feed.slice(0, 59),
+//           ]};
+
+//           triggerAgentLlm(aid, agent, ns);
+//         });
+
+//         // Thread decay every 360 beats
+//         if (hb % 360 === 0 && hb > 0) {
+//           Object.entries(ns.threads).forEach(([tid, t]) => {
+//             if (t.status === "OPEN" || t.status === "ACTIVE") {
+//               const ageMin = (Date.now() - new Date(t.created).getTime()) / 60000;
+//               if (ageMin > 5) {
+//                 const budget = Math.max(0, t.point_wallet.budget - 1);
+//                 ns = { ...ns, threads: { ...ns.threads, [tid]: {
+//                   ...t, point_wallet: { ...t.point_wallet, budget },
+//                   status: budget === 0 ? "FROZEN" : t.status,
+//                 }}};
+//                 if (budget === 0) {
+//                   ns = { ...ns, feed: [
+//                     { id: mkId(), time: hhmm(stamp()), agent: "SYSTEM", dept: t.owner_department, msg: `Thread "${t.topic}" frozen — budget depleted`, type: "warn" },
+//                     ...ns.feed.slice(0, 59),
+//                   ]};
+//                 }
+//               }
+//             }
+//           });
+//         }
+
+//         return ns;
+//       });
+//     }, 1000);
+//     return () => clearInterval(id);
+//   }, []);
+
+//   // ── LLM per agent ──
+//   const triggerAgentLlm = useCallback((aid, agent, currentState) => {
+//     const now = Date.now();
+//     if (inFlight.current.has(aid)) return;
+//     if (now - (lastLlm.current[aid] || 0) < 30_000) return; // throttle 30s
+//     inFlight.current.add(aid);
+//     lastLlm.current[aid] = now;
+
+//     const dm = DEPT_META[agent.department] || {};
+//     const threadCtx = Object.values(currentState.threads)
+//       .filter((t) => !["FROZEN", "REJECTED"].includes(t.status))
+//       .slice(0, 3)
+//       .map((t) => `• "${t.topic}" [${t.aim}] status=${t.status} pts=${t.point_wallet.budget}`)
+//       .join("\n") || "none";
+
+//     const sys = `You are ${agent.name_id}, a specialist agent in the ${dm.name || agent.department} department of CThinker — a personal think-tank system.
+// Mode: ${agent.mode} | CEO: ${agent.is_ceo}
+// Memory from last tick: ${agent.memory || "(empty)"}
+// Active threads:\n${threadCtx}
+
+// Respond as this agent taking ONE specific action during their operational tick.
+// Be concrete and brief (1–2 sentences). Describe what you're actually doing (analysing, drafting, recommending, allocating points, etc.).
+// Finish with: [MEM: <note ≤150 chars>]`;
+
+//     fetch("https://api.anthropic.com/v1/messages", {
+//       method: "POST",
+//       headers: { "Content-Type": "application/json" },
+//       body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 160,
+//         system: sys, messages: [{ role: "user", content: "Execute tick." }] }),
+//     })
+//       .then((r) => r.json())
+//       .then((data) => {
+//         const raw   = data.content?.[0]?.text || "";
+//         const mem   = (raw.match(/\[MEM:\s*(.+?)\]/) || [])[1]?.slice(0, 200) || agent.memory;
+//         const act   = raw.replace(/\[MEM:.+?\]/g, "").trim();
+
+//         setState((s) => ({
+//           ...s,
+//           agents: { ...s.agents, [aid]: { ...s.agents[aid], memory: mem,
+//             log_actions: [{ when: stamp(), what: act, points: null }, ...(s.agents[aid]?.log_actions || []).slice(0, 19)] } },
+//           feed: [
+//             { id: mkId(), time: hhmm(stamp()), agent: agent.name_id, dept: agent.department, msg: act, type: "action" },
+//             ...s.feed.slice(0, 59),
+//           ],
+//         }));
+//       })
+//       .catch(console.error)
+//       .finally(() => inFlight.current.delete(aid));
+//   }, []);
+
+//   // ── Actions ──
+//   const createThread = useCallback((ownerAgentId, topic, aim) => {
+//     const cost = THREAD_COSTS[aim] || 25;
+//     setState((s) => {
+//       const agent = s.agents[ownerAgentId];
+//       if (!agent) return s;
+//       const deptId = agent.department;
+//       const dept   = deptId ? s.departments[deptId] : null;
+//       if (dept && dept.ledger.current < cost) { alert(`${deptId} only has ${dept.ledger.current} pts — needs ${cost}.`); return s; }
+
+//       const tid = mkId();
+//       const thread = { id: tid, owner_department: deptId, owner_agent: ownerAgentId, topic, aim,
+//         status: "OPEN", created: stamp(), investors: [], point_wallet: { budget: cost, log: [] },
+//         messages_log: [], quests: [], invitations: [] };
+
+//       return {
+//         ...s,
+//         threads: { ...s.threads, [tid]: thread },
+//         agents: { ...s.agents, [ownerAgentId]: { ...agent, own_threads: [...(agent.own_threads || []), tid] } },
+//         departments: dept ? { ...s.departments, [deptId]: { ...dept,
+//           ledger: { current: dept.ledger.current - cost,
+//             log: [...dept.ledger.log, { time: stamp(), who: ownerAgentId, why: `create thread ${tid}`, amount: -cost }] } } } : s.departments,
+//         feed: [{ id: mkId(), time: hhmm(stamp()), agent: agent.name_id, dept: deptId,
+//           msg: `Created ${aim}: "${topic}" (−${cost}pts)`, type: "thread" }, ...s.feed.slice(0, 59)],
+//       };
+//     });
+//   }, []);
+
+//   const approveThread = useCallback((tid) => {
+//     setState((s) => {
+//       const t = s.threads[tid];
+//       if (!t) return s;
+//       const reward     = t.point_wallet.budget * 10;
+//       const ownerShare = Math.floor(reward * 0.7);
+//       const deptShare  = reward - ownerShare;
+//       const owner      = s.agents[t.owner_agent];
+//       const dept       = t.owner_department ? s.departments[t.owner_department] : null;
+
+//       return {
+//         ...s,
+//         threads: { ...s.threads, [tid]: { ...t, status: "APPROVED" } },
+//         agents: owner ? { ...s.agents, [t.owner_agent]: { ...owner, wallet: { ...owner.wallet, current: owner.wallet.current + ownerShare } } } : s.agents,
+//         departments: dept ? { ...s.departments, [t.owner_department]: { ...dept, ledger: { ...dept.ledger, current: dept.ledger.current + deptShare } } } : s.departments,
+//         feed: [{ id: mkId(), time: hhmm(stamp()), agent: "FOUNDER", dept: t.owner_department,
+//           msg: `APPROVED "${t.topic}" — +${reward}pts distributed`, type: "approve" }, ...s.feed.slice(0, 59)],
+//       };
+//     });
+//   }, []);
+
+//   const rejectThread = useCallback((tid) => {
+//     setState((s) => {
+//       const t = s.threads[tid]; if (!t) return s;
+//       return { ...s,
+//         threads: { ...s.threads, [tid]: { ...t, status: "REJECTED", point_wallet: { ...t.point_wallet, budget: 0 } } },
+//         feed: [{ id: mkId(), time: hhmm(stamp()), agent: "FOUNDER", dept: t.owner_department,
+//           msg: `REJECTED "${t.topic}" — pts lost`, type: "warn" }, ...s.feed.slice(0, 59)],
+//       };
+//     });
+//   }, []);
+
+//   const postMessage = useCallback((tid, agentId, content) => {
+//     setState((s) => {
+//       const t     = s.threads[tid];
+//       const agent = s.agents[agentId];
+//       if (!t || !agent) return s;
+//       const isOwner = t.owner_agent === agentId;
+//       const cost    = isOwner ? 0 : 1;
+//       if (!isOwner && agent.wallet.current < cost) { alert("Not enough points!"); return s; }
+
+//       return {
+//         ...s,
+//         threads: { ...s.threads, [tid]: { ...t,
+//           messages_log: [...t.messages_log, { when: stamp(), who: agentId, what: content, points: -cost }] } },
+//         agents: !isOwner ? { ...s.agents, [agentId]: { ...agent, wallet: { ...agent.wallet, current: agent.wallet.current - cost } } } : s.agents,
+//       };
+//     });
+//   }, []);
+
+//   const addDeptPoints = useCallback((deptId, amount) => {
+//     setState((s) => {
+//       const dept = s.departments[deptId];
+//       return { ...s, departments: { ...s.departments, [deptId]: { ...dept,
+//         ledger: { current: dept.ledger.current + amount,
+//           log: [...dept.ledger.log, { time: stamp(), who: "FOUNDER", why: "top-up", amount }] } } } };
+//     });
+//   }, []);
+
+//   const setView = (v) => setState((s) => ({ ...s, view: v }));
+
+//   const { heartbeat, departments, agents, threads, feed, view } = state;
+//   const hbPct = (heartbeat / 3600) * 100;
+
+//   return (
+//     <div style={{ fontFamily: "'JetBrains Mono', monospace", background: "#060609", color: "#d0d0e0", height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+//       <style>{`
+//         @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Syne:wght@700;800&display=swap');
+//         * { box-sizing: border-box; margin: 0; padding: 0; }
+//         ::-webkit-scrollbar { width: 3px; }
+//         ::-webkit-scrollbar-thumb { background: #2a2a3a; }
+//         .hov { transition: background 0.12s, border-color 0.12s; cursor: pointer; }
+//         .hov:hover { background: #12121e !important; }
+//         .btn { cursor: pointer; border: none; font-family: inherit; transition: filter 0.12s, transform 0.08s; }
+//         .btn:hover { filter: brightness(1.25); }
+//         .btn:active { transform: scale(0.97); }
+//         .pill { animation: pop 0.35s ease-out; }
+//         @keyframes pop { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; } }
+//         @keyframes blink { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+//         input, textarea, select { font-family: inherit; background: #0d0d1a; color: #d0d0e0; border: 1px solid #2a2a3a; border-radius: 4px; padding: 5px 8px; font-size: 11px; }
+//         input:focus, textarea:focus, select:focus { outline: none; border-color: #5555ff; }
+//         .tab { cursor: pointer; background: transparent; border: none; font-family: inherit; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; padding: 10px 16px; color: #555; border-bottom: 2px solid transparent; transition: all 0.15s; }
+//         .tab.active { color: #8888ff; border-bottom-color: #8888ff; }
+//         .tab:hover { color: #9999ff; }
+//       `}</style>
+
+//       {/* ── Header ── */}
+//       <div style={{ background: "#080812", borderBottom: "1px solid #181828", padding: "8px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+//         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+//           <span style={{ fontFamily: "Syne", fontSize: 20, fontWeight: 800, color: "#8888ff", letterSpacing: -1 }}>CTHINKER</span>
+//           <span style={{ fontSize: 9, color: "#333", letterSpacing: 2 }}>PERSONAL THINK TANK</span>
+//         </div>
+//         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+//           <div style={{ textAlign: "right" }}>
+//             <div style={{ fontSize: 8, color: "#444", letterSpacing: 1.5 }}>HEARTBEAT</div>
+//             <div style={{ fontSize: 18, fontWeight: 700, color: "#ff6b35", letterSpacing: 3, fontVariantNumeric: "tabular-nums" }}>
+//               {String(heartbeat).padStart(4, "0")}
+//             </div>
+//           </div>
+//           <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#ff6b35", animation: "blink 1s infinite" }} />
+//         </div>
+//       </div>
+
+//       {/* Progress bar */}
+//       <div style={{ height: 2, background: "#0e0e18", flexShrink: 0 }}>
+//         <div style={{ height: "100%", width: `${hbPct}%`, background: "linear-gradient(90deg, #5555ff, #ff6b35)", transition: "width 0.8s linear" }} />
+//       </div>
+
+//       {/* ── Dept strip ── */}
+//       <div style={{ display: "flex", background: "#07070f", borderBottom: "1px solid #141420", flexShrink: 0 }}>
+//         {Object.entries(DEPT_META).map(([id, meta], i) => {
+//           const dept = departments[id];
+//           const low  = dept.ledger.current < 60;
+//           return (
+//             <div key={id} style={{ flex: 1, padding: "5px 10px", borderRight: i < 4 ? "1px solid #141420" : "none", borderLeft: `2px solid ${meta.color}` }}>
+//               <div style={{ display: "flex", justifyContent: "space-between" }}>
+//                 <span style={{ fontSize: 9, color: meta.color, fontWeight: 700, letterSpacing: 1 }}>{id}</span>
+//                 <span style={{ fontSize: 9, color: low ? "#ff5555" : "#666" }}>{dept.ledger.current}pt</span>
+//               </div>
+//               <div style={{ marginTop: 3, height: 2, background: "#111" }}>
+//                 <div style={{ height: "100%", width: `${Math.min(100,(dept.ledger.current/DEPT_DAILY)*100)}%`, background: meta.color, transition: "width 0.5s" }} />
+//               </div>
+//             </div>
+//           );
+//         })}
+//       </div>
+
+//       {/* ── Nav ── */}
+//       <div style={{ display: "flex", background: "#080812", borderBottom: "1px solid #141420", flexShrink: 0, paddingLeft: 8 }}>
+//         {[["overview","OVERVIEW"],["agents","AGENTS"],["threads","THREADS"],["founder","👑 FOUNDER"]].map(([v, label]) => (
+//           <button key={v} className={`tab ${view === v ? "active" : ""}`} onClick={() => setView(v)}>{label}</button>
+//         ))}
+//       </div>
+
+//       {/* ── Body ── */}
+//       <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+//         {/* Main */}
+//         <div style={{ flex: 1, overflow: "auto", padding: "16px 20px" }}>
+//           {view === "overview" && <Overview departments={departments} agents={agents} threads={threads} />}
+//           {view === "agents"   && <Agents   agents={agents} departments={departments} createThread={createThread} />}
+//           {view === "threads"  && <Threads  threads={threads} agents={agents} approveThread={approveThread} rejectThread={rejectThread} postMessage={postMessage} />}
+//           {view === "founder"  && <Founder  departments={departments} agents={agents} threads={threads} approveThread={approveThread} rejectThread={rejectThread} addDeptPoints={addDeptPoints} />}
+//         </div>
+
+//         {/* Feed */}
+//         <div style={{ width: 240, borderLeft: "1px solid #141420", background: "#05050d", overflow: "auto", padding: "10px 10px" }}>
+//           <div style={{ fontSize: 8, color: "#444", letterSpacing: 2, marginBottom: 8, fontWeight: 700 }}>⚡ LIVE FEED</div>
+//           {feed.length === 0 && <div style={{ fontSize: 10, color: "#2a2a3a", fontStyle: "italic", lineHeight: 1.6 }}>Awaiting first tick…</div>}
+//           {feed.map((item) => {
+//             const c = { tick:"#2a2a3a", action:"#fbbf24", thread:"#8888ff", approve:"#4ade80", warn:"#ff5555" }[item.type] || "#333";
+//             return (
+//               <div key={item.id} className="pill" style={{ marginBottom: 6, padding: "5px 7px", background: "#0a0a14", borderRadius: 4, borderLeft: `2px solid ${c}` }}>
+//                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
+//                   <span style={{ fontSize: 8, fontWeight: 700, color: item.dept ? DEPT_META[item.dept]?.color : "#888" }}>{item.agent}</span>
+//                   <span style={{ fontSize: 8, color: "#333" }}>{item.time}</span>
+//                 </div>
+//                 <div style={{ fontSize: 9, color: "#888", lineHeight: 1.45 }}>{item.msg.slice(0, 90)}</div>
+//               </div>
+//             );
+//           })}
+//         </div>
+//       </div>
+//     </div>
+//   );
+// }
+
+// // ─── Overview ─────────────────────────────────────────────────────────────────
+// function Overview({ departments, agents, threads }) {
+//   const threadArr = Object.values(threads);
+//   return (
+//     <div>
+//       <Sec>System Overview</Sec>
+//       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(200px,1fr))", gap: 10, marginBottom: 20 }}>
+//         {Object.entries(DEPT_META).map(([id, meta]) => {
+//           const dept = departments[id];
+//           const ceo  = dept.ceo_name_id ? agents[dept.ceo_name_id] : null;
+//           return (
+//             <div key={id} style={{ background: "#0a0a14", borderTop: `3px solid ${meta.color}`, border: `1px solid ${meta.color}22`, borderRadius: 6, padding: 12 }}>
+//               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+//                 <div style={{ fontFamily: "Syne", fontSize: 14, fontWeight: 700, color: meta.color }}>{id}</div>
+//                 <div style={{ fontSize: 18, fontWeight: 700, color: dept.ledger.current < 80 ? "#ff5555" : "#d0d0e0" }}>{dept.ledger.current}</div>
+//               </div>
+//               <div style={{ fontSize: 9, color: "#555", marginBottom: 6 }}>{meta.name}</div>
+//               <div style={{ fontSize: 9, color: "#666" }}>CEO: <span style={{ color: meta.color }}>{ceo?.name_id || "—"}</span></div>
+//               <div style={{ fontSize: 9, color: "#444", marginTop: 2 }}>{dept.agents.length} agents · {dept.ledger.log.length} log entries</div>
+//             </div>
+//           );
+//         })}
+//       </div>
+//       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+//         <Panel title={`Agents (${Object.keys(agents).length})`}>
+//           {Object.entries(agents).map(([id, a]) => (
+//             <Row key={id}>
+//               <span style={{ fontSize: 11, color: a.is_ceo ? "#fbbf24" : "#aaa" }}>{a.is_ceo ? "★ " : ""}{a.name_id}</span>
+//               <span style={{ display: "flex", gap: 8 }}>
+//                 <Tag color={a.department ? DEPT_META[a.department]?.color : "#555"}>{a.department || "FREE"}</Tag>
+//                 <Tag color="#555">⏱{a.ticks}</Tag>
+//                 <Tag color="#4ade80">{a.wallet.current}pt</Tag>
+//               </span>
+//             </Row>
+//           ))}
+//         </Panel>
+//         <Panel title={`Threads (${threadArr.length})`}>
+//           {threadArr.length === 0 && <div style={{ fontSize: 10, color: "#2a2a3a", fontStyle: "italic" }}>No threads yet</div>}
+//           {threadArr.map((t) => (
+//             <Row key={t.id}>
+//               <span style={{ fontSize: 10, color: "#999" }}>{t.topic.slice(0, 22)}</span>
+//               <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
+//                 <StatusBadge s={t.status} />
+//                 <Tag color="#fbbf24">{t.point_wallet.budget}pt</Tag>
+//               </span>
+//             </Row>
+//           ))}
+//         </Panel>
+//       </div>
+//     </div>
+//   );
+// }
+
+// // ─── Agents ───────────────────────────────────────────────────────────────────
+// function Agents({ agents, departments, createThread }) {
+//   const [sel, setSel]         = useState(null);
+//   const [showForm, setForm]   = useState(false);
+//   const [form, setF]          = useState({ topic: "", aim: "Memo" });
+
+//   const agent = sel ? agents[sel] : null;
+
+//   return (
+//     <div style={{ display: "grid", gridTemplateColumns: "210px 1fr", gap: 16 }}>
+//       {/* List */}
+//       <div>
+//         <Sec>Agents</Sec>
+//         {Object.entries(agents).map(([id, a]) => (
+//           <div key={id} className="hov" onClick={() => setSel(id)} style={{
+//             padding: "7px 10px", marginBottom: 4, borderRadius: 4,
+//             background: sel === id ? "#14142a" : "#0a0a14",
+//             border: `1px solid ${sel === id ? "#5555ff" : "#181828"}`,
+//             borderLeft: `3px solid ${a.department ? DEPT_META[a.department]?.color : "#444"}`,
+//           }}>
+//             <div style={{ fontSize: 11, fontWeight: 600, color: a.is_ceo ? "#fbbf24" : "#ccc" }}>{a.is_ceo ? "★ " : ""}{a.name_id}</div>
+//             <div style={{ fontSize: 9, color: "#555", marginTop: 1 }}>{a.department || "No dept"} · {a.mode}</div>
+//             <div style={{ fontSize: 9, color: "#4ade80", marginTop: 1 }}>{a.wallet.current}pt · ⏱{a.ticks}</div>
+//           </div>
+//         ))}
+//       </div>
+
+//       {/* Detail */}
+//       <div>
+//         {!agent && <div style={{ color: "#2a2a3a", fontSize: 11, marginTop: 60, textAlign: "center" }}>← Select an agent</div>}
+//         {agent && (
+//           <div>
+//             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
+//               <div>
+//                 <div style={{ fontFamily: "Syne", fontSize: 22, fontWeight: 800, color: agent.is_ceo ? "#fbbf24" : "#8888ff" }}>{agent.is_ceo ? "★ " : ""}{agent.name_id}</div>
+//                 <div style={{ fontSize: 9, color: "#555", marginTop: 2 }}>
+//                   {agent.department ? `${DEPT_META[agent.department]?.name} · ${agent.department}` : "Unassigned"} · {agent.is_ceo ? "CEO" : "Agent"} · Mode: {agent.mode}
+//                 </div>
+//               </div>
+//               <div style={{ textAlign: "right" }}>
+//                 <div style={{ fontSize: 24, fontWeight: 700, color: "#4ade80" }}>{agent.wallet.current}</div>
+//                 <div style={{ fontSize: 8, color: "#555" }}>WALLET</div>
+//               </div>
+//             </div>
+
+//             <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, marginBottom: 14 }}>
+//               {[["TICK RATE", `every ${agent.ticks}s`], ["THREADS", agent.own_threads?.length || 0], ["ACTIONS", agent.log_actions.length]].map(([k, v]) => (
+//                 <div key={k} style={{ background: "#0d0d1a", border: "1px solid #181828", borderRadius: 4, padding: 8, textAlign: "center" }}>
+//                   <div style={{ fontSize: 8, color: "#444", letterSpacing: 1, marginBottom: 4 }}>{k}</div>
+//                   <div style={{ fontSize: 13, color: "#bbb" }}>{v}</div>
+//                 </div>
+//               ))}
+//             </div>
+
+//             {agent.memory && (
+//               <div style={{ background: "#100e00", border: "1px solid #2a2500", borderRadius: 4, padding: 9, marginBottom: 12 }}>
+//                 <div style={{ fontSize: 8, color: "#fbbf24", letterSpacing: 1, marginBottom: 4 }}>MEM</div>
+//                 <div style={{ fontSize: 10, color: "#888", lineHeight: 1.5 }}>{agent.memory}</div>
+//               </div>
+//             )}
+
+//             <Panel title="Recent actions">
+//               {agent.log_actions.length === 0 && <div style={{ fontSize: 10, color: "#2a2a3a", fontStyle: "italic" }}>No actions yet</div>}
+//               {agent.log_actions.slice(0, 6).map((a, i) => (
+//                 <div key={i} style={{ padding: "4px 0", borderBottom: "1px solid #0e0e18", fontSize: 10, color: "#777", lineHeight: 1.45 }}>
+//                   <span style={{ color: "#333", fontSize: 8 }}>{hhmm(a.when)} </span>{a.what}
+//                 </div>
+//               ))}
+//             </Panel>
+
+//             <button className="btn" onClick={() => setForm(!showForm)} style={{ marginTop: 12, background: "#14143a", color: "#8888ff", border: "1px solid #4a4aff", borderRadius: 4, padding: "7px 14px", fontSize: 11 }}>
+//               + New Thread
+//             </button>
+
+//             {showForm && (
+//               <div style={{ marginTop: 10, background: "#0a0a16", border: "1px solid #2a2a4a", borderRadius: 6, padding: 12 }}>
+//                 <div style={{ marginBottom: 8 }}>
+//                   <label style={{ fontSize: 9, color: "#555", display: "block", marginBottom: 4, letterSpacing: 1 }}>TOPIC</label>
+//                   <input value={form.topic} onChange={(e) => setF((f) => ({ ...f, topic: e.target.value }))} placeholder="Thread topic…" style={{ width: "100%" }} />
+//                 </div>
+//                 <div style={{ marginBottom: 10 }}>
+//                   <label style={{ fontSize: 9, color: "#555", display: "block", marginBottom: 4, letterSpacing: 1 }}>AIM</label>
+//                   <select value={form.aim} onChange={(e) => setF((f) => ({ ...f, aim: e.target.value }))} style={{ width: "100%" }}>
+//                     <option value="Memo">Memo — 25 pts</option>
+//                     <option value="Strategy">Strategy — 100 pts</option>
+//                     <option value="Endeavor">Endeavor — 100 pts</option>
+//                   </select>
+//                 </div>
+//                 <button className="btn" onClick={() => { if (!form.topic.trim()) return; createThread(sel, form.topic, form.aim); setF({ topic: "", aim: "Memo" }); setForm(false); }}
+//                   style={{ background: "#4a4aff", color: "#fff", borderRadius: 4, padding: "7px 0", width: "100%", fontSize: 11, fontFamily: "inherit" }}>
+//                   Create — costs {THREAD_COSTS[form.aim]} pts
+//                 </button>
+//               </div>
+//             )}
+//           </div>
+//         )}
+//       </div>
+//     </div>
+//   );
+// }
+
+// // ─── Threads ──────────────────────────────────────────────────────────────────
+// function Threads({ threads, agents, approveThread, rejectThread, postMessage }) {
+//   const [sel, setSel]   = useState(null);
+//   const [msg, setMsg]   = useState("");
+//   const [poster, setPoster] = useState(Object.keys(agents)[0] || "");
+//   const thread = sel ? threads[sel] : null;
+//   const tArr   = Object.values(threads);
+
+//   const sc = { OPEN:"#4ade80", ACTIVE:"#22d3ee", FROZEN:"#555", REJECTED:"#ff5555", APPROVED:"#fbbf24" };
+
+//   return (
+//     <div style={{ display: "grid", gridTemplateColumns: "240px 1fr", gap: 16 }}>
+//       <div>
+//         <Sec>Threads ({tArr.length})</Sec>
+//         {tArr.length === 0 && <div style={{ fontSize: 10, color: "#2a2a3a", fontStyle: "italic", lineHeight: 1.7 }}>No threads yet.<br/>Create one from an agent's panel.</div>}
+//         {tArr.map((t) => (
+//           <div key={t.id} className="hov" onClick={() => setSel(t.id)} style={{
+//             padding: "7px 10px", marginBottom: 4, borderRadius: 4, cursor: "pointer",
+//             background: sel === t.id ? "#14142a" : "#0a0a14",
+//             border: `1px solid ${sel === t.id ? "#5555ff" : "#181828"}`,
+//             borderLeft: `3px solid ${sc[t.status] || "#333"}`,
+//           }}>
+//             <div style={{ display: "flex", justifyContent: "space-between" }}>
+//               <span style={{ fontSize: 11, color: "#ccc", fontWeight: 600 }}>{t.topic.slice(0, 20)}</span>
+//               <StatusBadge s={t.status} />
+//             </div>
+//             <div style={{ fontSize: 9, color: "#555", marginTop: 2 }}>{t.aim} · {t.point_wallet.budget}pt · {t.messages_log.length} msg</div>
+//             <div style={{ fontSize: 9, color: "#444" }}>by {agents[t.owner_agent]?.name_id}</div>
+//           </div>
+//         ))}
+//       </div>
+
+//       <div>
+//         {!thread && <div style={{ color: "#2a2a3a", fontSize: 11, marginTop: 60, textAlign: "center" }}>← Select a thread</div>}
+//         {thread && (
+//           <div>
+//             <div style={{ background: "#0a0a14", border: "1px solid #181828", borderRadius: 6, padding: 14, marginBottom: 12 }}>
+//               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+//                 <div>
+//                   <div style={{ fontFamily: "Syne", fontSize: 18, fontWeight: 700, color: "#ccc" }}>{thread.topic}</div>
+//                   <div style={{ fontSize: 9, color: "#555", marginTop: 3 }}>{thread.aim} · Owner: {agents[thread.owner_agent]?.name_id} · Dept: {thread.owner_department} · Created: {hhmm(thread.created)}</div>
+//                 </div>
+//                 <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+//                   <StatusBadge s={thread.status} />
+//                   <div style={{ textAlign: "right" }}>
+//                     <span style={{ fontSize: 16, fontWeight: 700, color: "#fbbf24" }}>{thread.point_wallet.budget}</span>
+//                     <span style={{ fontSize: 8, color: "#555" }}> PT</span>
+//                   </div>
+//                 </div>
+//               </div>
+//               {(thread.status === "OPEN" || thread.status === "ACTIVE") && (
+//                 <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+//                   <button className="btn" onClick={() => approveThread(sel)} style={{ background: "#052e16", color: "#4ade80", border: "1px solid #4ade8044", borderRadius: 4, padding: "5px 12px", fontSize: 10, fontFamily: "inherit" }}>✓ Approve</button>
+//                   <button className="btn" onClick={() => rejectThread(sel)}  style={{ background: "#1a0808", color: "#ff5555", border: "1px solid #ff555544", borderRadius: 4, padding: "5px 12px", fontSize: 10, fontFamily: "inherit" }}>✗ Reject</button>
+//                 </div>
+//               )}
+//             </div>
+
+//             <div style={{ background: "#060610", border: "1px solid #141420", borderRadius: 6, padding: 10, minHeight: 160, maxHeight: 240, overflow: "auto", marginBottom: 10 }}>
+//               {thread.messages_log.length === 0 && <div style={{ fontSize: 10, color: "#2a2a3a", fontStyle: "italic" }}>No messages yet</div>}
+//               {thread.messages_log.map((m, i) => {
+//                 const a    = agents[m.who];
+//                 const dept = a?.department;
+//                 return (
+//                   <div key={i} style={{ marginBottom: 7, padding: "5px 7px", background: "#0a0a14", borderRadius: 3 }}>
+//                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
+//                       <span style={{ fontSize: 8, fontWeight: 700, color: dept ? DEPT_META[dept]?.color : "#888" }}>{a?.name_id || m.who}</span>
+//                       <span style={{ fontSize: 8, color: "#333" }}>{hhmm(m.when)}</span>
+//                     </div>
+//                     <div style={{ fontSize: 10, color: "#aaa", lineHeight: 1.45 }}>{m.what}</div>
+//                   </div>
+//                 );
+//               })}
+//             </div>
+
+//             {!["FROZEN","REJECTED","APPROVED"].includes(thread.status) && (
+//               <div style={{ display: "flex", gap: 6 }}>
+//                 <select value={poster} onChange={(e) => setPoster(e.target.value)} style={{ width: 130, flexShrink: 0 }}>
+//                   {Object.entries(agents).map(([id, a]) => <option key={id} value={id}>{a.name_id}</option>)}
+//                 </select>
+//                 <input value={msg} onChange={(e) => setMsg(e.target.value)}
+//                   onKeyDown={(e) => { if (e.key === "Enter" && msg.trim()) { postMessage(sel, poster, msg); setMsg(""); } }}
+//                   placeholder="Message… (Enter to send)" style={{ flex: 1 }} />
+//                 <button className="btn" onClick={() => { if (msg.trim()) { postMessage(sel, poster, msg); setMsg(""); } }}
+//                   style={{ background: "#4a4aff", color: "#fff", borderRadius: 4, padding: "5px 12px", fontSize: 10, fontFamily: "inherit", whiteSpace: "nowrap" }}>Send</button>
+//               </div>
+//             )}
+//           </div>
+//         )}
+//       </div>
+//     </div>
+//   );
+// }
+
+// // ─── Founder ──────────────────────────────────────────────────────────────────
+// function Founder({ departments, agents, threads, approveThread, rejectThread, addDeptPoints }) {
+//   const pending = Object.entries(threads).filter(([, t]) => t.status === "OPEN" || t.status === "ACTIVE");
+//   const totPts  = Object.values(departments).reduce((s, d) => s + d.ledger.current, 0);
+//   const totAgPts = Object.values(agents).reduce((s, a) => s + a.wallet.current, 0);
+
+//   return (
+//     <div>
+//       <Sec>👑 Founder Control Panel</Sec>
+
+//       <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 20 }}>
+//         {[["DEPT POOL", totPts + " pts"], ["AGENT POOL", totAgPts + " pts"], ["ACTIVE THREADS", pending.length]].map(([k, v]) => (
+//           <div key={k} style={{ background: "#0a0a14", border: "1px solid #181828", borderRadius: 5, padding: "10px 14px", textAlign: "center" }}>
+//             <div style={{ fontSize: 8, color: "#555", letterSpacing: 1.5, marginBottom: 6 }}>{k}</div>
+//             <div style={{ fontSize: 22, fontWeight: 700, color: "#d0d0e0" }}>{v}</div>
+//           </div>
+//         ))}
+//       </div>
+
+//       <Panel title="Department Budgets" style={{ marginBottom: 16 }}>
+//         <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 8, padding: "8px 0" }}>
+//           {Object.entries(DEPT_META).map(([id, meta]) => {
+//             const dept = departments[id];
+//             return (
+//               <div key={id} style={{ textAlign: "center", padding: "10px 6px", background: "#0d0d1a", borderRadius: 4, border: `1px solid ${meta.color}22` }}>
+//                 <div style={{ fontSize: 10, color: meta.color, marginBottom: 4, fontWeight: 700 }}>{id}</div>
+//                 <div style={{ fontSize: 22, fontWeight: 700, color: "#d0d0e0", marginBottom: 8 }}>{dept.ledger.current}</div>
+//                 <div style={{ display: "flex", gap: 3, justifyContent: "center", flexWrap: "wrap" }}>
+//                   {[50, 200, 500].map((n) => (
+//                     <button key={n} className="btn" onClick={() => addDeptPoints(id, n)}
+//                       style={{ background: `${meta.color}18`, color: meta.color, border: `1px solid ${meta.color}33`, borderRadius: 3, padding: "2px 5px", fontSize: 9, fontFamily: "inherit" }}>+{n}</button>
+//                   ))}
+//                 </div>
+//               </div>
+//             );
+//           })}
+//         </div>
+//       </Panel>
+
+//       <Panel title={`Thread Approvals (${pending.length} pending)`}>
+//         {pending.length === 0 && <div style={{ fontSize: 10, color: "#2a2a3a", fontStyle: "italic", padding: "6px 0" }}>No threads awaiting approval</div>}
+//         {pending.map(([tid, t]) => {
+//           const owner  = agents[t.owner_agent];
+//           const reward = t.point_wallet.budget * 10;
+//           return (
+//             <div key={tid} style={{ padding: "10px 12px", background: "#0d0d1a", borderRadius: 4, marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center", border: "1px solid #1e1e2e" }}>
+//               <div>
+//                 <div style={{ fontSize: 12, fontWeight: 600, color: "#ccc" }}>{t.topic}</div>
+//                 <div style={{ fontSize: 9, color: "#555", marginTop: 2 }}>{t.aim} · {owner?.name_id} · {t.messages_log.length} msgs · {t.point_wallet.budget}pt budget</div>
+//                 <div style={{ fontSize: 9, color: "#4ade80", marginTop: 2 }}>Approval reward: {reward} pts (70% owner / 30% dept)</div>
+//               </div>
+//               <div style={{ display: "flex", gap: 6 }}>
+//                 <button className="btn" onClick={() => approveThread(tid)} style={{ background: "#052e16", color: "#4ade80", border: "1px solid #4ade8044", borderRadius: 4, padding: "6px 12px", fontSize: 10, fontFamily: "inherit" }}>✓ APPROVE</button>
+//                 <button className="btn" onClick={() => rejectThread(tid)}  style={{ background: "#1a0808", color: "#ff5555", border: "1px solid #ff555544", borderRadius: 4, padding: "6px 12px", fontSize: 10, fontFamily: "inherit" }}>✗ REJECT</button>
+//               </div>
+//             </div>
+//           );
+//         })}
+//       </Panel>
+//     </div>
+//   );
+// }
+
+// // ─── Shared Components ────────────────────────────────────────────────────────
+// function Sec({ children }) {
+//   return <div style={{ fontFamily: "Syne", fontSize: 18, fontWeight: 700, color: "#8888ff", marginBottom: 14, letterSpacing: -0.5 }}>{children}</div>;
+// }
+// function Panel({ title, children }) {
+//   return (
+//     <div style={{ background: "#0a0a14", border: "1px solid #181828", borderRadius: 6, padding: 14, marginBottom: 12 }}>
+//       <div style={{ fontSize: 9, color: "#444", letterSpacing: 1.5, marginBottom: 10, fontWeight: 700 }}>{title.toUpperCase()}</div>
+//       {children}
+//     </div>
+//   );
+// }
+// function Row({ children }) {
+//   return <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0", borderBottom: "1px solid #0e0e18" }}>{children}</div>;
+// }
+// function Tag({ color, children }) {
+//   return <span style={{ fontSize: 8, color, background: `${color}18`, border: `1px solid ${color}33`, borderRadius: 3, padding: "2px 5px", letterSpacing: 0.5 }}>{children}</span>;
+// }
+// function StatusBadge({ s }) {
+//   const c = { OPEN:"#4ade80", ACTIVE:"#22d3ee", FROZEN:"#888", REJECTED:"#ff5555", APPROVED:"#fbbf24" }[s] || "#555";
+//   return <span style={{ fontSize: 8, color: c, background: `${c}18`, border: `1px solid ${c}33`, borderRadius: 3, padding: "2px 5px", letterSpacing: 1, fontWeight: 700 }}>{s}</span>;
+// }

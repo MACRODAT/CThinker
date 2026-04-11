@@ -1,0 +1,92 @@
+from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, Text
+from sqlalchemy.orm import relationship
+import datetime
+from database import Base
+
+def get_stamp():
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+class Department(Base):
+    __tablename__ = "departments"
+    id = Column(String, primary_key=True, index=True)
+    name = Column(String)
+    color = Column(String)
+    ledger_current = Column(Integer, default=500)
+    
+    agents = relationship("Agent", back_populates="department")
+    threads = relationship("Thread", back_populates="owner_department")
+
+class PromptTemplate(Base):
+    __tablename__ = "prompt_templates"
+    id = Column(String, primary_key=True, index=True) # Mode name e.g. "Creator"
+    name = Column(String, nullable=True) # For display purposes
+    system_prompt = Column(Text)
+    user_prompt_template = Column(Text, nullable=True)
+    custom_directives = Column(Text, nullable=True)  # Injected when this mode is active
+
+class Setting(Base):
+    __tablename__ = "settings"
+    key = Column(String, primary_key=True, index=True)
+    value = Column(String)
+
+class CustomPromptEntry(Base):
+    __tablename__ = "custom_prompt_entries"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    title = Column(String, nullable=False)
+    body = Column(Text, nullable=False)
+    created = Column(String, default=get_stamp)
+
+class Agent(Base):
+    __tablename__ = "agents"
+    id = Column(String, primary_key=True, index=True)
+    name_id = Column(String)
+    born = Column(String, default=get_stamp)
+    department_id = Column(String, ForeignKey("departments.id"), nullable=True)
+    is_ceo = Column(Boolean, default=False)
+    ticks = Column(Integer, default=60)
+    wallet_current = Column(Integer, default=50)
+    mode = Column(String, ForeignKey("prompt_templates.id"), default="Points Accounter")
+    next_mode = Column(String, ForeignKey("prompt_templates.id"), nullable=True)
+    custom_prompt = Column(Text, default="")
+    memory = Column(String, default="")
+    
+    department = relationship("Department", back_populates="agents")
+
+class Thread(Base):
+    __tablename__ = "threads"
+    id = Column(String, primary_key=True, index=True)
+    owner_department_id = Column(String, ForeignKey("departments.id"))
+    owner_agent_id = Column(String, ForeignKey("agents.id"))
+    topic = Column(String)
+    aim = Column(String)
+    status = Column(String, default="OPEN")
+    created = Column(String, default=get_stamp)
+    budget = Column(Integer, default=0)
+    
+    owner_department = relationship("Department", back_populates="threads")
+    
+class Message(Base):
+    __tablename__ = "messages"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    thread_id = Column(String, ForeignKey("threads.id"))
+    who = Column(String)
+    what = Column(Text)
+    when = Column(String, default=get_stamp)
+    points = Column(Integer, default=0)
+
+class LogAction(Base):
+    __tablename__ = "log_actions"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    agent_id = Column(String, ForeignKey("agents.id"))
+    when = Column(String, default=get_stamp)
+    what = Column(Text)
+    points = Column(Integer, nullable=True)
+
+class LogLedger(Base):
+    __tablename__ = "log_ledger"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    department_id = Column(String, ForeignKey("departments.id"))
+    time = Column(String, default=get_stamp)
+    who = Column(String)
+    why = Column(String)
+    amount = Column(Integer)
