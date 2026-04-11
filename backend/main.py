@@ -2,7 +2,10 @@ from fastapi import FastAPI, Depends, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+from typing import List
 import asyncio
+import httpx
+import re
 
 import models, schemas, database
 from engine import engine as sim_engine
@@ -46,6 +49,9 @@ def seed_db(db: Session):
             models.PromptTemplate(id="Points Accounter", name="Points Accounter", system_prompt="You are an analytical agent focused on resource management, efficiency and budget constraints.", user_prompt_template=default_user_prompt),
             models.PromptTemplate(id="Invester", name="Investor", system_prompt="You are a strategic agent evaluating logical investments and maximizing long-term value.", user_prompt_template=default_user_prompt),
             models.PromptTemplate(id="Custom", name="Custom", system_prompt="You act logically, precisely according to your given parameters.", user_prompt_template=default_user_prompt),
+            models.PromptTemplate(id="Chat", name="Direct Chat", 
+                system_prompt="You are in a private 1-on-1 chat with the Founder. Stay professional and helpful according to your role.",
+                user_prompt_template="THE FOUNDER SAYS: {message}\n\nTASK: Respond directly and stay in character. end exactly with [MEM: note] if memory update is needed.")
         ]
         db.add_all(templates)
         db.commit()
@@ -55,6 +61,31 @@ def seed_db(db: Session):
             models.Setting(key="app_name", value="CThinker")
         ]
         db.add_all(settings)
+        db.commit()
+
+    # Ensure Chat template exists
+    if db.query(models.PromptTemplate).filter(models.PromptTemplate.id == "Chat").first() is None:
+        chat_t = models.PromptTemplate(id="Chat", name="Direct Chat", 
+            system_prompt="You are in a private 1-on-1 chat with the Founder. Stay professional and helpful according to your role.",
+            user_prompt_template="THE FOUNDER SAYS: {message}\n\nTASK: Respond directly and stay in character. end exactly with [MEM: note] if memory update is needed.")
+        db.add(chat_t)
+        db.commit()
+
+    # Seed initial tools
+    if db.query(models.AgentTool).first() is None:
+        tools = [
+            models.AgentTool(
+                id="modify_own_tick",
+                name="Dynamic Frequency Adjustment",
+                description="[TOOL: modify_own_tick(value)]: Change your tick interval (seconds). Value must be unique among ALL agents. Use sparingly.",
+                enabled=True
+            )
+        ]
+        db.add_all(tools)
+        db.commit()
+
+    if db.query(models.Setting).filter(models.Setting.key == "tools_instruction_prefix").first() is None:
+        db.add(models.Setting(key="tools_instruction_prefix", value="AVAILABLE TOOLS:\nNote: To use a tool, include the exact [TOOL: name(args)] tag in your response. Only use tools when necessary."))
         db.commit()
 
     if db.query(models.Department).first() is None:
@@ -119,13 +150,15 @@ def get_state(db: Session = Depends(database.get_db)):
     agent_actions = db.query(models.LogAction).order_by(models.LogAction.id.desc()).all()
     thread_msgs = db.query(models.Message).all()
 
+    tools = db.query(models.AgentTool).all()
+
     state_departments = {}
     for d in depts:
         logs = [{"time": l.time, "who": l.who, "amount": l.amount} for l in dept_ledgers if l.department_id == d.id]
         ag_ids = [a.id for a in agents if a.department_id == d.id]
         ceo = next((a.id for a in agents if a.department_id == d.id and a.is_ceo), None)
         state_departments[d.id] = {
-            "name_id": d.id, "name": d.name, "color": d.color,
+            "id": d.id, "name_id": d.id, "name": d.name, "color": d.color,
             "ledger": {"current": d.ledger_current, "log": logs},
             "ceo_name_id": ceo, "agents": ag_ids
         }
@@ -135,7 +168,7 @@ def get_state(db: Session = Depends(database.get_db)):
         acts = [{"when": act.when, "what": act.what, "points": act.points} for act in agent_actions if act.agent_id == a.id]
         own_t = [t.id for t in threads if t.owner_agent_id == a.id]
         state_agents[a.id] = {
-            "name_id": a.name_id, "born": a.born, "department": a.department_id,
+            "id": a.id, "name_id": a.name_id, "born": a.born, "department": a.department_id,
             "is_ceo": a.is_ceo, "ticks": a.ticks, "wallet": {"current": a.wallet_current, "log": []},
             "mode": a.mode, "next_mode": a.next_mode, "custom_prompt": a.custom_prompt,
             "log_actions": acts, "memory": a.memory, "own_threads": own_t
@@ -155,7 +188,8 @@ def get_state(db: Session = Depends(database.get_db)):
         "agents": state_agents,
         "threads": state_threads,
         "prompts": {p.id: {"id": p.id, "name": p.name, "system_prompt": p.system_prompt, "user_prompt_template": p.user_prompt_template, "custom_directives": p.custom_directives} for p in prompts},
-        "settings": {s.key: s.value for s in settings}
+        "settings": {s.key: s.value for s in settings},
+        "tools": {t.id: {"id": t.id, "name": t.name, "description": t.description, "enabled": t.enabled, "config": t.config_json} for t in tools}
     }
 
 @app.post("/api/threads", response_model=schemas.ThreadResponse)
@@ -367,5 +401,95 @@ def delete_prompt_entry(entry_id: int, db: Session = Depends(database.get_db)):
     e = db.query(models.CustomPromptEntry).filter(models.CustomPromptEntry.id == entry_id).first()
     if not e: return {"error": "Entry not found"}
     db.delete(e)
+    db.commit()
+    return {"status": "success"}
+
+# --- Direct Chat with Agent ---
+
+@app.post("/api/agents/{agent_id}/chat")
+async def agent_chat(agent_id: str, req: schemas.ChatRequest, db: Session = Depends(database.get_db)):
+    agent = db.query(models.Agent).filter(models.Agent.id == agent_id).first()
+    if not agent: return {"error": "Agent not found"}
+    
+    # Use existing Chat thread or create new
+    thread = db.query(models.Thread).filter(
+        models.Thread.owner_agent_id == agent.id,
+        models.Thread.aim == "Chat"
+    ).first()
+    
+    if not thread:
+        import uuid
+        tid = f"CHAT-{str(uuid.uuid4())[:4].upper()}"
+        thread = models.Thread(
+            id=tid,
+            topic=f"Direct Chat: {agent.name_id}",
+            aim="Chat",
+            owner_agent_id=agent.id,
+            owner_department_id=agent.department_id,
+            status="ACTIVE"
+        )
+        db.add(thread)
+        db.commit()
+        db.refresh(thread)
+    
+    # Add Founder message
+    user_msg = models.Message(thread_id=thread.id, who="FOUNDER", what=req.message)
+    db.add(user_msg)
+    db.commit()
+    
+    # Immediate LLM trigger
+    chat_template = db.query(models.PromptTemplate).filter(models.PromptTemplate.id == "Chat").first()
+    mode_template = db.query(models.PromptTemplate).filter(models.PromptTemplate.id == agent.mode).first()
+    
+    system_instr = chat_template.system_prompt if chat_template else (mode_template.system_prompt if mode_template else "You act logically.")
+    user_instr = chat_template.user_prompt_template if chat_template else "THE FOUNDER SAYS: {message}\n\nTASK: Respond directly and stay in character. end exactly with [MEM: note] if memory update is needed."
+    
+    chat_prompt = (
+        f"System: {system_instr}\n"
+        f"IDENTITY: You are {agent.name_id}.\n"
+        f"Current Mode: {agent.mode}\n"
+        f"Directives: {agent.custom_prompt or 'None'}\n"
+        f"Memory: {agent.memory}\n\n"
+        f"{user_instr.format(message=req.message)}"
+    )
+    
+    try:
+        s_model = db.query(models.Setting).filter(models.Setting.key == "ollama_model").first()
+        used_model = s_model.value if s_model else "gemma4:e4b"
+        s_server = db.query(models.Setting).filter(models.Setting.key == "ollama_server").first()
+        server_url = (s_server.value if s_server else "http://localhost:11434").rstrip("/") + "/api/generate"
+        
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(server_url, json={
+                "model": used_model,
+                "prompt": chat_prompt,
+                "stream": False
+            }, timeout=180.0)
+            text = resp.json().get("response", "")
+    except Exception as e:
+        text = f"I am unable to connect to my logic core. (Error: {str(e)})"
+
+    m_match = re.search(r"\[MEM:\s*(.+?)\]", text)
+    if m_match: agent.memory = m_match.group(1)[:150]
+    clean_resp = re.sub(r"\[MEM:.+?\]", "", text).strip()
+    
+    agent_msg = models.Message(thread_id=thread.id, who=agent.id, what=clean_resp)
+    db.add(agent_msg)
+    db.commit()
+    
+    return {"thread_id": thread.id, "response": clean_resp}
+
+# --- Tool Management ---
+
+@app.get("/api/tools", response_model=List[schemas.AgentToolResponse])
+def get_tools(db: Session = Depends(database.get_db)):
+    return db.query(models.AgentTool).all()
+
+@app.put("/api/tools/{tool_id}")
+def update_tool(tool_id: str, req: schemas.AgentToolUpdate, db: Session = Depends(database.get_db)):
+    tool = db.query(models.AgentTool).filter(models.AgentTool.id == tool_id).first()
+    if not tool: return {"error": "Tool not found"}
+    if req.enabled is not None: tool.enabled = req.enabled
+    if req.config_json is not None: tool.config_json = req.config_json
     db.commit()
     return {"status": "success"}

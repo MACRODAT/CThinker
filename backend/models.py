@@ -90,3 +90,11 @@ class LogLedger(Base):
     who = Column(String)
     why = Column(String)
     amount = Column(Integer)
+
+class AgentTool(Base):
+    __tablename__ = "agent_tools"
+    id = Column(String, primary_key=True)
+    name = Column(String)
+    description = Column(Text)
+    enabled = Column(Boolean, default=True)
+    config_json = Column(Text, default="{}")

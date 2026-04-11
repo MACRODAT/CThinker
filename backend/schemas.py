@@ -112,3 +112,20 @@ class CustomPromptEntryResponse(CustomPromptEntryCreate):
 
     class Config:
         from_attributes = True
+
+class ChatRequest(BaseModel):
+    message: str
+
+class AgentToolUpdate(BaseModel):
+    enabled: Optional[bool] = None
+    config_json: Optional[str] = None
+
+class AgentToolResponse(BaseModel):
+    id: str
+    name: str
+    description: str
+    enabled: bool
+    config_json: str
+
+    class Config:
+        from_attributes = True

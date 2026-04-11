@@ -2,7 +2,7 @@ import asyncio
 import httpx
 from sqlalchemy.orm import Session
 from database import SessionLocal
-from models import Department, Agent, Thread, LogAction, LogLedger, PromptTemplate, Setting
+from models import Department, Agent, Thread, LogAction, LogLedger, PromptTemplate, Setting, AgentTool
 import datetime
 import json
 
@@ -47,6 +47,14 @@ class SimEngine:
                 await self.broadcast({"type": "heartbeat", "counter": self.counter})
                 return
 
+            # Fetch enabled tools once for this tick
+            enabled_tools = db.query(AgentTool).filter(AgentTool.enabled == True).all()
+            
+            s_prefix = db.query(Setting).filter(Setting.key == "tools_instruction_prefix").first()
+            prefix = s_prefix.value if s_prefix else "AVAILABLE TOOLS:\n"
+            
+            tools_block = prefix + "\n" + "\n".join([f"- {t.description}" for t in enabled_tools]) if enabled_tools else "No tools available."
+            
             tick_events = []
             
             for agent in ticking_agents:
@@ -86,7 +94,9 @@ class SimEngine:
                     f"System: {system_instruction}\n"
                     f"You are {agent.name_id}, operating in {dept_name}.\n"
                     f"Memory Context: {agent.memory}\n"
-                    f"Active Threads:\n{thread_ctx}\n"
+                    f"Active Threads:\n{thread_ctx}\n\n"
+                    f"{tools_block}\n"
+                    "Note: To use a tool, include the exact tag in your response.\n"
                 )
                 
                 # Inject per-mode custom directives
@@ -151,6 +161,11 @@ class SimEngine:
             new_mem = mem_match.group(1)[:150] if mem_match else agent.memory
             act = re.sub(r"\[MEM:.+?\]", "", text).strip()
 
+            # --- Tool Execution ---
+            tool_res = self.handle_tools(db, agent, act)
+            if tool_res:
+                act += f" ({tool_res})"
+
             agent.memory = new_mem
             logra = LogAction(agent_id=agent.id, what=act)
             db.add(logra)
@@ -191,5 +206,31 @@ class SimEngine:
 
         finally:
             db.close()
+
+    def handle_tools(self, db, agent, text):
+        import re
+        tool_match = re.search(r"\[TOOL:\s*(\w+)\((.*?)\)\]", text)
+        if tool_match:
+            tool_name = tool_match.group(1)
+            args_str = tool_match.group(2)
+            
+            # Verify tool is registered and enabled
+            tool_entry = db.query(AgentTool).filter(AgentTool.id == tool_name).first()
+            if not tool_entry or not tool_entry.enabled:
+                return f"TOOL_ERROR: Tool '{tool_name}' is disabled or not found."
+
+            if tool_name == "modify_own_tick":
+                try:
+                    new_val = int(args_str.strip())
+                    # Check uniqueness among ALL agents
+                    conflict = db.query(Agent).filter(Agent.ticks == new_val, Agent.id != agent.id).first()
+                    if not conflict and new_val > 0:
+                        agent.ticks = new_val
+                        return f"CLOCK_SYNC: Tick adjusted to {new_val}s."
+                    else:
+                        return f"CLOCK_ERROR: Frequency {new_val}s is occupied or invalid."
+                except:
+                    return "CLOCK_ERROR: Invalid parameter."
+        return None
 
 engine = SimEngine()
