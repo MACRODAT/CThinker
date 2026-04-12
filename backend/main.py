@@ -331,6 +331,7 @@ def get_state(db: Session = Depends(database.get_db)):
         state_threads[t.id] = {
             "id": t.id, "owner_department": t.owner_department_id, "owner_agent": t.owner_agent_id,
             "topic": t.topic, "aim": t.aim, "status": t.status, "created": t.created,
+            "summary": t.summary or None,
             "point_wallet": {"budget": t.budget, "log": []}, "messages_log": msgs
         }
 
@@ -394,13 +395,13 @@ def create_thread(thread: schemas.ThreadCreate, db: Session = Depends(database.g
     return db_thread
 
 @app.post("/api/threads/{thread_id}/messages")
-def create_message(thread_id: str, message: schemas.MessageCreate, db: Session = Depends(database.get_db)):
+async def create_message(thread_id: str, message: schemas.MessageCreate, db: Session = Depends(database.get_db)):
     t = db.query(models.Thread).filter(models.Thread.id == thread_id).first()
-    # print("Received message: ", message)
     if not t: return {"error": "Thread not found"}
     if message.who.upper() == "FOUNDER":
         msg = models.Message(thread_id=thread_id, who="Founder", what=message.what, points=0)
         db.add(msg); db.commit(); db.refresh(msg)
+        asyncio.create_task(sim_engine.compute_thread_summary(thread_id))
         return msg
     agent = db.query(models.Agent).filter(models.Agent.id == message.who).first()
     if not agent: return {"error": "Agent not found"}
@@ -411,6 +412,7 @@ def create_message(thread_id: str, message: schemas.MessageCreate, db: Session =
     t.budget -= cost
     msg = models.Message(thread_id=thread_id, who=agent.id, what=message.what, points=-cost)
     db.add(msg); db.commit(); db.refresh(msg)
+    asyncio.create_task(sim_engine.compute_thread_summary(thread_id))
     return msg
 
 @app.delete("/api/threads/{thread_id}")
@@ -743,3 +745,85 @@ def delete_ticket(ticket_id: str, db: Session = Depends(database.get_db)):
     db.delete(t)
     db.commit()
     return {"status": "success"}
+
+
+# ── Debug / Prompt Parser ──────────────────────────────────────────────────────
+
+@app.post("/api/debug/parse-prompt")
+async def debug_parse_prompt(data: dict, db: Session = Depends(database.get_db)):
+    """
+    Parse a raw prompt string exactly as the engine would for a given agent.
+    Returns the resolved text plus a breakdown of every placeholder found.
+    """
+    prompt_text = data.get("prompt", "")
+    agent_id    = data.get("agent_id", "")
+    thread_id   = data.get("thread_id", "")
+
+    agent = db.query(models.Agent).filter(models.Agent.id == agent_id).first()
+    if not agent:
+        return {"error": f"Agent '{agent_id}' not found"}
+
+    last_q = (db.query(models.JoinQuest)
+                .filter(models.JoinQuest.agent_id == agent.id)
+                .order_by(models.JoinQuest.id.desc()).first())
+
+    # ── Detect which placeholders are present before resolving ──────────────
+    found_placeholders = re.findall(r"\{\{(\w+)(?:\s*\?\?.*?)?\}\}", prompt_text, re.DOTALL)
+    found_format_vars  = re.findall(r"\{(\w+)\}", prompt_text)
+
+    # ── Step 1: resolve_placeholders pass ───────────────────────────────────
+    try:
+        resolved = sim_engine.resolve_placeholders(prompt_text, db, agent, last_q)
+    except Exception as e:
+        return {"error": f"resolve_placeholders failed: {e}"}
+
+    # ── Step 2: .format() pass ───────────────────────────────────────────────
+    actions = (db.query(models.LogAction)
+                 .filter(models.LogAction.agent_id == agent.id)
+                 .order_by(models.LogAction.id.desc()).limit(5).all())
+    actions_str = "\n".join([f"- {a.what}" for a in actions]) if actions else "No recent actions."
+    dept_info   = (f"Department: {agent.department.name} (Balance: {agent.department.ledger_current} pts)"
+                   if agent.department else "No Department")
+    thread_ctx  = ""
+    if thread_id:
+        thr = db.query(models.Thread).filter(models.Thread.id == thread_id).first()
+        if thr:
+            thread_ctx = (f"Thread {thr.id} | {thr.topic} | {thr.aim} | "
+                          f"Budget: {thr.budget}pt | Status: {thr.status}")
+
+    format_vars = dict(
+        name=agent.name_id, id=agent.id, wallet=agent.wallet_current,
+        dept=dept_info, memory=agent.memory or "None",
+        actions=actions_str, tools="[TOOLS BLOCK — runtime only]",
+        directives="[DIRECTIVES — runtime only]", message="[FOUNDER MESSAGE]",
+    )
+    parse_errors = []
+    try:
+        final = resolved.format(**format_vars)
+    except KeyError as e:
+        parse_errors.append(f"Unresolved format key: {e}")
+        # Partial fallback — escape unknown keys
+        safe = resolved
+        for k, v in format_vars.items():
+            safe = safe.replace("{" + k + "}", str(v))
+        final = safe
+
+    return {
+        "raw":                prompt_text,
+        "parsed":             final,
+        "agent":              agent.name_id,
+        "agent_id":           agent.id,
+        "thread_context":     thread_ctx or None,
+        "placeholders_found": list(set(found_placeholders)),
+        "format_vars_found":  list(set(found_format_vars)),
+        "parse_errors":       parse_errors,
+    }
+
+
+@app.post("/api/threads/{thread_id}/summarize")
+async def summarize_thread(thread_id: str, db: Session = Depends(database.get_db)):
+    """Manually trigger AI summary recomputation for a thread."""
+    t = db.query(models.Thread).filter(models.Thread.id == thread_id).first()
+    if not t: return {"error": "Thread not found"}
+    asyncio.create_task(sim_engine.compute_thread_summary(thread_id))
+    return {"status": "queued", "thread_id": thread_id}

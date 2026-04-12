@@ -115,6 +115,11 @@ def run():
     except Exception as e: print("expiry_date:", e)
 
     try:
+        c.execute('ALTER TABLE threads ADD COLUMN summary TEXT')
+        print("Added summary to threads")
+    except Exception as e: print("summary:", e)
+
+    try:
         c.execute('ALTER TABLE join_quests ADD COLUMN expires_at TEXT')
         print("Added expires_at to join_quests")
     except Exception as e: print("expires_at:", e)

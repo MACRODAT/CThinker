@@ -2,19 +2,19 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import './index.css';
 
 const DEPT_META = {
-  HF:  { name: "Health & Wellness",  color: "#4ade80", dim: "#052e16", icon: "🌱" },
-  ING: { name: "Engineering",        color: "#22d3ee", dim: "#0c2030", icon: "⚙️" },
+  HF: { name: "Health & Wellness", color: "#4ade80", dim: "#052e16", icon: "🌱" },
+  ING: { name: "Engineering", color: "#22d3ee", dim: "#0c2030", icon: "⚙️" },
   STP: { name: "Strategic Planning", color: "#fb923c", dim: "#2d1500", icon: "📊" },
-  UIT: { name: "Useful Intelligence",color: "#c084fc", dim: "#1e0a30", icon: "🧠" },
-  FIN: { name: "Financing",          color: "#fbbf24", dim: "#1c1600", icon: "💰" },
+  UIT: { name: "Useful Intelligence", color: "#c084fc", dim: "#1e0a30", icon: "🧠" },
+  FIN: { name: "Financing", color: "#fbbf24", dim: "#1c1600", icon: "💰" },
 };
 
 const THREAD_COSTS = { Memo: 25, Strategy: 100, Endeavor: 100 };
 const API_BASE = "http://127.0.0.1:8000/api";
-const WS_BASE  = "ws://127.0.0.1:8000/ws";
+const WS_BASE = "ws://127.0.0.1:8000/ws";
 
-const mkId  = () => Math.random().toString(36).slice(2, 8).toUpperCase();
-const hhmm  = (iso) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+const mkId = () => Math.random().toString(36).slice(2, 8).toUpperCase();
+const hhmm = (iso) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
 // ── Simple Markdown renderer (no deps) ────────────────────────────────────────
 function renderMd(raw) {
@@ -127,7 +127,7 @@ function MarkdownEditor({ value, onChange, rows = 7, placeholder = "Write markdo
         </label>
         {toolbar}
       </div>
-      
+
       <div style={{
         display: "flex", border: "1px solid #1e222d", borderRadius: 8, overflow: "hidden",
         flex: isFull ? 1 : "initial"
@@ -166,20 +166,20 @@ function MarkdownEditor({ value, onChange, rows = 7, placeholder = "Write markdo
 
 // ── Logger Level Badge Config ────────────────────────────────────────────────
 const LOG_COLORS = {
-  INFO:  "#6b7280",
-  TICK:  "#3b82f6",
-  LLM:   "#a855f7",
-  TOOL:  "#f97316",
+  INFO: "#6b7280",
+  TICK: "#3b82f6",
+  LLM: "#a855f7",
+  TOOL: "#f97316",
   POINT: "#10b981",
-  WARN:  "#eab308",
+  WARN: "#eab308",
   ERROR: "#ef4444",
 };
 
 // ── Logger View ──────────────────────────────────────────────────────────────
 function Logger({ liveLogs, state }) {
-  const [filter, setFilter]   = useState({ level: "", category: "", agent: "", search: "" });
+  const [filter, setFilter] = useState({ level: "", category: "", agent: "", search: "" });
   const [expanded, setExpanded] = useState(new Set());
-  const [dbLogs, setDbLogs]   = useState([]);
+  const [dbLogs, setDbLogs] = useState([]);
   const [autoScroll, setAutoScroll] = useState(true);
   const bottomRef = useRef(null);
 
@@ -188,11 +188,11 @@ function Logger({ liveLogs, state }) {
     fetch(`${API_BASE}/logs?limit=400`)
       .then(r => r.json())
       .then(data => setDbLogs(Array.isArray(data) ? data.reverse() : []))
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   // Merge live + db logs, newest first, deduplicated by time+event
-  const seen  = new Set();
+  const seen = new Set();
   const merged = [...liveLogs, ...dbLogs].filter(l => {
     const key = `${l.time}|${l.event}|${l.agent_id}`;
     if (seen.has(key)) return false;
@@ -201,9 +201,9 @@ function Logger({ liveLogs, state }) {
   });
 
   const filtered = merged.filter(l => {
-    if (filter.level    && l.level    !== filter.level)    return false;
+    if (filter.level && l.level !== filter.level) return false;
     if (filter.category && l.category !== filter.category) return false;
-    if (filter.agent    && l.agent_id !== filter.agent)    return false;
+    if (filter.agent && l.agent_id !== filter.agent) return false;
     if (filter.search) {
       const hay = JSON.stringify(l).toLowerCase();
       if (!hay.includes(filter.search.toLowerCase())) return false;
@@ -294,7 +294,7 @@ function Logger({ liveLogs, state }) {
         {filtered.map((log, i) => {
           const isExp = expanded.has(i);
           let details = {};
-          try { details = typeof log.details === "string" ? JSON.parse(log.details) : (log.details || {}); } catch {}
+          try { details = typeof log.details === "string" ? JSON.parse(log.details) : (log.details || {}); } catch { }
           const col = LOG_COLORS[log.level] || "#6b7280";
           return (
             <div key={i}
@@ -375,10 +375,10 @@ function Logger({ liveLogs, state }) {
 // ── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
   const [state, setState] = useState({ heartbeat: 0, departments: {}, agents: {}, threads: {}, prompts: {}, settings: {}, tools: {}, tickets: [] });
-  const [feed, setFeed]   = useState([]);
-  const [logs, setLogs]   = useState([]);   // live log stream from WebSocket
+  const [feed, setFeed] = useState([]);
+  const [logs, setLogs] = useState([]);   // live log stream from WebSocket
   const [expandedFeedId, setExpandedFeedId] = useState(null);
-  const [view, setView]   = useState("dashboard");
+  const [view, setView] = useState("dashboard");
 
   const fetchState = useCallback(async () => {
     try {
@@ -406,25 +406,36 @@ export default function App() {
         fetchState();
       } else if (data.type === "log") {
         setLogs(l => [data.log, ...l].slice(0, 600));
+      } else if (data.type === "thread_summary") {
+        setState(s => {
+          if (!s.threads[data.thread_id]) return s;
+          return {
+            ...s,
+            threads: {
+              ...s.threads,
+              [data.thread_id]: { ...s.threads[data.thread_id], summary: data.summary }
+            }
+          };
+        });
       }
     };
     return () => ws.close();
   }, [fetchState]);
 
   // Actions
-  const createThread  = useCallback(async (ownerAgentId, topic, aim) => {
+  const createThread = useCallback(async (ownerAgentId, topic, aim) => {
     await fetch(`${API_BASE}/threads`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ topic, aim, owner_agent_id: ownerAgentId }) });
     fetchState();
   }, [fetchState]);
   const approveThread = useCallback(async (tid) => { await fetch(`${API_BASE}/threads/${tid}/approve`, { method: "POST" }); fetchState(); }, [fetchState]);
-  const rejectThread  = useCallback(async (tid) => { await fetch(`${API_BASE}/threads/${tid}/reject`,  { method: "POST" }); fetchState(); }, [fetchState]);
-  const deleteThread  = useCallback(async (tid) => {
+  const rejectThread = useCallback(async (tid) => { await fetch(`${API_BASE}/threads/${tid}/reject`, { method: "POST" }); fetchState(); }, [fetchState]);
+  const deleteThread = useCallback(async (tid) => {
     if (window.confirm("Delete thread and all its messages?")) {
       await fetch(`${API_BASE}/threads/${tid}`, { method: "DELETE" });
       fetchState();
     }
   }, [fetchState]);
-  const updateThread  = useCallback(async (tid, payload) => {
+  const updateThread = useCallback(async (tid, payload) => {
     await fetch(`${API_BASE}/threads/${tid}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -432,16 +443,16 @@ export default function App() {
     });
     fetchState();
   }, [fetchState]);
-  const postMessage   = useCallback(async (tid, agentId, content) => {
+  const postMessage = useCallback(async (tid, agentId, content) => {
     await fetch(`${API_BASE}/threads/${tid}/messages`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ who: agentId, what: content }) });
     fetchState();
   }, [fetchState]);
-  const updatePrompt  = useCallback(async (pid, payload) => {
-    await fetch(`${API_BASE}/prompts/${pid}`,  { method: "PUT",  headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  const updatePrompt = useCallback(async (pid, payload) => {
+    await fetch(`${API_BASE}/prompts/${pid}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     fetchState();
   }, [fetchState]);
-  const updateAgent   = useCallback(async (aid, payload) => {
-    await fetch(`${API_BASE}/agents/${aid}`,   { method: "PUT",  headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  const updateAgent = useCallback(async (aid, payload) => {
+    await fetch(`${API_BASE}/agents/${aid}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     fetchState();
   }, [fetchState]);
   const addDeptPoints = useCallback(async (deptId, amount) => {
@@ -454,17 +465,17 @@ export default function App() {
   }, [fetchState]);
 
   const navLinks = [
-    { id: "dashboard",   label: "Dashboard",    icon: "⊞" },
-    { id: "agents",      label: "Agents",        icon: "👥" },
-    { id: "departments", label: "Departments",   icon: "🏢" },
-    { id: "chats",       label: "Agent Chats",   icon: "🗯️" },
-    { id: "threads",     label: "Threads",       icon: "💬" },
-    { id: "tools",       label: "Agent Tools",   icon: "🛠️" },
-    { id: "founder",     label: "Economy",       icon: "👑" },
-    { id: "tickets",     label: "Tickets",       icon: "🎟️" },
-    { id: "prompts",     label: "Prompt Design", icon: "✨" },
-    { id: "logger",      label: "System Logger", icon: "📋" },
-    { id: "settings",    label: "Settings",      icon: "⚙️" },
+    { id: "dashboard", label: "Dashboard", icon: "⊞" },
+    { id: "agents", label: "Agents", icon: "👥" },
+    { id: "departments", label: "Departments", icon: "🏢" },
+    { id: "chats", label: "Agent Chats", icon: "🗯️" },
+    { id: "threads", label: "Threads", icon: "💬" },
+    { id: "tools", label: "Agent Tools", icon: "🛠️" },
+    { id: "founder", label: "Economy", icon: "👑" },
+    { id: "tickets", label: "Tickets", icon: "🎟️" },
+    { id: "prompts", label: "Prompt Design", icon: "✨" },
+    { id: "logger", label: "System Logger", icon: "📋" },
+    { id: "settings", label: "Settings", icon: "⚙️" },
   ];
 
   const logCount = logs.length;
@@ -475,7 +486,7 @@ export default function App() {
       <div className="sidebar">
         <div className="logo-area">
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ width: 32, height: 32, background: "linear-gradient(135deg,#6366f1,#a855f7)", borderRadius: 8, display:"flex",alignItems:"center",justifyContent:"center" }}>
+            <div style={{ width: 32, height: 32, background: "linear-gradient(135deg,#6366f1,#a855f7)", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center" }}>
               <div style={{ width: 12, height: 12, background: "#fff", borderRadius: 2 }} />
             </div>
             <div>
@@ -503,7 +514,7 @@ export default function App() {
 
           <div className="nav-header" style={{ marginTop: 24 }}>DEPARTMENTS</div>
           {Object.entries(DEPT_META).map(([id, meta]) => {
-            const d   = state.departments[id];
+            const d = state.departments[id];
             const pts = d?.ledger?.current || 0;
             return (
               <div key={id} className="nav-link" style={{ justifyContent: "space-between" }} onClick={() => setView("departments")}>
@@ -538,17 +549,17 @@ export default function App() {
         </div>
 
         <div style={{ flex: 1, overflowY: "auto", padding: 24 }}>
-          {view === "dashboard"   && <Dashboard   state={state} />}
-          {view === "agents"      && <Agents       state={state} createThread={createThread} updateAgent={updateAgent} setView={setView} />}
-          {view === "departments" && <Departments  state={state} />}
-          {view === "chats"       && <Chats        state={state} fetchState={fetchState} />}
-          {view === "threads"     && <Threads      state={state} approveThread={approveThread} rejectThread={rejectThread} deleteThread={deleteThread} updateThread={updateThread} postMessage={postMessage} />}
-          {view === "tools"       && <Tools        state={state} fetchState={fetchState} />}
-          {view === "founder"     && <Founder      state={state} addDeptPoints={addDeptPoints} />}
-          {view === "tickets"     && <Tickets      state={state} fetchState={fetchState} />}
-          {view === "prompts"     && <Prompts      state={state} updatePrompt={updatePrompt} />}
-          {view === "logger"      && <Logger       liveLogs={logs} state={state} />}
-          {view === "settings"    && <Settings     state={state} updateSetting={updateSetting} />}
+          {view === "dashboard" && <Dashboard state={state} />}
+          {view === "agents" && <Agents state={state} createThread={createThread} updateAgent={updateAgent} setView={setView} />}
+          {view === "departments" && <Departments state={state} />}
+          {view === "chats" && <Chats state={state} fetchState={fetchState} />}
+          {view === "threads" && <Threads state={state} approveThread={approveThread} rejectThread={rejectThread} deleteThread={deleteThread} updateThread={updateThread} postMessage={postMessage} />}
+          {view === "tools" && <Tools state={state} fetchState={fetchState} />}
+          {view === "founder" && <Founder state={state} addDeptPoints={addDeptPoints} />}
+          {view === "tickets" && <Tickets state={state} fetchState={fetchState} />}
+          {view === "prompts" && <Prompts state={state} updatePrompt={updatePrompt} />}
+          {view === "logger" && <Logger liveLogs={logs} state={state} />}
+          {view === "settings" && <Settings state={state} updateSetting={updateSetting} />}
         </div>
       </div>
 
@@ -562,11 +573,11 @@ export default function App() {
           {feed.map(f => {
             const isExp = expandedFeedId === f.id;
             return (
-              <div key={f.id} 
+              <div key={f.id}
                 onClick={() => setExpandedFeedId(isExp ? null : f.id)}
-                style={{ 
-                  background: isExp ? "#0d0f14" : "#11141a", 
-                  border: `1px solid ${isExp ? "#6366f1" : "#1a1d24"}`, 
+                style={{
+                  background: isExp ? "#0d0f14" : "#11141a",
+                  border: `1px solid ${isExp ? "#6366f1" : "#1a1d24"}`,
                   borderRadius: 8, padding: 10, marginBottom: 8,
                   cursor: "pointer", transition: "all 0.2s"
                 }}>
@@ -593,9 +604,9 @@ export default function App() {
 // ── Tickets ───────────────────────────────────────────────────────────────────
 function Tickets({ state, fetchState }) {
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm]         = useState({ id: "", name: "", amount: "", expiry_date: "" });
-  const [saving, setSaving]     = useState(false);
-  const [filter, setFilter]     = useState("ALL"); // ALL | AVAILABLE | USED
+  const [form, setForm] = useState({ id: "", name: "", amount: "", expiry_date: "" });
+  const [saving, setSaving] = useState(false);
+  const [filter, setFilter] = useState("ALL"); // ALL | AVAILABLE | USED
   const tickets = state.tickets || [];
 
   const genId = () => {
@@ -627,16 +638,18 @@ function Tickets({ state, fetchState }) {
 
   const visible = tickets.filter(t => {
     if (filter === "AVAILABLE") return t.status === "UNUSED" && !isExpired(t);
-    if (filter === "USED")      return t.status === "USED";
+    if (filter === "USED") return t.status === "USED";
     return true;
   });
 
   const unused = tickets.filter(t => t.status === "UNUSED" && !isExpired(t)).length;
-  const used   = tickets.filter(t => t.status === "USED").length;
+  const used = tickets.filter(t => t.status === "USED").length;
   const expired = tickets.filter(t => t.status === "UNUSED" && isExpired(t)).length;
 
-  const inputSt = { background: "#0b0c10", border: "1px solid #1e222d", color: "#e2e8f0",
-    borderRadius: 6, padding: "8px 12px", fontSize: 12, width: "100%", outline: "none" };
+  const inputSt = {
+    background: "#0b0c10", border: "1px solid #1e222d", color: "#e2e8f0",
+    borderRadius: 6, padding: "8px 12px", fontSize: 12, width: "100%", outline: "none"
+  };
 
   return (
     <div style={{ maxWidth: 1100, margin: "0 auto" }}>
@@ -746,10 +759,10 @@ function Tickets({ state, fetchState }) {
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 }}>
         {visible.map(t => {
-          const exp        = isExpired(t);
-          const isUsed     = t.status === "USED";
-          const statusCol  = isUsed ? "#6b7280" : exp ? "#ef4444" : "#10b981";
-          const statusLbl  = isUsed ? "USED" : exp ? "EXPIRED" : "AVAILABLE";
+          const exp = isExpired(t);
+          const isUsed = t.status === "USED";
+          const statusCol = isUsed ? "#6b7280" : exp ? "#ef4444" : "#10b981";
+          const statusLbl = isUsed ? "USED" : exp ? "EXPIRED" : "AVAILABLE";
 
           return (
             <div key={t.id} className="card"
@@ -759,8 +772,10 @@ function Tickets({ state, fetchState }) {
                 {/* Name + badge */}
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 700, color: "#e2e8f0", fontSize: 14, lineHeight: 1.4,
-                      overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+                    <div style={{
+                      fontWeight: 700, color: "#e2e8f0", fontSize: 14, lineHeight: 1.4,
+                      overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical"
+                    }}>
                       {t.name}
                     </div>
                     <div className="mono" style={{ fontSize: 10, color: "#6366f1", marginTop: 3 }}>{t.id}</div>
@@ -788,8 +803,8 @@ function Tickets({ state, fetchState }) {
                 {/* Meta rows */}
                 <div style={{ borderTop: "1px solid #1a1d24", paddingTop: 10, display: "flex", flexDirection: "column", gap: 5 }}>
                   {[
-                    ["Created",  t.created   ? new Date(t.created).toLocaleDateString()     : "—",      "#9ca3af"],
-                    ["Expires",  t.expiry_date ? new Date(t.expiry_date).toLocaleDateString() : "No expiry", exp ? "#ef4444" : "#9ca3af"],
+                    ["Created", t.created ? new Date(t.created).toLocaleDateString() : "—", "#9ca3af"],
+                    ["Expires", t.expiry_date ? new Date(t.expiry_date).toLocaleDateString() : "No expiry", exp ? "#ef4444" : "#9ca3af"],
                     ...(isUsed ? [["Used by", t.used_by_name || t.used_by || "—", "#818cf8"]] : []),
                   ].map(([label, val, col]) => (
                     <div key={label} style={{ display: "flex", justifyContent: "space-between", fontSize: 11 }}>
@@ -816,6 +831,278 @@ function Tickets({ state, fetchState }) {
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+// ── Prompt Parser (Debugging) ─────────────────────────────────────────────────
+const PARSER_PLACEHOLDERS = [
+  { key: "available_tickets", desc: "List of all unused tickets", cat: "tickets", conditional: false },
+  { key: "available_tickets_exist", desc: "\"Yes\" / \"No\" — any unused tickets?", cat: "tickets", conditional: true },
+  { key: "pending_invitation", desc: "Pending invitations for this agent", cat: "invitations", conditional: false },
+  { key: "pending_invitation_exist", desc: "\"Yes\" / \"No\" — invitations pending?", cat: "invitations", conditional: true },
+  { key: "pending_quests", desc: "Join-quests awaiting owner approval", cat: "quests", conditional: false },
+  { key: "pending_quests_exist", desc: "\"Yes\" / \"No\" — quests pending?", cat: "quests", conditional: true },
+  { key: "invitation_status", desc: "Last quest/invite status string", cat: "invitations", conditional: false },
+  { key: "exist_invitation_status", desc: "\"Yes\" / \"No\" — has invite history?", cat: "invitations", conditional: true },
+];
+const PARSER_FORMAT_VARS = [
+  { key: "name", desc: "Agent name" },
+  { key: "id", desc: "Agent ID" },
+  { key: "wallet", desc: "Wallet balance (pts)" },
+  { key: "dept", desc: "Department + balance" },
+  { key: "memory", desc: "Agent memory scratchpad" },
+  { key: "actions", desc: "Recent actions summary" },
+  { key: "tools", desc: "Full tools block" },
+  { key: "directives", desc: "Mode directives block" },
+  { key: "message", desc: "Founder message (chat)" },
+];
+const CAT_COLORS = { tickets: "#10b981", invitations: "#818cf8", quests: "#f59e0b" };
+
+function PromptParser({ state }) {
+  const [prompt, setPrompt] = useState("");
+  const [agentId, setAgentId] = useState("");
+  const [threadId, setThreadId] = useState("");
+  const [parsed, setParsed] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [showSug, setShowSug] = useState(false);
+  const [sugFilter, setSugFilter] = useState("");
+  const taRef = useRef(null);
+
+  const agents = Object.values(state.agents || {});
+  const threads = Object.values(state.threads || {}).filter(t => t.aim !== "Chat");
+
+  // ── Autocomplete trigger ──────────────────────────────────────────────────
+  const handleChange = (e) => {
+    const val = e.target.value;
+    setPrompt(val);
+    const pos = e.target.selectionStart;
+    const before = val.slice(0, pos);
+    const lo = before.lastIndexOf("{{");
+    const lc = before.lastIndexOf("}}");
+    if (lo > lc) { setSugFilter(before.slice(lo + 2)); setShowSug(true); }
+    else { setShowSug(false); }
+  };
+
+  // ── Insert helpers ────────────────────────────────────────────────────────
+  const insertAt = (snippet) => {
+    const ta = taRef.current;
+    const pos = ta?.selectionStart ?? prompt.length;
+    const before = prompt.slice(0, pos);
+    const lo = before.lastIndexOf("{{");
+    const lc = before.lastIndexOf("}}");
+    const start = (lo > lc) ? lo : pos;
+    setPrompt(prompt.slice(0, start) + snippet + prompt.slice(pos));
+    setShowSug(false);
+    setTimeout(() => { ta?.focus(); }, 0);
+  };
+
+  const insertPlaceholder = (key) => insertAt(`{{${key}}}`);
+  const insertConditional = (key) => insertAt(
+    `{{${key} ??\n- Value if TRUE\n- Value if FALSE\n}}`
+  );
+  const insertFormatVar = (key) => {
+    const ta = taRef.current;
+    const pos = ta?.selectionStart ?? prompt.length;
+    setPrompt(p => p.slice(0, pos) + `{${key}}` + p.slice(pos));
+  };
+
+  // ── Parse ─────────────────────────────────────────────────────────────────
+  const parsePrompt = async () => {
+    if (!prompt.trim() || !agentId) return;
+    setLoading(true); setParsed(null);
+    try {
+      const r = await fetch(`${API_BASE}/debug/parse-prompt`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt, agent_id: agentId, thread_id: threadId || null }),
+      });
+      setParsed(await r.json());
+    } catch (e) { setParsed({ error: e.message }); }
+    setLoading(false);
+  };
+
+  const filtered = PARSER_PLACEHOLDERS.filter(p =>
+    p.key.toLowerCase().includes(sugFilter.toLowerCase())
+  );
+
+  const chipSt = (col) => ({
+    fontSize: 10, padding: "3px 8px", cursor: "pointer", borderRadius: 4,
+    background: col + "18", border: `1px solid ${col}55`, color: col,
+    fontFamily: "monospace", userSelect: "none",
+  });
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+
+      {/* ── Controls row ── */}
+      <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+        <div style={{ flex: "1 1 200px" }}>
+          <label style={{ fontSize: 10, color: "#6b7280", fontWeight: 700, letterSpacing: 1, display: "block", marginBottom: 5 }}>EXECUTE AS AGENT *</label>
+          <select value={agentId} onChange={e => setAgentId(e.target.value)} style={{ width: "100%" }}>
+            <option value="">— select agent —</option>
+            {agents.map(a => <option key={a.id} value={a.id}>{a.name_id} ({a.department || "no dept"}) — {a.wallet?.current}pt</option>)}
+          </select>
+        </div>
+        <div style={{ flex: "1 1 200px" }}>
+          <label style={{ fontSize: 10, color: "#6b7280", fontWeight: 700, letterSpacing: 1, display: "block", marginBottom: 5 }}>THREAD CONTEXT (optional)</label>
+          <select value={threadId} onChange={e => setThreadId(e.target.value)} style={{ width: "100%" }}>
+            <option value="">— none —</option>
+            {threads.map(t => <option key={t.id} value={t.id}>{t.id} · {t.topic.slice(0, 35)}</option>)}
+          </select>
+        </div>
+        <button className="btn btn-primary" onClick={parsePrompt}
+          disabled={loading || !agentId || !prompt.trim()}
+          style={{ minWidth: 120, height: 36, flexShrink: 0 }}>
+          {loading ? "⏳ Parsing…" : "▶ Parse Prompt"}
+        </button>
+        <button className="btn btn-soft" onClick={() => { setPrompt(""); setParsed(null); }}
+          style={{ height: 36, flexShrink: 0, fontSize: 11 }}>
+          Clear
+        </button>
+      </div>
+
+      {/* ── Placeholder helper chips ── */}
+      <div style={{ background: "#0a0b0e", border: "1px solid #1a1d24", borderRadius: 8, padding: 16 }}>
+        <div style={{ fontSize: 10, color: "#6b7280", fontWeight: 700, letterSpacing: 1, marginBottom: 10 }}>
+          DOUBLE-BRACE PLACEHOLDERS — click to insert at cursor
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
+          {PARSER_PLACEHOLDERS.map(p => (
+            <span key={p.key} style={{ display: "inline-flex", gap: 3 }}>
+              <button onClick={() => insertPlaceholder(p.key)} title={p.desc} style={chipSt(CAT_COLORS[p.cat])}>
+                {`{{${p.key}}}`}
+              </button>
+              {p.conditional && (
+                <button onClick={() => insertConditional(p.key)} title={`Insert conditional block for ${p.key}`}
+                  style={{ ...chipSt("#64748b"), fontSize: 9, padding: "3px 6px" }}>
+                  ??
+                </button>
+              )}
+            </span>
+          ))}
+        </div>
+        <div style={{ fontSize: 10, color: "#6b7280", fontWeight: 700, letterSpacing: 1, marginBottom: 8 }}>
+          SINGLE-BRACE FORMAT VARIABLES
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {PARSER_FORMAT_VARS.map(v => (
+            <button key={v.key} onClick={() => insertFormatVar(v.key)} title={v.desc}
+              style={{
+                fontSize: 10, padding: "3px 8px", cursor: "pointer", borderRadius: 4,
+                background: "#0a1f0a", border: "1px solid #166534", color: "#86efac",
+                fontFamily: "monospace", userSelect: "none"
+              }}>
+              {`{${v.key}}`}
+            </button>
+          ))}
+        </div>
+        <div style={{ marginTop: 10, fontSize: 10, color: "#374151" }}>
+          Conditional syntax: <code style={{ color: "#a5b4fc" }}>{"{{KEY ??"}</code>
+          <code style={{ color: "#86efac" }}>{" \\n- TRUE value\\n- FALSE value\\n"}</code>
+          <code style={{ color: "#a5b4fc" }}>{"}}"}  </code>
+          · Use the <strong style={{ color: "#9ca3af" }}>??</strong> button next to any boolean placeholder to insert one.
+        </div>
+      </div>
+
+      {/* ── Editor + Output split ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, alignItems: "start" }}>
+        {/* Input textarea */}
+        <div style={{ position: "relative" }}>
+          <div style={{ fontSize: 10, color: "#9ca3af", fontWeight: 700, letterSpacing: 1, marginBottom: 6 }}>
+            PROMPT INPUT — type <code style={{ color: "#a5b4fc" }}>{"{{"}</code> for autocomplete
+          </div>
+          <textarea
+            ref={taRef}
+            value={prompt}
+            onChange={handleChange}
+            onBlur={() => setTimeout(() => setShowSug(false), 150)}
+            placeholder={"Enter prompt text here…\n\nExample:\nHello {name}, you have {wallet} pts.\n{{available_tickets_exist ??\n- Tickets available: {{available_tickets}}\n- No tickets right now.\n}}"}
+            style={{
+              width: "100%", height: 340, fontFamily: "'JetBrains Mono', monospace",
+              fontSize: 12, resize: "vertical", background: "#0a0b0e",
+              border: "1px solid #1e222d", color: "#d4d8e8", padding: 12,
+              borderRadius: 8, lineHeight: 1.65, outline: "none",
+            }}
+          />
+          {/* Autocomplete dropdown */}
+          {showSug && filtered.length > 0 && (
+            <div style={{
+              position: "absolute", bottom: "calc(100% - 338px)", left: 0, width: "100%",
+              background: "#11141a", border: "1px solid #6366f1", borderRadius: 8,
+              zIndex: 200, maxHeight: 200, overflowY: "auto",
+              boxShadow: "0 8px 32px rgba(0,0,0,0.7)",
+            }}>
+              {filtered.map(p => (
+                <div key={p.key} onMouseDown={() => insertPlaceholder(p.key)}
+                  style={{
+                    padding: "8px 12px", cursor: "pointer", borderBottom: "1px solid #1a1d24",
+                    display: "flex", justifyContent: "space-between", alignItems: "center"
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = "#1e1b4b"}
+                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                  <span style={{ fontFamily: "monospace", fontSize: 12, color: CAT_COLORS[p.cat] || "#a5b4fc" }}>
+                    {`{{${p.key}}}`}
+                  </span>
+                  <span style={{ fontSize: 10, color: "#6b7280" }}>{p.desc}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Parsed output */}
+        <div>
+          <div style={{ fontSize: 10, color: "#9ca3af", fontWeight: 700, letterSpacing: 1, marginBottom: 6 }}>
+            PARSED OUTPUT {parsed?.agent && <span style={{ color: "#6366f1", fontWeight: 400 }}>— as {parsed.agent}</span>}
+            {parsed?.thread_context && <span style={{ color: "#f59e0b", fontWeight: 400 }}> · {parsed.thread_context}</span>}
+          </div>
+          <div style={{
+            height: 340, overflowY: "auto", background: "#040506",
+            border: `1px solid ${parsed?.error ? "#ef4444" : "#1a1d24"}`,
+            borderRadius: 8, padding: 12, fontFamily: "'JetBrains Mono', monospace",
+            fontSize: 12, color: "#9ca3af", lineHeight: 1.65,
+            whiteSpace: "pre-wrap", wordBreak: "break-word",
+          }}>
+            {!parsed && !loading && <span style={{ color: "#374151", fontStyle: "italic" }}>Parsed output will appear here…</span>}
+            {loading && <span style={{ color: "#6366f1" }}>Resolving placeholders…</span>}
+            {parsed?.error && <span style={{ color: "#ef4444" }}>⚠ {parsed.error}</span>}
+            {parsed?.parsed}
+          </div>
+
+          {/* Diagnostics */}
+          {parsed && !parsed.error && (
+            <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+              {parsed.placeholders_found?.length > 0 && (
+                <div style={{ fontSize: 10, color: "#6b7280" }}>
+                  <span style={{ color: "#818cf8", fontWeight: 700 }}>Placeholders resolved: </span>
+                  {parsed.placeholders_found.map(k => (
+                    <code key={k} style={{ marginRight: 4, color: "#a5b4fc", background: "#1e1b4b", padding: "1px 5px", borderRadius: 3 }}>{`{{${k}}}`}</code>
+                  ))}
+                </div>
+              )}
+              {parsed.format_vars_found?.length > 0 && (
+                <div style={{ fontSize: 10, color: "#6b7280" }}>
+                  <span style={{ color: "#86efac", fontWeight: 700 }}>Format vars: </span>
+                  {parsed.format_vars_found.map(k => (
+                    <code key={k} style={{ marginRight: 4, color: "#86efac", background: "#0a1f0a", padding: "1px 5px", borderRadius: 3 }}>{`{${k}}`}</code>
+                  ))}
+                </div>
+              )}
+              {parsed.parse_errors?.length > 0 && (
+                <div style={{ fontSize: 10, color: "#ef4444" }}>
+                  ⚠ {parsed.parse_errors.join("; ")}
+                </div>
+              )}
+              <button className="btn btn-soft"
+                onClick={() => navigator.clipboard.writeText(parsed.parsed || "")}
+                style={{ fontSize: 10, padding: "3px 10px", alignSelf: "flex-start", marginTop: 2 }}>
+                📋 Copy Parsed
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -866,7 +1153,7 @@ function Dashboard({ state }) {
 
 // ── Agents ────────────────────────────────────────────────────────────────────
 function Agents({ state, createThread, updateAgent, setView }) {
-  const [sel, setSel]   = useState(null);
+  const [sel, setSel] = useState(null);
   const [draft, setDraft] = useState({});
   const [savedField, setSavedField] = useState(null);
   const agent = sel ? state.agents[sel] : null;
@@ -1143,11 +1430,11 @@ function Threads({ state, approveThread, rejectThread, deleteThread, updateThrea
   const [sel, setSel] = useState(null);
   const [editMode, setEditMode] = useState(false);
   const [newTopic, setNewTopic] = useState("");
-  const [msg, setMsg]           = useState("");
-  const [sending, setSending]   = useState(false);
-  const msgEndRef               = useRef(null);
+  const [msg, setMsg] = useState("");
+  const [sending, setSending] = useState(false);
+  const msgEndRef = useRef(null);
 
-  const tArr   = Object.values(state.threads).reverse();
+  const tArr = Object.values(state.threads).reverse();
   const thread = sel ? state.threads[sel] : null;
 
   useEffect(() => {
@@ -1240,11 +1527,13 @@ function Threads({ state, approveThread, rejectThread, deleteThread, updateThrea
                 <div className="card-body" style={{ flex: 1, overflowY: "auto", background: "#08090c" }}>
                   {thread.messages_log?.filter(m => !m.what.startsWith("INVESTMENT")).map((m, i) => {
                     const isFounder = m.who === "FOUNDER";
-                    const isSystem  = m.who === "SYSTEM";
+                    const isSystem = m.who === "SYSTEM";
                     return (
                       <div key={i} style={{ marginBottom: 16 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4,
-                          justifyContent: isFounder ? "flex-end" : "flex-start" }}>
+                        <div style={{
+                          display: "flex", alignItems: "center", gap: 8, marginBottom: 4,
+                          justifyContent: isFounder ? "flex-end" : "flex-start"
+                        }}>
                           {!isFounder && (
                             <span style={{ fontWeight: 600, color: isSystem ? "#f59e0b" : "#818cf8", fontSize: 12 }}>
                               {isSystem ? "⚙ SYSTEM" : (state.agents[m.who]?.name_id || m.who)}
@@ -1330,8 +1619,8 @@ function Departments({ state }) {
       {Object.entries(DEPT_META).map(([id, meta]) => {
         const dept = state.departments[id];
         if (!dept) return null;
-        const allA   = dept.agents?.map(aid => state.agents[aid]).filter(Boolean) || [];
-        const ceo    = allA.find(a => a.is_ceo);
+        const allA = dept.agents?.map(aid => state.agents[aid]).filter(Boolean) || [];
+        const ceo = allA.find(a => a.is_ceo);
         const members = allA.filter(a => !a.is_ceo);
         return (
           <div key={id} className="card" style={{ borderTop: `3px solid ${meta.color}` }}>
@@ -1423,14 +1712,14 @@ function Founder({ state, addDeptPoints }) {
 
 // ── Chats ─────────────────────────────────────────────────────────────────────
 function Chats({ state, fetchState }) {
-  const [sel, setSel]       = useState(null);
-  const [msg, setMsg]       = useState("");
+  const [sel, setSel] = useState(null);
+  const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const chatThreads   = Object.values(state.threads).filter(t => t.aim === "Chat");
-  const agents        = Object.values(state.agents);
+  const chatThreads = Object.values(state.threads).filter(t => t.aim === "Chat");
+  const agents = Object.values(state.agents);
   const selectedAgent = state.agents[sel];
-  const activeThread  = chatThreads.find(t => t.owner_agent == sel);
+  const activeThread = chatThreads.find(t => t.owner_agent == sel);
 
   const sendChat = async () => {
     if (!sel || !msg.trim() || loading) return;
@@ -1556,7 +1845,7 @@ function ToolTesterModal({ tool, agents, onClose }) {
               Format: {tool.description.match(/\((.*?)\)/)?.[1] || "no arguments required"}
             </div>
           </div>
-          
+
           <button className="btn btn-primary" onClick={invoke} disabled={loading || !agentId} style={{ height: 42, width: "100%", marginTop: 8 }}>
             {loading ? "Invoking Tool..." : "Run Manual Test"}
           </button>
@@ -1581,7 +1870,7 @@ function ToolTesterModal({ tool, agents, onClose }) {
 
 // ── Tools ─────────────────────────────────────────────────────────────────────
 function Tools({ state, fetchState }) {
-  const tools  = Object.values(state.tools || {});
+  const tools = Object.values(state.tools || {});
   const agents = Object.values(state.agents || {});
   const [instr, setInstr] = useState(state.settings?.tools_instruction_prefix || "");
   const [testTool, setTestTool] = useState(null);
@@ -1601,7 +1890,7 @@ function Tools({ state, fetchState }) {
 
   const TOOL_ICONS = { modify_own_tick: "⏱️", get_time: "🕐", get_weather: "🌤️", get_news: "📰" };
   const enabledTools = tools.filter(t => t.enabled);
-  const previewText  = `${instr}\n\n${enabledTools.map(t => `- ${t.description}`).join("\n") || "No tools."}`;
+  const previewText = `${instr}\n\n${enabledTools.map(t => `- ${t.description}`).join("\n") || "No tools."}`;
 
   return (
     <div style={{ maxWidth: 1200, margin: "0 auto" }}>
@@ -1660,17 +1949,18 @@ function Tools({ state, fetchState }) {
 
 // ── Settings ──────────────────────────────────────────────────────────────────
 function Settings({ state, updateSetting }) {
-  const [ollamaModel,     setOllamaModel]     = useState("");
-  const [ollamaServer,    setOllamaServer]    = useState("");
+  const [ollamaModel, setOllamaModel] = useState("");
+  const [ollamaServer, setOllamaServer] = useState("");
   const [availableModels, setAvailableModels] = useState([]);
-  const [loadingModels,   setLoadingModels]   = useState(false);
-  const [testResult,      setTestResult]      = useState(null);
-  const [testing,         setTesting]         = useState(false);
-  const [saved,           setSaved]           = useState(false);
+  const [loadingModels, setLoadingModels] = useState(false);
+  const [testResult, setTestResult] = useState(null);
+  const [testing, setTesting] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [settingsTab, setSettingsTab] = useState("general");
 
   useEffect(() => {
     if (state.settings) {
-      if (state.settings.ollama_model  !== undefined) setOllamaModel(state.settings.ollama_model);
+      if (state.settings.ollama_model !== undefined) setOllamaModel(state.settings.ollama_model);
       if (state.settings.ollama_server !== undefined) setOllamaServer(state.settings.ollama_server);
     }
   }, [state.settings]);
@@ -1681,7 +1971,7 @@ function Settings({ state, updateSetting }) {
       const r = await fetch(`${API_BASE}/ollama-models`);
       const b = await r.json();
       if (b.status === "success") setAvailableModels(b.models);
-    } catch {}
+    } catch { }
     setLoadingModels(false);
   };
   useEffect(() => { fetchModels(); }, []);
@@ -1704,64 +1994,78 @@ function Settings({ state, updateSetting }) {
   };
 
   return (
-    <div className="card" style={{ maxWidth: 640, margin: "0 auto" }}>
-      <div className="card-header" style={{ fontSize: 14, fontWeight: 600, color: "#fff" }}>Global Settings</div>
-      <div className="card-body" style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-        <div>
-          <label style={{ display: "block", fontSize: 12, marginBottom: 6, color: "#9ca3af", fontWeight: 500 }}>Ollama Server URL</label>
-          <input value={ollamaServer} onChange={e => setOllamaServer(e.target.value)} placeholder="http://localhost:11434" style={{ width: "100%" }} />
-        </div>
-        <div>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-            <label style={{ fontSize: 12, color: "#9ca3af", fontWeight: 500 }}>Active Model</label>
-            <button className="btn btn-soft" style={{ fontSize: 11, padding: "3px 10px" }} onClick={fetchModels} disabled={loadingModels}>
-              {loadingModels ? "…" : "↻ Refresh"}
-            </button>
-          </div>
-          {availableModels.length > 0 ? (
-            <select value={ollamaModel} onChange={e => setOllamaModel(e.target.value)} style={{ width: "100%" }}>
-              {availableModels.map(m => <option key={m} value={m}>{m}</option>)}
-            </select>
-          ) : (
-            <input value={ollamaModel} onChange={e => setOllamaModel(e.target.value)} placeholder="e.g. gemma3:4b" style={{ width: "100%" }} />
-          )}
-          <div style={{ fontSize: 11, color: "#4b5563", marginTop: 6 }}>Model used for all agent reasoning loops. Default: gemma3:4b</div>
-        </div>
-        <button className="btn btn-primary" onClick={saveSettings} style={{ minWidth: 120 }}>
-          {saved ? "✓ Saved!" : "Save Settings"}
-        </button>
-
-        <div style={{ borderTop: "1px solid #1a1d24", paddingTop: 20 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
-            <div>
-              <div style={{ fontWeight: 500, color: "#e2e8f0", fontSize: 14 }}>Connection Test</div>
-              <div style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>Sends a live prompt to verify server + model. May take 20–90s on cold start.</div>
-            </div>
-            <button className="btn btn-soft" onClick={testConnection} disabled={testing} style={{ minWidth: 130, flexShrink: 0, marginLeft: 16 }}>
-              {testing ? (
-                <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span style={{ display: "inline-block", width: 10, height: 10, border: "2px solid #374151", borderTopColor: "#818cf8", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />
-                  Waiting…
-                </span>
-              ) : "▶ Test Connection"}
-            </button>
-          </div>
-          {testResult && (
-            <div style={{ padding: "12px 16px", borderRadius: 8, background: testResult.status === "success" ? "#064e3b" : "#450a0a", border: `1px solid ${testResult.status === "success" ? "#059669" : "#991b1b"}` }}>
-              <div style={{ color: testResult.status === "success" ? "#34d399" : "#fca5a5", fontWeight: 700, fontSize: 12, marginBottom: 6 }}>
-                {testResult.status === "success" ? "✓ CONNECTION OK" : "✗ FAILED"}
-              </div>
-              <div style={{ color: testResult.status === "success" ? "#a7f3d0" : "#fecaca", fontSize: 12 }}>{testResult.message}</div>
-              {testResult.llm_response && (
-                <div style={{ marginTop: 12, padding: "10px 14px", background: "#065f46", border: "1px solid #047857", borderRadius: 6, color: "#d1fae5", fontSize: 12, lineHeight: 1.6 }}>
-                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, marginBottom: 6, opacity: 0.7 }}>LLM RESPONSE</div>
-                  {testResult.llm_response}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+    <div style={{ maxWidth: 900, margin: "0 auto" }}>
+      {/* Tab bar */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 24, borderBottom: "1px solid #1a1d24", paddingBottom: 12 }}>
+        {[["general", "⚙️ General"], ["debugging", "🔬 Prompt Debugger"]].map(([id, lbl]) => (
+          <button key={id} onClick={() => setSettingsTab(id)} style={{
+            padding: "7px 18px", fontSize: 12, cursor: "pointer", borderRadius: 6, fontWeight: 600,
+            background: settingsTab === id ? "#6366f1" : "#11141a",
+            border: `1px solid ${settingsTab === id ? "#6366f1" : "#1e222d"}`,
+            color: settingsTab === id ? "#fff" : "#6b7280", transition: "all 0.15s",
+          }}>{lbl}</button>
+        ))}
       </div>
+      {settingsTab === "debugging" && <PromptParser state={state} />}
+      {settingsTab === "general" && <div className="card" style={{ maxWidth: 640 }}>
+        <div className="card-header" style={{ fontSize: 14, fontWeight: 600, color: "#fff" }}>Global Settings</div>
+        <div className="card-body" style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+          <div>
+            <label style={{ display: "block", fontSize: 12, marginBottom: 6, color: "#9ca3af", fontWeight: 500 }}>Ollama Server URL</label>
+            <input value={ollamaServer} onChange={e => setOllamaServer(e.target.value)} placeholder="http://localhost:11434" style={{ width: "100%" }} />
+          </div>
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <label style={{ fontSize: 12, color: "#9ca3af", fontWeight: 500 }}>Active Model</label>
+              <button className="btn btn-soft" style={{ fontSize: 11, padding: "3px 10px" }} onClick={fetchModels} disabled={loadingModels}>
+                {loadingModels ? "…" : "↻ Refresh"}
+              </button>
+            </div>
+            {availableModels.length > 0 ? (
+              <select value={ollamaModel} onChange={e => setOllamaModel(e.target.value)} style={{ width: "100%" }}>
+                {availableModels.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+            ) : (
+              <input value={ollamaModel} onChange={e => setOllamaModel(e.target.value)} placeholder="e.g. gemma3:4b" style={{ width: "100%" }} />
+            )}
+            <div style={{ fontSize: 11, color: "#4b5563", marginTop: 6 }}>Model used for all agent reasoning loops. Default: gemma3:4b</div>
+          </div>
+          <button className="btn btn-primary" onClick={saveSettings} style={{ minWidth: 120 }}>
+            {saved ? "✓ Saved!" : "Save Settings"}
+          </button>
+
+          <div style={{ borderTop: "1px solid #1a1d24", paddingTop: 20 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+              <div>
+                <div style={{ fontWeight: 500, color: "#e2e8f0", fontSize: 14 }}>Connection Test</div>
+                <div style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>Sends a live prompt to verify server + model. May take 20–90s on cold start.</div>
+              </div>
+              <button className="btn btn-soft" onClick={testConnection} disabled={testing} style={{ minWidth: 130, flexShrink: 0, marginLeft: 16 }}>
+                {testing ? (
+                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ display: "inline-block", width: 10, height: 10, border: "2px solid #374151", borderTopColor: "#818cf8", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />
+                    Waiting…
+                  </span>
+                ) : "▶ Test Connection"}
+              </button>
+            </div>
+            {testResult && (
+              <div style={{ padding: "12px 16px", borderRadius: 8, background: testResult.status === "success" ? "#064e3b" : "#450a0a", border: `1px solid ${testResult.status === "success" ? "#059669" : "#991b1b"}` }}>
+                <div style={{ color: testResult.status === "success" ? "#34d399" : "#fca5a5", fontWeight: 700, fontSize: 12, marginBottom: 6 }}>
+                  {testResult.status === "success" ? "✓ CONNECTION OK" : "✗ FAILED"}
+                </div>
+                <div style={{ color: testResult.status === "success" ? "#a7f3d0" : "#fecaca", fontSize: 12 }}>{testResult.message}</div>
+                {testResult.llm_response && (
+                  <div style={{ marginTop: 12, padding: "10px 14px", background: "#065f46", border: "1px solid #047857", borderRadius: 6, color: "#d1fae5", fontSize: 12, lineHeight: 1.6 }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, marginBottom: 6, opacity: 0.7 }}>LLM RESPONSE</div>
+                    {testResult.llm_response}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>}
     </div>
   );
 }

@@ -66,6 +66,7 @@ class Thread(Base):
     last_tax_check = Column(String, default=get_stamp)
     ticket_id = Column(String, nullable=True)
     ticket_value = Column(Integer, default=0)
+    summary = Column(Text, nullable=True)       # AI-generated summary, recomputed on new messages
     
     owner_department = relationship("Department", back_populates="threads")
     collaborators = relationship("ThreadCollaborator", back_populates="thread")

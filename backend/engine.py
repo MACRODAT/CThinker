@@ -238,8 +238,8 @@ class SimEngine:
 
 
             # debugging
-            print(system_prompt)
-            print(user_prompt)
+            # print(system_prompt)
+            # print(user_prompt)
 
             
             async with httpx.AsyncClient() as client:
@@ -249,12 +249,20 @@ class SimEngine:
                         "model": model,
                         "system": system_prompt,
                         "prompt": user_prompt,
-                        "stream": False
+                        "stream": False,
+                        "options": {
+                            "temperature": 0.7,   # Adjust for creativity vs. logic
+                            "num_predict": 4096,  # Ensure it doesn't cut off mid-thought
+                            "top_p": 0.9,
+                            # If the model supports specific "thinking" toggles, 
+                            # they go here, but usually, it's about the prompt.
+                        }
                     },
                     timeout=180.0
                 )
                 raw = resp.json().get("response", "")
-
+            
+            print(raw)
             # 4. Handle State [MEMORY]...[END MEMORY] and [MODE]...[END MODE]
             mem_match = re.search(r"\[MEMORY\](.*?)\s*\[END MEMORY\]", raw, re.DOTALL | re.IGNORECASE)
             if mem_match:
@@ -544,6 +552,7 @@ class SimEngine:
             if t.budget < cost: return "INSUFFICIENT_FUNDS"
             t.budget -= cost
             db.add(Message(thread_id=tid, who=agent.id, what=content, points=-cost if cost > 0 else 0))
+            asyncio.create_task(self.compute_thread_summary(tid))
             result = "POST_SUCCESS"
 
         # ── set_thread_status ──────────────────────────────────────────────────
@@ -705,16 +714,16 @@ class SimEngine:
                     result = "THREADS_LIST: No threads matching filters."
                 else:
                     for t in threads:
+                        summary_snippet = f"\n   Summary: {t.summary[:120]}" if getattr(t, "summary", None) else ""
+                        line = f"{t.id} | {t.topic} | {t.aim} | {t.budget}pt{summary_snippet}"
                         if t.owner_agent_id == agent.id:
-                            owner_lines.append(f"{t.id} | {t.topic} | {t.aim} | {t.budget}pt")
+                            owner_lines.append(line)
                         elif db.query(ThreadCollaborator).filter(ThreadCollaborator.thread_id == t.id, ThreadCollaborator.agent_id == agent.id).first() is not None:
-                            collab_lines.append(f"{t.id} | {t.topic} | {t.aim} | {t.budget}pt")
+                            collab_lines.append(line)
                         elif db.query(Agent).filter(Agent.department_id == t.owner_department_id, Agent.is_ceo == True).first().id == agent.id:
-                            ceo_lines.append(f"{t.id} | {t.topic} | {t.aim} | {t.budget}pt")
-                        # elif (ceo and ceo.id == agent.id):
-                        #     superior_lines.append(f"{t.id} | {t.topic} | {t.aim} | {t.budget}pt")
+                            ceo_lines.append(line)
                         else:
-                            need_join.append(f"{t.id} | {t.topic} | {t.aim} | {t.budget}pt")
+                            need_join.append(line)
                     if owner_lines:
                         lines.append("Threads you own:\n" + "\n".join(owner_lines))
                     if collab_lines:
@@ -788,6 +797,69 @@ class SimEngine:
         
         if expired: db.commit()
 
+    async def compute_thread_summary(self, thread_id: str):
+        """Compute and store an AI summary of the thread. Broadcasts update via WS."""
+        db: Session = SessionLocal()
+        try:
+            t = db.query(Thread).filter(Thread.id == thread_id).first()
+            if not t: return
+
+            msgs = (db.query(Message)
+                      .filter(Message.thread_id == thread_id)
+                      .order_by(Message.id.desc())
+                      .limit(40).all())
+            if not msgs: return
+
+            # Build agent name cache
+            agent_cache: dict = {}
+            def get_name(who: str) -> str:
+                if who in ("SYSTEM", "FOUNDER", "Founder"): return who
+                if who not in agent_cache:
+                    ag = db.query(Agent).filter(Agent.id == who).first()
+                    agent_cache[who] = ag.name_id if ag else who
+                return agent_cache[who]
+
+            lines = [f"[{get_name(m.who)}]: {m.what[:300]}" for m in reversed(msgs)]
+            convo = "\n".join(lines)
+
+            s_url = db.query(Setting).filter(Setting.key == "ollama_server").first()
+            s_mod = db.query(Setting).filter(Setting.key == "ollama_model").first()
+            server = (s_url.value if s_url else "http://localhost:11434").rstrip("/")
+            model  = s_mod.value if s_mod else "gemma3:4b"
+
+            system_p = (
+                "You are a thread summarizer for an AI agent simulation. "
+                "Given a conversation, produce a compact 2-3 sentence summary. "
+                "Cover: main topic, key decisions/actions, current status. "
+                "Be factual and concise. Preserve important IDs and numbers."
+            )
+            user_p = (
+                f"Thread: {t.id} | Topic: {t.topic} | AIM: {t.aim} | "
+                f"Budget: {t.budget}pt | Status: {t.status}\n\n"
+                f"Messages ({len(msgs)} shown):\n{convo}\n\nSummary:"
+            )
+
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    f"{server}/api/generate",
+                    json={"model": model, "system": system_p, "prompt": user_p, "stream": False},
+                    timeout=60.0
+                )
+                summary_text = resp.json().get("response", "").strip()
+
+            if summary_text:
+                t.summary = summary_text[:800]
+                db.commit()
+                await self.broadcast({
+                    "type": "thread_summary",
+                    "thread_id": thread_id,
+                    "summary": summary_text[:800]
+                })
+        except Exception as e:
+            print(f"Thread summary error ({thread_id}): {e}")
+        finally:
+            db.close()
+
     def get_rich_invitation_context(self, db: Session, agent: Agent):
         """Builds a formatted list of invitations with full metadata."""
         invites = db.query(JoinQuest).filter(
@@ -817,7 +889,7 @@ class SimEngine:
             .join(Thread, JoinQuest.thread_id == Thread.id)
             .filter(
                 JoinQuest.status == "PENDING",
-                JoinQuest.is_invite.is_(True),
+                JoinQuest.is_invite.is_(False),
                 Thread.owner_agent_id == agent.id,
             )
             .all()
@@ -825,13 +897,15 @@ class SimEngine:
         if not invites: return "No pending quests."
         
         lines = []
+        lines.append(f"Total Quests: {len(invites)}")
         for q in invites:
             t = db.query(Thread).filter(Thread.id == q.thread_id).first()
             if not t: continue
             lines.append(
-                f"- THREAD_ID: {t.id} | TOPIC: {t.topic}"
-                f"THREAD_BUDGET: {t.budget}pt | OFFER: {q.offer_points}pt | "
-                f"EXPIRES: {q.expires_at}"
+                f"\n- THREAD_ID: {t.id}"
+                f" | Agent_ID: {q.agent_id} | TOPIC: {t.topic}"
+                f" | Thread Budget: {t.budget}pt | OFFER: {q.offer_points}pt"
+                f" | Expires: {q.expires_at}"
             )
             q.is_read = True # Mark as read when contextualized
         return "\n".join(lines)
@@ -898,11 +972,12 @@ class SimEngine:
         # ── Simple value map ─────────────────────────────────────────────────
         simple = {
             "available_tickets":        self.get_available_tickets_context(db),
-            "pending_quests":        self.get_rich_quests_to_join_context(db),
+            "pending_quests":        self.get_rich_quests_to_join_context(db, agent),
             "pending_invitation":       self.get_rich_invitation_context(db, agent),
             "invitation_status":        last_quest.status if last_quest else "None",
             "available_tickets_exist":  "Yes" if tkt_exist  else "No",
             "pending_invitation_exist": "Yes" if inv_exist  else "No",
+            "pending_quests_exist": "Yes" if pending_quests_exist  else "No",
             "exist_invitation_status":  "Yes" if inv_status_exist else "No",
         }
 
