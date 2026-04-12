@@ -27,9 +27,10 @@ c- Finally, You MUST store memory and next mode:
     [MODE]
     NEXT MODE
     [END MODE]
-{{pending_invitation_exist ??
-d- URGENT: Approve or Decline invitations using tools approve_join or decline_join: {{pending_invitation}}
-- Start!
+
+d- Approve or Decline invitations (if any {{pending_invitation_exist}}) using tools  - approve_join or decline_join: {{pending_invitation}}
+
+e- Approve or decline quests (if any {{pending_quests_exist}}) using tools  - approve_quest or decline_quest: {{pending_quests}}
 
 ## ECONOMIC AWARENESS
 Creating Threads is expensive:

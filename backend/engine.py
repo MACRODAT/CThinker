@@ -795,7 +795,7 @@ class SimEngine:
             JoinQuest.status == "PENDING",
             JoinQuest.is_invite == True
         ).all()
-        
+     
         if not invites: return "No pending invitations."
         
         lines = []
@@ -805,6 +805,32 @@ class SimEngine:
             lines.append(
                 f"- THREAD_ID: {t.id} | TOPIC: {t.topic} | OWNER: {t.owner_agent_id} | "
                 f"AIM: {t.aim} | THREAD_BUDGET: {t.budget}pt | OFFER: {q.offer_points}pt | "
+                f"EXPIRES: {q.expires_at}"
+            )
+            q.is_read = True # Mark as read when contextualized
+        return "\n".join(lines)
+    def get_rich_quests_to_join_context(self, db: Session, agent: Agent):
+        """Builds a formatted list of quests with full metadata."""
+        
+        invites = (
+            db.query(JoinQuest)
+            .join(Thread, JoinQuest.thread_id == Thread.id)
+            .filter(
+                JoinQuest.status == "PENDING",
+                JoinQuest.is_invite.is_(True),
+                Thread.owner_agent_id == agent.id,
+            )
+            .all()
+        )
+        if not invites: return "No pending quests."
+        
+        lines = []
+        for q in invites:
+            t = db.query(Thread).filter(Thread.id == q.thread_id).first()
+            if not t: continue
+            lines.append(
+                f"- THREAD_ID: {t.id} | TOPIC: {t.topic}"
+                f"THREAD_BUDGET: {t.budget}pt | OFFER: {q.offer_points}pt | "
                 f"EXPIRES: {q.expires_at}"
             )
             q.is_read = True # Mark as read when contextualized
@@ -840,22 +866,39 @@ class SimEngine:
         """
         # ── Compute boolean context ──────────────────────────────────────────
         tkt_exist = db.query(Ticket).filter(Ticket.status == "UNUSED").count() > 0
-        inv_exist = db.query(JoinQuest).filter(
-            JoinQuest.agent_id == agent.id,
-            JoinQuest.status   == "PENDING",
-            JoinQuest.is_invite == True,
-        ).count() > 0
+        pending_quests_exist = (
+            db.query(JoinQuest)
+            .join(Thread, JoinQuest.thread_id == Thread.id)
+            .filter(
+                JoinQuest.status == "PENDING",
+                JoinQuest.is_invite.is_(True),
+                Thread.owner_agent_id == agent.id,
+            )
+            .count() > 0
+        )
+        inv_exist = (
+            db.query(JoinQuest)
+            .filter(
+                JoinQuest.agent_id == agent.id,
+                JoinQuest.status == "PENDING",
+                JoinQuest.is_invite == True
+            )
+            .count() > 0
+        )
+
         inv_status_exist = last_quest is not None
 
         bool_ctx = {
             "available_tickets_exist":  tkt_exist,
             "pending_invitation_exist": inv_exist,
+            "pending_quests_exist": pending_quests_exist,
             "exist_invitation_status":  inv_status_exist,
         }
 
         # ── Simple value map ─────────────────────────────────────────────────
         simple = {
             "available_tickets":        self.get_available_tickets_context(db),
+            "pending_quests":        self.get_rich_quests_to_join_context(db),
             "pending_invitation":       self.get_rich_invitation_context(db, agent),
             "invitation_status":        last_quest.status if last_quest else "None",
             "available_tickets_exist":  "Yes" if tkt_exist  else "No",
@@ -864,34 +907,58 @@ class SimEngine:
         }
 
         # ── 1. Resolve conditionals first ────────────────────────────────────
-        # Pattern: {{KEY ??   (optional whitespace/newlines)
-        #           - true string
-        #           - false string
-        #           }}
         def _cond_replacer(m):
-            key   = m.group(1).strip()
-            body  = m.group(2)
-            # Collect lines starting with "- "
-            option_lines = [
-                l.strip()[2:]          # strip leading "- "
-                for l in body.split("\n")
-                if l.strip().startswith("- ")
-            ]
-            true_str  = option_lines[0] if len(option_lines) > 0 else ""
-            false_str = option_lines[1] if len(option_lines) > 1 else ""
+            key  = m.group(1).strip()
+            body = m.group(2)
+            
+            # Use MULTILINE regex to split only on a hyphen that starts a line 
+            # (allowing optional leading whitespace). 
+            # This preserves multi-line strings perfectly.
+            parts = re.split(r'^\s*-\s+', body.strip(), flags=re.MULTILINE)
+            
+            # parts[0] will be empty because the string starts with the first "- "
+            # parts[1] is the true block, parts[2] is the false block (if it exists)
+            
+            # Filter out empty string from the start
+            options = [p.strip() for p in parts if p]
+            
+            true_str  = options[0] if len(options) > 0 else ""
+            false_str = options[1] if len(options) > 1 else ""
+            
             return true_str if bool_ctx.get(key, False) else false_str
 
+        # The regex: 
+        # \{\{          -> literal {{
+        # \s*(\w+)\s* -> capture the key, ignoring surrounding spaces
+        # \?\?          -> literal ??
+        # (.*?)\}\}     -> capture everything until the first }}
         text = re.sub(
-            r"\{\{(\w+)\s*\?\?(.*?)\}\}",
+            r"\{\{\s*(\w+)\s*\?\?(.*?)\}\}",
             _cond_replacer,
             text,
-            flags=re.DOTALL,
+            flags=re.DOTALL
         )
 
-        # ── 2. Simple replacements (both {{key}} and {key} after .format()) ──
-        for key, val in simple.items():
-            text = text.replace("{{" + key + "}}", val)
-            text = text.replace("{" + key + "}", val)
+        # ── 2. Simple replacements ───────────────────────────────────────────
+        # A single regex pass is vastly more efficient than a for-loop of .replace()
+        # It creates a regex like: \{\{(key1|key2|key3)\}\} | \{(key1|key2|key3)\}
+        
+        # Helper to do the dict lookup
+        def _simple_replacer(m):
+            # m.group(1) catches {{key}}, m.group(2) catches {key}
+            match_key = m.group(1) or m.group(2)
+            return str(simple.get(match_key, m.group(0)))
+
+        keys_pattern = "|".join(re.escape(k) for k in simple.keys())
+        # combined_pattern = rf"\{\{({keys_pattern})\}\}|\{({keys_pattern})\}"
+        # 1. Escape the keys first
+
+        # 2. Construct the regex using standard string concatenation 
+        # to avoid f-string escaping drama
+        combined_pattern = r"\{\{(" + keys_pattern + r")\}\}|\{(" + keys_pattern + r")\}"
+
+        # 3. Use it in re.sub
+        text = re.sub(combined_pattern, _simple_replacer, text)
 
         return text
 
