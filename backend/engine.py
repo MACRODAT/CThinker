@@ -927,17 +927,26 @@ class SimEngine:
 
     def resolve_placeholders(self, text: str, db: Session, agent, last_quest):
         """
-        Resolve ALL {{...}} placeholders in a prompt string.
+        Resolve ALL {{...}} placeholders in a prompt string from the inside out.
 
         Supports:
           • Simple:      {{available_tickets}}  {{pending_invitation}}  etc.
-          • Exist flags: {{available_tickets_exist}}  (→ "Yes" / "No")
+          • Single:      {agent}
           • Conditionals:
+              {{ condition_key
+                  True block text
+              /ELSE/
+                  False block text
+              }}
+          • Legacy Conditionals:
               {{KEY ??
               - string if TRUE
               - string if FALSE
               }}
+          • Infinite Nesting of the above.
         """
+        import re
+
         # ── Compute boolean context ──────────────────────────────────────────
         tkt_exist = db.query(Ticket).filter(Ticket.status == "UNUSED").count() > 0
         pending_quests_exist = (
@@ -965,75 +974,81 @@ class SimEngine:
         bool_ctx = {
             "available_tickets_exist":  tkt_exist,
             "pending_invitation_exist": inv_exist,
-            "pending_quests_exist": pending_quests_exist,
+            "pending_quests_exist":     pending_quests_exist,
             "exist_invitation_status":  inv_status_exist,
         }
 
         # ── Simple value map ─────────────────────────────────────────────────
         simple = {
             "available_tickets":        self.get_available_tickets_context(db),
-            "pending_quests":        self.get_rich_quests_to_join_context(db, agent),
+            "pending_quests":           self.get_rich_quests_to_join_context(db, agent),
             "pending_invitation":       self.get_rich_invitation_context(db, agent),
             "invitation_status":        last_quest.status if last_quest else "None",
             "available_tickets_exist":  "Yes" if tkt_exist  else "No",
             "pending_invitation_exist": "Yes" if inv_exist  else "No",
-            "pending_quests_exist": "Yes" if pending_quests_exist  else "No",
+            "pending_quests_exist":     "Yes" if pending_quests_exist  else "No",
             "exist_invitation_status":  "Yes" if inv_status_exist else "No",
+            "agent":                    agent.name_id,  # Added to support {agent} interpolation
         }
 
-        # ── 1. Resolve conditionals first ────────────────────────────────────
-        def _cond_replacer(m):
-            key  = m.group(1).strip()
-            body = m.group(2)
-            
-            # Use MULTILINE regex to split only on a hyphen that starts a line 
-            # (allowing optional leading whitespace). 
-            # This preserves multi-line strings perfectly.
-            parts = re.split(r'^\s*-\s+', body.strip(), flags=re.MULTILINE)
-            
-            # parts[0] will be empty because the string starts with the first "- "
-            # parts[1] is the true block, parts[2] is the false block (if it exists)
-            
-            # Filter out empty string from the start
-            options = [p.strip() for p in parts if p]
-            
-            true_str  = options[0] if len(options) > 0 else ""
-            false_str = options[1] if len(options) > 1 else ""
-            
-            return true_str if bool_ctx.get(key, False) else false_str
-
-        # The regex: 
-        # \{\{          -> literal {{
-        # \s*(\w+)\s* -> capture the key, ignoring surrounding spaces
-        # \?\?          -> literal ??
-        # (.*?)\}\}     -> capture everything until the first }}
-        text = re.sub(
-            r"\{\{\s*(\w+)\s*\?\?(.*?)\}\}",
-            _cond_replacer,
-            text,
-            flags=re.DOTALL
-        )
-
-        # ── 2. Simple replacements ───────────────────────────────────────────
-        # A single regex pass is vastly more efficient than a for-loop of .replace()
-        # It creates a regex like: \{\{(key1|key2|key3)\}\} | \{(key1|key2|key3)\}
+        # ── 1. Resolve nested {{ ... }} blocks from the inside out ───────────
+        # This regex finds the innermost brackets that do not contain other brackets.
+        pattern = r"\{\{((?:(?!\{\{|\}\}).)*)\}\}"
         
-        # Helper to do the dict lookup
-        def _simple_replacer(m):
-            # m.group(1) catches {{key}}, m.group(2) catches {key}
-            match_key = m.group(1) or m.group(2)
+        def _inner_replacer(m):
+            content = m.group(1)
+            # Match the first word (the key) and capture the rest of the block
+            match = re.match(r'^\s*([a-zA-Z0-9_]+)(.*)', content, flags=re.DOTALL)
+            if not match:
+                return m.group(0)
+                
+            key = match.group(1)
+            remainder = match.group(2)
+            
+            # Check if it's a conditional block
+            if key in bool_ctx or "/ELSE/" in remainder or "??" in remainder:
+                condition_val = bool_ctx.get(key, False) 
+                
+                # Legacy syntax: {{ KEY ?? \n - True \n - False }}
+                if "??" in remainder:
+                    body = remainder.replace("??", "", 1).strip()
+                    parts = re.split(r'^\s*-\s+', body, flags=re.MULTILINE)
+                    options = [p.strip() for p in parts if p]
+                    true_str  = options[0] if len(options) > 0 else ""
+                    false_str = options[1] if len(options) > 1 else ""
+                    return true_str if condition_val else false_str
+                    
+                # New nested syntax: {{ KEY \n True block \n /ELSE/ \n False block }}
+                else:
+                    parts = remainder.split('/ELSE/')
+                    true_str = parts[0].strip()
+                    false_str = parts[1].strip() if len(parts) > 1 else ""
+                    return true_str if condition_val else false_str
+
+            # Check if it's a simple placeholder (e.g., {{ available_tickets }})
+            elif key in simple and remainder.strip() == "":
+                return str(simple[key])
+                
+            # If unrecognized, leave the block intact
+            return m.group(0)
+
+        # Iteratively process innermost brackets until none are left
+        # (Capped at 20 iterations to prevent infinite loops from bad formatting)
+        max_iters = 20
+        for _ in range(max_iters):
+            new_text = re.sub(pattern, _inner_replacer, text, flags=re.DOTALL)
+            if new_text == text:
+                break
+            text = new_text
+
+        # ── 2. Resolve single {key} replacements ─────────────────────────────
+        def _single_replacer(m):
+            match_key = m.group(1)
             return str(simple.get(match_key, m.group(0)))
 
         keys_pattern = "|".join(re.escape(k) for k in simple.keys())
-        # combined_pattern = rf"\{\{({keys_pattern})\}\}|\{({keys_pattern})\}"
-        # 1. Escape the keys first
-
-        # 2. Construct the regex using standard string concatenation 
-        # to avoid f-string escaping drama
-        combined_pattern = r"\{\{(" + keys_pattern + r")\}\}|\{(" + keys_pattern + r")\}"
-
-        # 3. Use it in re.sub
-        text = re.sub(combined_pattern, _simple_replacer, text)
+        single_pattern = r"\{(" + keys_pattern + r")\}"
+        text = re.sub(single_pattern, _single_replacer, text)
 
         return text
 
