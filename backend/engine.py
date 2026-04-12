@@ -69,6 +69,24 @@ class SimEngine:
 
     # ── Main tick loop ────────────────────────────────────────────────────────
 
+    def get_quest_tools(self, db: Session):
+        quest_tools = db.query(AgentTool).filter(AgentTool.enabled == True).all()
+        
+        tools_block = (
+            "\n".join([f"- {t.description}" for t in quest_tools if t.id in ["approve_join", "decline_join"]])
+            if quest_tools else "No tools currently available."
+        )
+        return tools_block
+
+    def get_tools(self, db: Session):
+        enabled_tools = db.query(AgentTool).filter(AgentTool.enabled == True).all()
+        tools_block = (
+            "\n".join([f"- {t.description}" for t in enabled_tools])
+            if enabled_tools else "No tools currently available."
+        )
+        return tools_block
+        
+
     async def tick(self):
         self.counter += 1
         if self.counter >= 3600:
@@ -94,15 +112,6 @@ class SimEngine:
             if not ticking_agents:
                 return
 
-            # ── Gather tool context once per tick ───────────────────────────
-            enabled_tools = db.query(AgentTool).filter(AgentTool.enabled == True).all()
-            s_prefix = db.query(Setting).filter(Setting.key == "tools_instruction_prefix").first()
-            prefix = s_prefix.value if s_prefix else "AVAILABLE TOOLS:\n"
-            tools_block = (
-                prefix + "\n" + "\n".join([f"- {t.description}" for t in enabled_tools])
-                if enabled_tools else "No tools currently available."
-            )
-
             # ── Thread Maintenance (Taxation) ───────────────────────────────
             await self.process_thread_maintenance(db)
             await self.handle_quest_expirations(db)
@@ -124,7 +133,7 @@ class SimEngine:
                 # ── Tool descriptions with context ───────────────────────────
                 active_threads = db.query(Thread).filter(Thread.status == "ACTIVE").all()
                 t_context = "\n".join([f"ID: {t.id} | Topic: {t.topic} | Budget: {t.budget}pt" for t in active_threads]) if active_threads else "No active public threads."
-                agent_tools_prompt = f"{tools_block}\n\nACTIVE THREADS:\n{t_context}"
+                agent_tools_prompt = f"\nACTIVE THREADS:\n{t_context}"
 
                 # ── Point deduction & Execution ──────────────────────────────
                 can_tick = await self.deduct_points(db, agent, 1, "tick")
@@ -152,13 +161,19 @@ class SimEngine:
         try:
             agent = db.query(Agent).filter(Agent.id == agent_id).first()
             if not agent: return
-            
+
             # 1. Get Prompts
             p_template = db.query(PromptTemplate).filter(PromptTemplate.id == agent.mode).first()
             if not p_template:
                 p_template = db.query(PromptTemplate).first()
             if not p_template:
                 return
+
+            
+            s_prefix = db.query(Setting).filter(Setting.key == "tools_instruction_prefix").first()
+            tools_block = s_prefix.value + "\n" + tools_block if s_prefix else f"AVAILABLE TOOLS: {self.get_tools(db)}\n{tools_block}"
+            tools_block = self.resolve_placeholders(tools_block, db, agent, "")
+            print(tools_block)
 
             # 2. Context
             # Find last quest for status placeholder
@@ -208,7 +223,7 @@ class SimEngine:
 
 
             actions_str = raw
-            print(actions_str)  
+            # print(actions_str)  
 
             # CONTINUE
             
@@ -238,8 +253,8 @@ class SimEngine:
 
 
             # debugging
-            # print(system_prompt)
-            # print(user_prompt)
+            print(system_prompt)
+            print(user_prompt)
 
             
             async with httpx.AsyncClient() as client:
@@ -902,7 +917,7 @@ class SimEngine:
             t = db.query(Thread).filter(Thread.id == q.thread_id).first()
             if not t: continue
             lines.append(
-                f"\n- THREAD_ID: {t.id}"
+                f"- THREAD_ID: {t.id}"
                 f" | Agent_ID: {q.agent_id} | TOPIC: {t.topic}"
                 f" | Thread Budget: {t.budget}pt | OFFER: {q.offer_points}pt"
                 f" | Expires: {q.expires_at}"
@@ -986,6 +1001,8 @@ class SimEngine:
             "invitation_status":        last_quest.status if last_quest else "None",
             "available_tickets_exist":  "Yes" if tkt_exist  else "No",
             "pending_invitation_exist": "Yes" if inv_exist  else "No",
+            "all_enabled_tools":        self.get_tools(db),
+            "all_quest_tools":        self.get_quest_tools(db),
             "pending_quests_exist":     "Yes" if pending_quests_exist  else "No",
             "exist_invitation_status":  "Yes" if inv_status_exist else "No",
             "agent":                    agent.name_id,  # Added to support {agent} interpolation

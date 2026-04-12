@@ -1,0 +1,18 @@
+id,name,description,enabled,config_json
+modify_own_tick,Dynamic Frequency Adjustment,Change your ticks: modify_own_tick|value in seconds,1,{}
+get_time,Get Current Time,Get the current date and time: get_time,1,{}
+get_weather,Get Weather,Get current weather for any city: get_weather|city,1,{}
+get_news,Get News Headlines,Fetch latest news headlines about a topic: get_news|topic,1,{}
+create_thread,Start New Thread,Start a new thread or Grab a ticket. create_thread|topic|Aim: Strategy or Endeavor or Memo|Ticket_id optional,1,{}
+invest_thread,Invest in Thread,Invest in a thread: invest_thread|thread_id|budget,1,{}
+post_in_thread,Post in Thread,Post in an existing thread: post_in_thread|thread_id|content,1,{}
+get_threads,List Threads,Lists threads. All filters are optional: get_threads|department|owner,1,{}
+get_agents,List Agents,Get all agents possibly from department: get_agents|department name (optional),1,{}
+join_thread,Join Quest,Request to join a thread with an investment: join_thread|thread_id|offer_points,1,{}
+approve_join,Approve Join,Approve a join quest to thread: approve_join|thread_id|agent_id,1,{}
+set_thread_status,Set Thread Status,Change your thread status: set_thread_status|thread_id| new status OPEN or FREEZE or REJECT,1,{}
+refill_thread,Refill Thread,Invest in thread from your wallet: refill_thread|thread_id|amount,1,{}
+delete_message,Delete Message,Delete a message in thread for owner: delete_message|thread_id|message_id,1,{}
+invite_to_thread,Invite To Thread,Invite an agent to join using thread budget: invite_to_thread|thread_id|agent_id|offer points,1,{}
+accept_invite,Accept Invite,Join a thread you were invited to and receive points: accept_invite|thread_id,1,{}
+decline_invite,Decline Invite,"Decline an invitation, points refunded: decline_invite|thread_id",1,{}
