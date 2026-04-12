@@ -385,6 +385,20 @@ export default function App() {
   }, [fetchState]);
   const approveThread = useCallback(async (tid) => { await fetch(`${API_BASE}/threads/${tid}/approve`, { method: "POST" }); fetchState(); }, [fetchState]);
   const rejectThread  = useCallback(async (tid) => { await fetch(`${API_BASE}/threads/${tid}/reject`,  { method: "POST" }); fetchState(); }, [fetchState]);
+  const deleteThread  = useCallback(async (tid) => {
+    if (window.confirm("Delete thread and all its messages?")) {
+      await fetch(`${API_BASE}/threads/${tid}`, { method: "DELETE" });
+      fetchState();
+    }
+  }, [fetchState]);
+  const updateThread  = useCallback(async (tid, payload) => {
+    await fetch(`${API_BASE}/threads/${tid}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    fetchState();
+  }, [fetchState]);
   const postMessage   = useCallback(async (tid, agentId, content) => {
     await fetch(`${API_BASE}/threads/${tid}/messages`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ who: agentId, what: content }) });
     fetchState();
@@ -494,7 +508,7 @@ export default function App() {
           {view === "agents"      && <Agents       state={state} createThread={createThread} updateAgent={updateAgent} setView={setView} />}
           {view === "departments" && <Departments  state={state} />}
           {view === "chats"       && <Chats        state={state} fetchState={fetchState} />}
-          {view === "threads"     && <Threads      state={state} approveThread={approveThread} rejectThread={rejectThread} postMessage={postMessage} />}
+          {view === "threads"     && <Threads      state={state} approveThread={approveThread} rejectThread={rejectThread} deleteThread={deleteThread} updateThread={updateThread} postMessage={postMessage} />}
           {view === "tools"       && <Tools        state={state} fetchState={fetchState} />}
           {view === "founder"     && <Founder      state={state} addDeptPoints={addDeptPoints} />}
           {view === "prompts"     && <Prompts      state={state} updatePrompt={updatePrompt} />}
@@ -825,10 +839,25 @@ function Prompts({ state, updatePrompt }) {
 }
 
 // ── Threads ───────────────────────────────────────────────────────────────────
-function Threads({ state, approveThread, rejectThread, postMessage }) {
+function Threads({ state, approveThread, rejectThread, deleteThread, updateThread, postMessage }) {
   const [sel, setSel] = useState(null);
+  const [editMode, setEditMode] = useState(false);
+  const [newTopic, setNewTopic] = useState("");
+  
   const tArr   = Object.values(state.threads).reverse();
   const thread = sel ? state.threads[sel] : null;
+
+  useEffect(() => {
+    if (thread) {
+      setNewTopic(thread.topic);
+      setEditMode(false);
+    }
+  }, [sel]);
+
+  const saveTopic = () => {
+    updateThread(sel, { topic: newTopic });
+    setEditMode(false);
+  };
 
   return (
     <div style={{ display: "flex", gap: 24, height: "100%" }}>
@@ -851,34 +880,83 @@ function Threads({ state, approveThread, rejectThread, postMessage }) {
           <>
             <div className="card">
               <div className="card-body">
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <div>
-                    <h2 style={{ margin: "0 0 8px 0", color: "#fff" }}>{thread.topic}</h2>
-                    <div style={{ fontSize: 12, color: "#9ca3af" }}>Owner: {state.agents[thread.owner_agent]?.name_id} · Dept: {thread.owner_department || "none"}</div>
-                  </div>
-                  {(thread.status === "OPEN" || thread.status === "ACTIVE") && (
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <button className="btn" style={{ background: "#064e3b", color: "#34d399" }} onClick={() => approveThread(sel)}>Approve</button>
-                      <button className="btn" style={{ background: "#7f1d1d", color: "#f87171" }} onClick={() => rejectThread(sel)}>Reject</button>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <div style={{ flex: 1 }}>
+                    {editMode ? (
+                      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                        <input value={newTopic} onChange={e => setNewTopic(e.target.value)} style={{ fontSize: 20, fontWeight: 700, width: "100%", background: "#0b0c10" }} />
+                        <button className="btn btn-primary" onClick={saveTopic}>Save</button>
+                        <button className="btn btn-soft" onClick={() => setEditMode(false)}>Cancel</button>
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                        <h2 style={{ margin: 0, color: "#fff" }}>{thread.topic}</h2>
+                        <button onClick={() => setEditMode(true)} style={{ background: "none", border: "none", color: "#6366f1", cursor: "pointer", fontSize: 16 }}>✎</button>
+                      </div>
+                    )}
+                    <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 8, display: "flex", gap: 16 }}>
+                      <span>Owner: <b style={{ color: "#e2e8f0" }}>{state.agents[thread.owner_agent]?.name_id}</b></span>
+                      <span>Dept: <b style={{ color: DEPT_META[thread.owner_department]?.color || "#fff" }}>{thread.owner_department || "none"}</b></span>
+                      <span>Aim: <b style={{ color: "#6366f1" }}>{thread.aim}</b></span>
                     </div>
-                  )}
+                  </div>
+                  <div style={{ textAlign: "right", minWidth: 120 }}>
+                    <div className="mono" style={{ fontSize: 24, fontWeight: 700, color: "#10b981" }}>{thread.point_wallet?.budget || 0} pt</div>
+                    <div style={{ fontSize: 10, color: "#6b7280", letterSpacing: 1 }}>CURRENT BUDGET</div>
+                    <div style={{ display: "flex", gap: 8, marginTop: 12, justifyContent: "flex-end" }}>
+                      {(thread.status === "OPEN" || thread.status === "ACTIVE") && (
+                        <>
+                          <button className="btn" style={{ background: "#064e3b", color: "#34d399", fontSize: 11, padding: "5px 12px" }} onClick={() => approveThread(sel)}>Approve</button>
+                          <button className="btn" style={{ background: "#7f1d1d", color: "#f87171", fontSize: 11, padding: "5px 12px" }} onClick={() => rejectThread(sel)}>Reject</button>
+                        </>
+                      )}
+                      <button className="btn" style={{ background: "#1a1d24", color: "#6b7280", fontSize: 11, padding: "5px 12px" }} onClick={() => deleteThread(sel)}>Delete</button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
-            <div className="card" style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-              <div className="card-header" style={{ fontSize: 12, fontWeight: 600, color: "#9ca3af" }}>MESSAGES</div>
-              <div className="card-body" style={{ flex: 1, overflowY: "auto", background: "#0a0b0e" }}>
-                {thread.messages_log?.map((m, i) => (
-                  <div key={i} style={{ marginBottom: 12 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                      <span style={{ fontWeight: 600, color: "#818cf8", fontSize: 12 }}>{state.agents[m.who]?.name_id || m.who}</span>
-                      <span className="mono" style={{ fontSize: 10, color: "#4b5563" }}>{hhmm(m.when)}</span>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 20, flex: 1, overflow: "hidden" }}>
+              {/* MESSAGES */}
+              <div className="card" style={{ display: "flex", flexDirection: "column" }}>
+                <div className="card-header" style={{ fontSize: 11, fontWeight: 800, color: "#6366f1", letterSpacing: 1.5 }}>DISCUSSION LOG</div>
+                <div className="card-body" style={{ flex: 1, overflowY: "auto", background: "#08090c" }}>
+                  {thread.messages_log?.filter(m => !m.what.startsWith("INVESTMENT")).map((m, i) => (
+                    <div key={i} style={{ marginBottom: 16 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                        <span style={{ fontWeight: 600, color: "#818cf8", fontSize: 12 }}>{state.agents[m.who]?.name_id || m.who}</span>
+                        <span className="mono" style={{ fontSize: 10, color: "#4b5563" }}>{hhmm(m.when)}</span>
+                      </div>
+                      <div style={{ color: "#e2e8f0", backgroundColor: "#11141a", padding: "12px 16px", borderRadius: "0 10px 10px 10px", fontSize: 13, border: "1px solid #1a1d24", lineHeight: 1.5 }}>
+                        {m.what}
+                      </div>
                     </div>
-                    <div style={{ color: "#e2e8f0", backgroundColor: "#11141a", padding: "10px 14px", borderRadius: "0 8px 8px 8px", fontSize: 13, border: "1px solid #1a1d24" }}>
-                      {m.what}
+                  ))}
+                </div>
+              </div>
+
+              {/* FINANCIAL LEDGER */}
+              <div className="card" style={{ display: "flex", flexDirection: "column" }}>
+                <div className="card-header" style={{ fontSize: 11, fontWeight: 800, color: "#10b981", letterSpacing: 1.5 }}>FINANCIAL LEDGER</div>
+                <div className="card-body" style={{ flex: 1, overflowY: "auto", background: "#0a0b0e" }}>
+                  {thread.messages_log?.filter(m => m.points !== 0).reverse().map((m, i) => (
+                    <div key={i} style={{ padding: "10px 0", borderBottom: "1px solid #161922" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: "#e2e8f0" }}>{m.what.replace("INVESTMENT: ", "")}</span>
+                        <span className="mono" style={{ fontSize: 12, fontWeight: 700, color: m.points > 0 ? "#10b981" : "#ef4444" }}>
+                          {m.points > 0 ? "+" : ""}{m.points} pt
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 10, color: "#4b5563" }}>
+                        {hhmm(m.when)} · {state.agents[m.who]?.name_id || m.who}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                  {(!thread.messages_log?.some(m => m.points !== 0)) && (
+                    <div style={{ textAlign: "center", color: "#374151", fontSize: 12, marginTop: 40 }}>No financial history</div>
+                  )}
+                </div>
               </div>
             </div>
           </>

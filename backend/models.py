@@ -62,8 +62,29 @@ class Thread(Base):
     status = Column(String, default="OPEN")
     created = Column(String, default=get_stamp)
     budget = Column(Integer, default=0)
+    total_invested = Column(Integer, default=0)
+    last_tax_check = Column(String, default=get_stamp)
     
     owner_department = relationship("Department", back_populates="threads")
+    collaborators = relationship("ThreadCollaborator", back_populates="thread")
+
+class ThreadCollaborator(Base):
+    __tablename__ = "thread_collaborators"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    thread_id = Column(String, ForeignKey("threads.id"))
+    agent_id = Column(String, ForeignKey("agents.id"))
+    joined_at = Column(String, default=get_stamp)
+    
+    thread = relationship("Thread", back_populates="collaborators")
+
+class JoinQuest(Base):
+    __tablename__ = "join_quests"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    thread_id = Column(String, ForeignKey("threads.id"))
+    agent_id = Column(String, ForeignKey("agents.id"))
+    offer_points = Column(Integer, default=0)
+    status = Column(String, default="PENDING") # PENDING, APPROVED, REJECTED
+    created = Column(String, default=get_stamp)
     
 class Message(Base):
     __tablename__ = "messages"

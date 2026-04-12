@@ -43,6 +43,12 @@ def seed_db(db: Session):
     # ── Prompt templates ──────────────────────────────────────────────────────
     if db.query(models.PromptTemplate).first() is None:
         default_user = (
+            "AGENT: {name} (ID: {id})\n"
+            "WALLET: {wallet} pts | {dept}\n"
+            "MEMORY: {memory}\n"
+            "RECENT ACTIONS:\n{actions}\n\n"
+            "{directives}\n\n"
+            "{tools}\n\n"
             "TASK: Describe 1 definitive action you take. "
             "End exactly with [MEM: note] where note is an updated memory < 150 chars. "
             "Output only the final action with the mem tag."
@@ -93,7 +99,7 @@ def seed_db(db: Session):
     ensure_setting("ollama_server", "http://localhost:11434")
     ensure_setting("ollama_model",  "gemma3:4b")
     ensure_setting("tools_instruction_prefix",
-                   "AVAILABLE TOOLS:\nNote: To use a tool, include the exact [TOOL: name(args)] tag in your response. Only use tools when necessary.")
+                   "# Using tools format\n[CALL_TOOL]\n- tool_name\n- argument 1\n- argument 2\n[END_CALL_TOOL]\n\n# AVAILABLE TOOLS")
     db.commit()
 
     # ── Agent tools ───────────────────────────────────────────────────────────
@@ -101,42 +107,47 @@ def seed_db(db: Session):
         models.AgentTool(
             id="modify_own_tick",
             name="Dynamic Frequency Adjustment",
-            description="[TOOL: modify_own_tick(value)]: Change your tick interval (seconds). Value must be unique among ALL agents. Use sparingly.",
+            description="[CALL_TOOL]\n- modify_own_tick\n- value\n[END_CALL_TOOL]",
             enabled=True),
         models.AgentTool(
             id="get_time",
             name="Get Current Time",
-            description="[TOOL: get_time()]: Get the current date and time (local + UTC).",
+            description="[CALL_TOOL]\n- get_time\n[END_CALL_TOOL]",
             enabled=True),
         models.AgentTool(
             id="get_weather",
             name="Get Weather",
-            description="[TOOL: get_weather(city)]: Get current weather for any city. Example: [TOOL: get_weather(Casablanca)]",
+            description="[CALL_TOOL]\n- get_weather\n- city\n[END_CALL_TOOL]",
             enabled=True),
         models.AgentTool(
             id="get_news",
             name="Get News Headlines",
-            description="[TOOL: get_news(topic)]: Fetch latest news headlines about a topic. Example: [TOOL: get_news(technology)]",
+            description="[CALL_TOOL]\n- get_news\n- topic\n[END_CALL_TOOL]",
             enabled=True),
         models.AgentTool(
-            id="create_thread",
-            name="Start New Thread",
-            description="[TOOL: create_thread(topic, aim)]: Start a new thread/proposal. Aim: Strategy (100 pts), Endeavor (100 pts), or Memo (25 pts).",
+            id="join_thread",
+            name="Join Quest",
+            description="[CALL_TOOL]\n- join_thread\n- thread_id\n- offer_points\n[END_CALL_TOOL]\nRequest to join a thread with a point investment.",
             enabled=True),
         models.AgentTool(
-            id="invest_thread",
-            name="Invest in Thread",
-            description="[TOOL: invest_thread(thread_id, budget)]: Move points from your wallet to a thread. budget must be positive.",
+            id="approve_join",
+            name="Approve Join",
+            description="[CALL_TOOL]\n- approve_join\n- thread_id\n- agent_id\n[END_CALL_TOOL]\nOwner only: Approve a join quest.",
             enabled=True),
         models.AgentTool(
-            id="post_in_thread",
-            name="Post in Thread",
-            description="[TOOL: post_in_thread(thread_id, content)]: Contribute to an existing thread. Costs 1 pt if you are not the owner.",
+            id="set_thread_status",
+            name="Set Thread Status",
+            description="[CALL_TOOL]\n- set_thread_status\n- thread_id\n- status\n[END_CALL_TOOL]\nOwner: OPEN (2 pts), FREEZE, REJECT.",
             enabled=True),
         models.AgentTool(
-            id="get_threads",
-            name="List Threads",
-            description="[TOOL: get_threads(status, department, owner)]: Query threads. status: open|active|frozen|approved|rejected. All filters are optional. Returns IDs, aim, topic, budget.",
+            id="refill_thread",
+            name="Refill Thread",
+            description="[CALL_TOOL]\n- refill_thread\n- thread_id\n- amount\n[END_CALL_TOOL]\nOwner: Transfer points from wallet to thread.",
+            enabled=True),
+        models.AgentTool(
+            id="delete_message",
+            name="Delete Message",
+            description="[CALL_TOOL]\n- delete_message\n- thread_id\n- message_id\n[END_CALL_TOOL]\nOwner: Delete a message.",
             enabled=True),
     ]
     for tool in tool_defs:
@@ -305,20 +316,63 @@ def create_message(thread_id: str, message: schemas.MessageCreate, db: Session =
     db.add(msg); db.commit(); db.refresh(msg)
     return msg
 
+@app.delete("/api/threads/{thread_id}")
+def delete_thread(thread_id: str, db: Session = Depends(database.get_db)):
+    t = db.query(models.Thread).filter(models.Thread.id == thread_id).first()
+    if not t: return {"error": "Thread not found"}
+    # Delete associated messages first
+    db.query(models.Message).filter(models.Message.thread_id == thread_id).delete()
+    db.delete(t)
+    db.commit()
+    return {"status": "success"}
+
+@app.put("/api/threads/{thread_id}")
+def update_thread(thread_id: str, req: schemas.ThreadUpdate, db: Session = Depends(database.get_db)):
+    t = db.query(models.Thread).filter(models.Thread.id == thread_id).first()
+    if not t: raise HTTPException(status_code=404, detail="Thread not found")
+    if req.topic is not None: t.topic = req.topic
+    if req.status is not None: t.status = req.status
+    db.commit()
+    return t
+
 @app.post("/api/threads/{thread_id}/approve")
 def approve_thread(thread_id: str, db: Session = Depends(database.get_db)):
     t = db.query(models.Thread).filter(models.Thread.id == thread_id).first()
     if not t: return {"error": "Thread not found"}
     if t.status in ["REJECTED", "FROZEN", "APPROVED"]: return {"error": "Invalid state"}
-    reward      = t.budget * 10
-    owner_share = int(reward * 0.7)
-    dept_share  = reward - owner_share
-    t.status    = "APPROVED"
-    owner = db.query(models.Agent).filter(models.Agent.id == t.owner_agent_id).first()
-    if owner: owner.wallet_current += owner_share
+    
+    # Economics: TotalAmountInvested since creation * 10
+    total_invested = t.total_invested or t.budget
+    reward = total_invested * 10
+    
+    investors_pool = int(reward * 0.7)
+    dept_pool      = reward - investors_pool
+    
+    # Proportional Split: Get all point contributions from Message log for this thread
+    msgs = db.query(models.Message).filter(models.Message.thread_id == thread_id, models.Message.points > 0).all()
+    contributions = {}
+    total_found_points = 0
+    
+    for m in msgs:
+        contributions[m.who] = contributions.get(m.who, 0) + m.points
+        total_found_points += m.points
+    
+    if total_found_points > 0:
+        for agent_id, points in contributions.items():
+            share = int((points / total_found_points) * investors_pool)
+            ag = db.query(models.Agent).filter(models.Agent.id == agent_id).first()
+            if ag: ag.wallet_current += share
+    else:
+        # Fallback to owner if no messages found
+        owner = db.query(models.Agent).filter(models.Agent.id == t.owner_agent_id).first()
+        if owner: owner.wallet_current += investors_pool
+
     if t.owner_department_id:
         dept = db.query(models.Department).filter(models.Department.id == t.owner_department_id).first()
-        if dept: dept.ledger_current += dept_share
+        if dept: dept.ledger_current += dept_pool
+        
+    t.status = "APPROVED"
+    db.add(models.Message(thread_id=thread_id, who="SYSTEM", what=f"🎉 Thread approved! Reward: {reward} pts distributed (70% to team, 30% to Dept)."))
     db.commit()
     return {"status": "success", "reward": reward}
 
@@ -326,7 +380,11 @@ def approve_thread(thread_id: str, db: Session = Depends(database.get_db)):
 def reject_thread(thread_id: str, db: Session = Depends(database.get_db)):
     t = db.query(models.Thread).filter(models.Thread.id == thread_id).first()
     if not t: return {"error": "Thread not found"}
-    t.status = "REJECTED"; t.budget = 0
+    # Rules: ANY THREAD THAT IS REJECTED LOSES ALL WALLET POINTS
+    lost = t.budget
+    t.budget = 0
+    t.status = "REJECTED"
+    db.add(models.Message(thread_id=thread_id, who="SYSTEM", what=f"🚫 Founder rejected this thread. Project budget ({lost} pts) was incinerated.", points=-lost))
     db.commit()
     return {"status": "success"}
 
@@ -493,7 +551,17 @@ async def invoke_tool(tool_id: str, req: schemas.ToolInvokeRequest, db: Session 
     if not agent: return {"error": "Agent not found"}
     
     # Simulate a tool call string for the engine
-    action_text = f"[TOOL: {tool_id}({req.args})]"
+    import io
+    import csv
+    f = io.StringIO(req.args)
+    reader = csv.reader(f, skipinitialspace=True, delimiter=',', quotechar='"')
+    try:
+        args_list = next(reader)
+    except:
+        args_list = [req.args] if req.args.strip() else []
+    
+    arg_lines = "\n".join([f"- {a.strip()}" for a in args_list])
+    action_text = f"[CALL_TOOL]\n- {tool_id}\n{arg_lines}\n[END_CALL_TOOL]"
     
     # We use handle_tools from the engine
     result = await sim_engine.handle_tools(db, agent, action_text)
