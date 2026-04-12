@@ -72,8 +72,22 @@ def run():
                 FOREIGN KEY(agent_id) REFERENCES agents(id)
             )
         ''')
-        print("Created join_quests table")
-    except Exception as e: print("join_quests table:", e)
+    except Exception as e: print("join_quests table creation:", e)
+
+    try:
+        c.execute('ALTER TABLE join_quests ADD COLUMN is_invite BOOLEAN DEFAULT 0')
+        print("Added is_invite to join_quests")
+    except Exception as e: print("is_invite:", e)
+
+    try:
+        c.execute('ALTER TABLE join_quests ADD COLUMN is_read BOOLEAN DEFAULT 0')
+        print("Added is_read to join_quests")
+    except Exception as e: print("is_read:", e)
+
+    try:
+        c.execute('ALTER TABLE join_quests ADD COLUMN expires_at TEXT')
+        print("Added expires_at to join_quests")
+    except Exception as e: print("expires_at:", e)
 
     conn.commit()
     conn.close()

@@ -84,6 +84,9 @@ class JoinQuest(Base):
     agent_id = Column(String, ForeignKey("agents.id"))
     offer_points = Column(Integer, default=0)
     status = Column(String, default="PENDING") # PENDING, APPROVED, REJECTED
+    is_invite = Column(Boolean, default=False)
+    is_read = Column(Boolean, default=False)
+    expires_at = Column(String, nullable=True)
     created = Column(String, default=get_stamp)
     
 class Message(Base):

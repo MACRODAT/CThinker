@@ -63,70 +63,98 @@ function renderMd(raw) {
 // ── Markdown Editor / Split-view component ───────────────────────────────────
 function MarkdownEditor({ value, onChange, rows = 7, placeholder = "Write markdown here…", label = null }) {
   const [mode, setMode] = useState("split"); // edit | split | preview
+  const [isFull, setIsFull] = useState(false);
 
-  const editorH = `${rows * 22}px`;
+  useEffect(() => {
+    const handleEsc = (e) => {
+      if (e.key === "Escape") setIsFull(false);
+    };
+    if (isFull) {
+      window.addEventListener("keydown", handleEsc);
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "auto";
+    }
+    return () => {
+      window.removeEventListener("keydown", handleEsc);
+      document.body.style.overflow = "auto";
+    };
+  }, [isFull]);
+
+  const editorH = isFull ? "calc(100vh - 100px)" : `${rows * 22}px`;
+
+  const toolbar = (
+    <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
+      <div style={{ display: "flex", gap: 3, marginRight: 8 }}>
+        {["edit", "split", "preview"].map(m => (
+          <button key={m} onClick={() => setMode(m)}
+            style={{
+              padding: "2px 8px", fontSize: 10, cursor: "pointer",
+              background: mode === m ? "#6366f1" : "#11141a",
+              border: `1px solid ${mode === m ? "#6366f1" : "#1e222d"}`,
+              borderRadius: 4, color: mode === m ? "#fff" : "#6b7280",
+              textTransform: "uppercase", letterSpacing: 0.5,
+            }}>
+            {m}
+          </button>
+        ))}
+      </div>
+      <button onClick={() => setIsFull(!isFull)}
+        title={isFull ? "Exit Full Screen (Esc)" : "Full Screen"}
+        style={{
+          padding: "2px 8px", fontSize: 12, cursor: "pointer",
+          background: isFull ? "#ef444422" : "#1e222d",
+          border: `1px solid ${isFull ? "#ef4444" : "#2d3748"}`,
+          borderRadius: 4, color: isFull ? "#ef4444" : "#9ca3af",
+          display: "flex", alignItems: "center", justifyContent: "center"
+        }}>
+        {isFull ? "✕ Close" : "⛶"}
+      </button>
+    </div>
+  );
+
+  const wrapperStyle = isFull ? {
+    position: "fixed", top: 0, left: 0, width: "100vw", height: "100vh",
+    background: "#070809", zIndex: 9999, padding: "20px 40px",
+    display: "flex", flexDirection: "column"
+  } : { position: "relative" };
 
   return (
-    <div>
-      {label && (
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-          <label style={{ fontSize: 12, color: "#9ca3af", fontWeight: 500 }}>{label}</label>
-          <div style={{ display: "flex", gap: 3 }}>
-            {["edit", "split", "preview"].map(m => (
-              <button key={m} onClick={() => setMode(m)}
-                style={{
-                  padding: "2px 8px", fontSize: 10, cursor: "pointer",
-                  background: mode === m ? "#6366f1" : "#11141a",
-                  border: `1px solid ${mode === m ? "#6366f1" : "#1e222d"}`,
-                  borderRadius: 4, color: mode === m ? "#fff" : "#6b7280",
-                  textTransform: "uppercase", letterSpacing: 0.5,
-                }}>
-                {m}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-      {!label && (
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 3, marginBottom: 6 }}>
-          {["edit", "split", "preview"].map(m => (
-            <button key={m} onClick={() => setMode(m)}
-              style={{
-                padding: "2px 8px", fontSize: 10, cursor: "pointer",
-                background: mode === m ? "#6366f1" : "#11141a",
-                border: `1px solid ${mode === m ? "#6366f1" : "#1e222d"}`,
-                borderRadius: 4, color: mode === m ? "#fff" : "#6b7280",
-                textTransform: "uppercase", letterSpacing: 0.5,
-              }}>
-              {m}
-            </button>
-          ))}
-        </div>
-      )}
+    <div style={wrapperStyle}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+        <label style={{ fontSize: 12, color: "#9ca3af", fontWeight: 500 }}>
+          {label || (isFull ? "Fullscreen Editor" : "")}
+        </label>
+        {toolbar}
+      </div>
+      
       <div style={{
         display: "flex", border: "1px solid #1e222d", borderRadius: 8, overflow: "hidden",
+        flex: isFull ? 1 : "initial"
       }}>
         {(mode === "edit" || mode === "split") && (
           <textarea
             value={value || ""}
             onChange={e => onChange(e.target.value)}
             placeholder={placeholder}
+            autoFocus={isFull}
             style={{
               flex: 1, border: "none", outline: "none",
               borderRight: mode === "split" ? "1px solid #1e222d" : "none",
               resize: "none", height: editorH,
               fontFamily: "'JetBrains Mono', 'Fira Mono', monospace",
-              fontSize: 12, background: "#0a0b0e",
-              padding: "12px 14px", color: "#d4d8e8", lineHeight: 1.65,
+              fontSize: isFull ? 14 : 12, background: "#0a0b0e",
+              padding: "16px", color: "#d4d8e8", lineHeight: 1.65,
             }}
           />
         )}
         {(mode === "preview" || mode === "split") && (
           <div
+            className="md-viewer"
             style={{
-              flex: 1, padding: "14px 16px", background: "#0d0f14",
+              flex: 1, padding: "16px", background: "#0d0f14",
               height: editorH, overflowY: "auto",
-              fontSize: 13, lineHeight: 1.65, color: "#9ca3af",
+              fontSize: isFull ? 15 : 13, lineHeight: 1.65, color: "#9ca3af",
             }}
             dangerouslySetInnerHTML={{ __html: renderMd(value) }}
           />
@@ -349,6 +377,7 @@ export default function App() {
   const [state, setState] = useState({ heartbeat: 0, departments: {}, agents: {}, threads: {}, prompts: {}, settings: {}, tools: {} });
   const [feed, setFeed]   = useState([]);
   const [logs, setLogs]   = useState([]);   // live log stream from WebSocket
+  const [expandedFeedId, setExpandedFeedId] = useState(null);
   const [view, setView]   = useState("dashboard");
 
   const fetchState = useCallback(async () => {
@@ -369,7 +398,7 @@ export default function App() {
         if (data.counter % 5 === 0) fetchState();
       } else if (data.type === "feed") {
         const item = data.feed_item;
-        setFeed(f => [{ id: mkId(), time: hhmm(new Date().toISOString()), agent: item.agent, dept: item.dept, msg: item.msg }, ...f].slice(0, 60));
+        setFeed(f => [{ id: mkId(), time: hhmm(new Date().toISOString()), agent: item.agent, dept: item.dept, msg: item.msg, full: item.full_msg }, ...f].slice(0, 60));
         fetchState();
       } else if (data.type === "log") {
         setLogs(l => [data.log, ...l].slice(0, 600));
@@ -524,15 +553,31 @@ export default function App() {
         </div>
         <div style={{ flex: 1, overflowY: "auto", padding: 12 }}>
           {feed.length === 0 && <div style={{ fontSize: 12, color: "#4b5563", textAlign: "center", marginTop: 40 }}>Waiting for ticks…</div>}
-          {feed.map(f => (
-            <div key={f.id} style={{ background: "#11141a", border: "1px solid #1a1d24", borderRadius: 8, padding: 10, marginBottom: 8 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                <span style={{ fontSize: 11, fontWeight: 600, color: f.dept ? DEPT_META[f.dept]?.color : "#818cf8" }}>{f.agent}</span>
-                <span className="mono" style={{ fontSize: 10, color: "#4b5563" }}>{f.time}</span>
+          {feed.map(f => {
+            const isExp = expandedFeedId === f.id;
+            return (
+              <div key={f.id} 
+                onClick={() => setExpandedFeedId(isExp ? null : f.id)}
+                style={{ 
+                  background: isExp ? "#0d0f14" : "#11141a", 
+                  border: `1px solid ${isExp ? "#6366f1" : "#1a1d24"}`, 
+                  borderRadius: 8, padding: 10, marginBottom: 8,
+                  cursor: "pointer", transition: "all 0.2s"
+                }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: f.dept ? DEPT_META[f.dept]?.color : "#818cf8" }}>{f.agent}</span>
+                  <span className="mono" style={{ fontSize: 10, color: "#4b5563" }}>{f.time}</span>
+                </div>
+                <div style={{ fontSize: 11, color: isExp ? "#d1d5db" : "#9ca3af", lineHeight: 1.5 }}>
+                  {isExp ? (
+                    <div style={{ wordBreak: "break-word" }} dangerouslySetInnerHTML={{ __html: renderMd(f.full || f.msg) }} />
+                  ) : (
+                    f.msg
+                  )}
+                </div>
               </div>
-              <div style={{ fontSize: 11, color: "#9ca3af", lineHeight: 1.5 }}>{f.msg}</div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>
@@ -586,15 +631,21 @@ function Dashboard({ state }) {
 function Agents({ state, createThread, updateAgent, setView }) {
   const [sel, setSel]   = useState(null);
   const [draft, setDraft] = useState({});
+  const [savedField, setSavedField] = useState(null);
   const agent = sel ? state.agents[sel] : null;
 
   useEffect(() => {
     if (agent) setDraft({ custom_prompt: agent.custom_prompt || "", memory: agent.memory || "" });
   }, [sel]);
 
-  const save = (field, val) => {
+  const updateDraft = (field, val) => {
     setDraft(d => ({ ...d, [field]: val }));
-    updateAgent(sel, { [field]: val });
+  };
+
+  const handleApply = (field) => {
+    updateAgent(sel, { [field]: draft[field] });
+    setSavedField(field);
+    setTimeout(() => setSavedField(null), 2000);
   };
 
   return (
@@ -651,17 +702,29 @@ function Agents({ state, createThread, updateAgent, setView }) {
                     )}
                   </div>
 
-                  <MarkdownEditor
-                    label="Personal Directives (markdown)"
-                    value={draft.custom_prompt || ""}
-                    onChange={val => save("custom_prompt", val)}
-                    rows={6}
-                    placeholder="Inject custom markdown-formatted directives for this agent…"
-                  />
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                      <label style={{ fontSize: 11, color: "#6b7280" }}>Personal Directives (markdown)</label>
+                      <button className="btn btn-soft" onClick={() => handleApply("custom_prompt")} style={{ fontSize: 10, padding: "2px 8px" }}>
+                        {savedField === "custom_prompt" ? "✓ Saved!" : "Save Directives"}
+                      </button>
+                    </div>
+                    <MarkdownEditor
+                      value={draft.custom_prompt || ""}
+                      onChange={val => updateDraft("custom_prompt", val)}
+                      rows={6}
+                      placeholder="Inject custom markdown-formatted directives for this agent…"
+                    />
+                  </div>
 
                   <div>
-                    <label style={{ display: "block", fontSize: 11, marginBottom: 6, color: "#6b7280" }}>Memory Scratchpad</label>
-                    <textarea rows={3} value={draft.memory || ""} onChange={e => save("memory", e.target.value)}
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, marginTop: 4 }}>
+                      <label style={{ fontSize: 11, color: "#6b7280" }}>Memory Scratchpad</label>
+                      <button className="btn btn-soft" onClick={() => handleApply("memory")} style={{ fontSize: 10, padding: "2px 8px" }}>
+                        {savedField === "memory" ? "✓ Saved!" : "Save Memory"}
+                      </button>
+                    </div>
+                    <textarea rows={3} value={draft.memory || ""} onChange={e => updateDraft("memory", e.target.value)}
                       placeholder="Agent short-term memory…" style={{ width: "100%", resize: "vertical" }} />
                   </div>
                 </div>
@@ -713,7 +776,7 @@ function Prompts({ state, updatePrompt }) {
       const p = state.prompts[sel];
       setEdit({ name: p.name || p.id, system_prompt: p.system_prompt || "", user_prompt_template: p.user_prompt_template || "", custom_directives: p.custom_directives || "" });
     }
-  }, [sel, state.prompts]);
+  }, [sel]);
 
   const fetchEntries = async () => {
     const r = await fetch(`${API_BASE}/prompt-entries`);
@@ -928,9 +991,8 @@ function Threads({ state, approveThread, rejectThread, deleteThread, updateThrea
                         <span style={{ fontWeight: 600, color: "#818cf8", fontSize: 12 }}>{state.agents[m.who]?.name_id || m.who}</span>
                         <span className="mono" style={{ fontSize: 10, color: "#4b5563" }}>{hhmm(m.when)}</span>
                       </div>
-                      <div style={{ color: "#e2e8f0", backgroundColor: "#11141a", padding: "12px 16px", borderRadius: "0 10px 10px 10px", fontSize: 13, border: "1px solid #1a1d24", lineHeight: 1.5 }}>
-                        {m.what}
-                      </div>
+                      <div style={{ color: "#e2e8f0", backgroundColor: "#11141a", padding: "12px 16px", borderRadius: "0 10px 10px 10px", fontSize: 13, border: "1px solid #1a1d24", lineHeight: 1.5 }}
+                         dangerouslySetInnerHTML={{ __html: renderMd(m.what) }} />
                     </div>
                   ))}
                 </div>
@@ -1127,7 +1189,7 @@ function Chats({ state, fetchState }) {
                   fontSize: 13, lineHeight: 1.5,
                 }}>
                   <div style={{ fontSize: 10, opacity: 0.6, marginBottom: 4 }}>{m.who === "FOUNDER" ? "YOU" : selectedAgent.name_id}</div>
-                  {m.what}
+                  <div dangerouslySetInnerHTML={{ __html: renderMd(m.what) }} />
                 </div>
               ))}
               {loading && (

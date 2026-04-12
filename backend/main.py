@@ -49,15 +49,25 @@ def seed_db(db: Session):
             "RECENT ACTIONS:\n{actions}\n\n"
             "{directives}\n\n"
             "{tools}\n\n"
-            "TASK: Describe 1 definitive action you take. "
-            "End exactly with [MEM: note] where note is an updated memory < 150 chars. "
-            "Output only the final action with the mem tag."
+            "TASK: Describe 1 definitive action you take. You can speak before and after tool calls.\n\n"
+            "TOOL CALLING FORMAT:\n"
+            "[CALL_TOOL]\n"
+            "- tool_name\n"
+            "- arg1\n"
+            "- arg2\n"
+            "[END_CALL_TOOL]\n\n"
+            "MANDATORY FORMAT FOR STATE UPDATES AT THE END:\n"
+            "[MEMORY]\nupdated_memory_content\n[END MEMORY]\n\n"
+            "[MODE]\nnext_mode_id\n[END MODE]"
         )
         templates = [
             models.PromptTemplate(
-                id="Creator", name="Creator",
-                system_prompt="You are a creative agent focused on brainstorming and generating novel concepts.",
-                user_prompt_template=default_user),
+            id="Creator",
+            name="Creator / Actionist",
+            system_prompt="You are a proactive agent focused on creation and project execution.",
+            user_prompt_template="# STATUS\nName: {name}\nWallet: {wallet}pt\n{dept}\n\n# INSTRUCTIONS\n{directives}\n\n# RECENT ACTIVITY\n{actions}\n\n# PENDING INVITES\n{pending_invitation}\n\n# LAST INVITE STATUS\n{invitation_status}\n\n# TOOLS\n{tools}\n\n# MEMORY\n{memory}\n\nTASK: Generate strategy or take action.",
+            custom_directives="- Identify opportunities\n- Create threads for new ideas\n- Invite collaborators to your threads.\n- Accept or Decline invitations promptly."
+        ),
             models.PromptTemplate(
                 id="Points Accounter", name="Points Accounter",
                 system_prompt="You are an analytical agent focused on resource management, efficiency and budget constraints.",
@@ -75,11 +85,37 @@ def seed_db(db: Session):
                 system_prompt="You are in a private 1-on-1 chat with the Founder. Stay professional and helpful according to your role.",
                 user_prompt_template=(
                     "THE FOUNDER SAYS: {message}\n\n"
-                    "TASK: Respond directly and stay in character. "
-                    "End with [MEM: note] if memory update is needed."
+                    "TASK: Respond directly and stay in character. You can use tools if needed.\n\n"
+                    "TOOL CALLING FORMAT:\n"
+                    "[CALL_TOOL]\n- tool_name\n- arg1\n[END_CALL_TOOL]\n\n"
+                    "MANDATORY FORMAT FOR STATE UPDATES:\n"
+                    "[MEMORY]\nupdated_memory_content\n[END MEMORY]\n\n"
+                    "[MODE]\nnext_mode_id\n[END MODE]"
                 )),
         ]
         db.add_all(templates)
+        db.commit()
+    else:
+        # Update existing templates to ensure they have the latest placeholders
+        existing = db.query(models.PromptTemplate).all()
+        for t in existing:
+            if "{name}" not in t.user_prompt_template and t.id != "Chat":
+                # Re-fetch default_user from above logic if needed, but here we can just use the latest
+                new_template = (
+                    "AGENT: {name} (ID: {id})\n"
+                    "WALLET: {wallet} pts | {dept}\n"
+                    "MEMORY: {memory}\n"
+                    "RECENT ACTIONS:\n{actions}\n\n"
+                    "{directives}\n\n"
+                    "{tools}\n\n"
+                    "TASK: Describe 1 definitive action you take. You can use tools.\n\n"
+                    "TOOL CALLING FORMAT:\n"
+                    "[CALL_TOOL]\n- tool_name\n- arg1\n[END_CALL_TOOL]\n\n"
+                    "MANDATORY FORMAT FOR STATE UPDATES:\n"
+                    "[MEMORY]\nupdated_memory_content\n[END MEMORY]\n\n"
+                    "[MODE]\nnext_mode_id\n[END MODE]"
+                )
+                t.user_prompt_template = new_template
         db.commit()
 
     # Ensure Chat template exists even on older DBs
@@ -87,7 +123,7 @@ def seed_db(db: Session):
         db.add(models.PromptTemplate(
             id="Chat", name="Direct Chat",
             system_prompt="You are in a private 1-on-1 chat with the Founder. Stay professional and helpful according to your role.",
-            user_prompt_template="THE FOUNDER SAYS: {message}\n\nTASK: Respond directly and stay in character. End with [MEM: note] if memory update is needed."))
+            user_prompt_template="THE FOUNDER SAYS: {message}\n\nTASK: Respond directly. End with [MEMORY]\ncontent\n[END MEMORY] and [MODE]\nnext_mode\n[END MODE]"))
         db.commit()
 
     # ── Settings ──────────────────────────────────────────────────────────────
@@ -148,6 +184,21 @@ def seed_db(db: Session):
             id="delete_message",
             name="Delete Message",
             description="[CALL_TOOL]\n- delete_message\n- thread_id\n- message_id\n[END_CALL_TOOL]\nOwner: Delete a message.",
+            enabled=True),
+        models.AgentTool(
+            id="invite_to_thread",
+            name="Invite To Thread",
+            description="[CALL_TOOL]\n- invite_to_thread\n- thread_id\n- agent_name\n- offer_points\n[END_CALL_TOOL]\nInvite an agent to join. Points are deducted from thread budget.",
+            enabled=True),
+        models.AgentTool(
+            id="accept_invite",
+            name="Accept Invite",
+            description="[CALL_TOOL]\n- accept_invite\n- thread_id\n[END_CALL_TOOL]\nJoin a thread you were invited to and receive points.",
+            enabled=True),
+        models.AgentTool(
+            id="decline_invite",
+            name="Decline Invite",
+            description="[CALL_TOOL]\n- decline_invite\n- thread_id\n[END_CALL_TOOL]\nDecline an invitation. Points are refunded to thread budget.",
             enabled=True),
     ]
     for tool in tool_defs:
@@ -308,10 +359,9 @@ def create_message(thread_id: str, message: schemas.MessageCreate, db: Session =
     if not agent: return {"error": "Agent not found"}
     is_owner = (t.owner_agent_id == agent.id)
     cost = 0 if is_owner else 1
-    if not is_owner and agent.wallet_current < cost:
-        return {"error": "Not enough points"}
-    if not is_owner:
-        agent.wallet_current -= cost
+    if t.budget < cost:
+        return {"error": "Insufficient thread points"}
+    t.budget -= cost
     msg = models.Message(thread_id=thread_id, who=agent.id, what=message.what, points=-cost)
     db.add(msg); db.commit(); db.refresh(msg)
     return msg
