@@ -85,9 +85,29 @@ def run():
     except Exception as e: print("is_read:", e)
 
     try:
-        c.execute('ALTER TABLE join_quests ADD COLUMN expires_at TEXT')
-        print("Added expires_at to join_quests")
-    except Exception as e: print("expires_at:", e)
+        c.execute('''
+            CREATE TABLE tickets (
+                id TEXT PRIMARY KEY,
+                name TEXT,
+                amount INTEGER,
+                status TEXT DEFAULT 'UNUSED',
+                used_by TEXT,
+                created TEXT,
+                FOREIGN KEY(used_by) REFERENCES agents(id)
+            )
+        ''')
+        print("Created tickets table")
+    except Exception as e: print("tickets table:", e)
+
+    try:
+        c.execute('ALTER TABLE threads ADD COLUMN ticket_id TEXT')
+        print("Added ticket_id to threads")
+    except Exception as e: print("ticket_id:", e)
+
+    try:
+        c.execute('ALTER TABLE threads ADD COLUMN ticket_value INTEGER DEFAULT 0')
+        print("Added ticket_value to threads")
+    except Exception as e: print("ticket_value:", e)
 
     conn.commit()
     conn.close()

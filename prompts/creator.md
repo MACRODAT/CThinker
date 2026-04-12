@@ -11,11 +11,16 @@ b- Then, decide on actions that are creative. You can:
         -- Short is better
         -- Use bullet points
         -- You may use markdown
-    - Start new:
+    - Available tickets with benefit points:
+        {{available_tickets}}
+    - Start new thread with aim:
         -- strategy drafts for long-term
         -- memos that clarify complex issues
-    {{pending_invitation}}
-    {{invitation_status}}
+    - You may:
+        -- Accept or Decline invitations:
+        {{pending_invitation}}
+        -- Your invitations:
+        {{invitation_status}}
     - Store memory for next run.
     Best to stick with your previous memory.
 c- Finally, You MUST store memory and next mode:

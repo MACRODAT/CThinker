@@ -64,6 +64,8 @@ class Thread(Base):
     budget = Column(Integer, default=0)
     total_invested = Column(Integer, default=0)
     last_tax_check = Column(String, default=get_stamp)
+    ticket_id = Column(String, nullable=True)
+    ticket_value = Column(Integer, default=0)
     
     owner_department = relationship("Department", back_populates="threads")
     collaborators = relationship("ThreadCollaborator", back_populates="thread")
@@ -97,6 +99,15 @@ class Message(Base):
     what = Column(Text)
     when = Column(String, default=get_stamp)
     points = Column(Integer, default=0)
+
+class Ticket(Base):
+    __tablename__ = "tickets"
+    id = Column(String, primary_key=True) # mnemonic like TKT-123
+    name = Column(String)
+    amount = Column(Integer)
+    status = Column(String, default="UNUSED") # UNUSED, USED
+    used_by = Column(String, ForeignKey("agents.id"), nullable=True)
+    created = Column(String, default=get_stamp)
 
 class LogAction(Base):
     __tablename__ = "log_actions"

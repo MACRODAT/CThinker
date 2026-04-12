@@ -10,7 +10,7 @@ from database import SessionLocal
 from models import (
     Department, Agent, Thread, LogAction, LogLedger,
     PromptTemplate, Setting, AgentTool, SystemLog,
-    ThreadCollaborator, JoinQuest, Message
+    ThreadCollaborator, JoinQuest, Message, Ticket
 )
 
 
@@ -156,6 +156,7 @@ class SimEngine:
             # 1. Get Prompts
             # 2. Context
             inv_context = self.get_rich_invitation_context(db, agent)
+            tkt_context = self.get_available_tickets_context(db)
             # Find last quest for status placeholder
             last_q = db.query(JoinQuest).filter(JoinQuest.agent_id == agent.id).order_by(JoinQuest.id.desc()).first()
             q_status = last_q.status if last_q else "None"
@@ -169,7 +170,7 @@ class SimEngine:
             system_prompt = p_template.system_prompt
             
             # Injection logic for placeholders
-            directives = (p_template.custom_directives or "").replace("{{pending_invitation}}", inv_context).replace("{{invitation_status}}", q_status)
+            directives = (p_template.custom_directives or "").replace("{{pending_invitation}}", inv_context).replace("{{invitation_status}}", q_status).replace("{{available_tickets}}", tkt_context)
 
             user_prompt = p_template.user_prompt_template.format(
                 name=agent.name_id,
@@ -186,6 +187,7 @@ class SimEngine:
             # If the template used {{pending_invitation}}, it became {pending_invitation} after .format()
             user_prompt = user_prompt.replace("{{pending_invitation}}", inv_context).replace("{pending_invitation}", inv_context)
             user_prompt = user_prompt.replace("{{invitation_status}}", q_status).replace("{invitation_status}", q_status)
+            user_prompt = user_prompt.replace("{{available_tickets}}", tkt_context).replace("{available_tickets}", tkt_context)
 
             # 3. Call LLM
             s_url = db.query(Setting).filter(Setting.key == "ollama_server").first()
@@ -385,18 +387,39 @@ class SimEngine:
         elif tool_name == "create_thread":
             if len(args) < 2: return "THREAD_ERROR: Missing topic/aim."
             topic, aim = args[0], args[1]
+            ticket_id = args[2].upper() if len(args) > 2 else None
+            
             cost = 100 if aim.lower() != "memo" else 25
+            ticket_points = 0
+            
+            if ticket_id:
+                ticket = db.query(Ticket).filter(Ticket.id == ticket_id, Ticket.status == "UNUSED").first()
+                if not ticket: return f"THREAD_ERROR: Ticket {ticket_id} not found or already used."
+                ticket_points = ticket.amount
+                ticket.status = "USED"
+                ticket.used_by = agent.id
+
             if agent.wallet_current < cost: return "THREAD_ERROR: Insufficient funds."
             
             tid = str(uuid.uuid4())[:8].upper()
             t = Thread(
                 id=tid, topic=topic, aim=aim, owner_agent_id=agent.id,
-                owner_department_id=agent.department_id, budget=cost, total_invested=cost, status="OPEN",
-                last_tax_check=datetime.datetime.now(datetime.timezone.utc).isoformat()
+                owner_department_id=agent.department_id, 
+                budget=cost + ticket_points, 
+                total_invested=cost + ticket_points, 
+                status="OPEN",
+                last_tax_check=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                ticket_id=ticket_id,
+                ticket_value=ticket_points
             )
             agent.wallet_current -= cost
             db.add(t)
-            db.add(Message(thread_id=tid, who=agent.id, what=f"🚀 {agent.name_id} started this thread with an initial investment of {cost} points.", points=cost))
+            
+            start_msg = f"🚀 {agent.name_id} started this thread with an initial investment of {cost} points."
+            if ticket_id:
+                start_msg += f"\n🎟️ This thread was opened with ticket {ticket_id} worth {ticket_points} points."
+            
+            db.add(Message(thread_id=tid, who=agent.id, what=start_msg, points=cost + ticket_points))
             result = f"THREAD_CREATED: {tid}"
 
         # ── invest_thread ──────────────────────────────────────────────────────
@@ -467,6 +490,8 @@ class SimEngine:
             tid, status = args[0].upper(), args[1].upper()
             t = db.query(Thread).filter(Thread.id == tid).first()
             if not t or t.owner_agent_id != agent.id: return "AUTH_ERROR"
+            
+            penalty_msg = ""
             if status == "OPEN":
                 if agent.wallet_current < 2: return "INSUFFICIENT_FUNDS"
                 agent.wallet_current -= 2
@@ -474,8 +499,16 @@ class SimEngine:
             elif status == "REJECT":
                 t.status = "REJECTED"
                 t.budget = 0
+                if t.ticket_id:
+                    penalty = t.ticket_value * 5
+                    dept = t.owner_department
+                    if dept:
+                        dept.ledger_current -= penalty
+                        db.add(LogLedger(department_id=dept.id, who=agent.id, why=f"Ticket Rejection Penalty ({t.ticket_id})", amount=-penalty))
+                        penalty_msg = f"\n⚠️ **PENALTY**: Ticket thread rejected. {penalty} points deducted from {dept.id} ledger."
             else: t.status = status
-            db.add(Message(thread_id=tid, who=agent.id, what=f"⚙️ Status updated to {status}"))
+            
+            db.add(Message(thread_id=tid, who=agent.id, what=f"⚙️ Status updated to {status}{penalty_msg}"))
             result = "STATUS_UPDATED"
 
         # ── guest_invite ──────────────────────────────────────────────────────
@@ -686,6 +719,20 @@ class SimEngine:
                 f"EXPIRES: {q.expires_at}"
             )
             q.is_read = True # Mark as read when contextualized
+        return "\n".join(lines)
+
+    def get_available_tickets_context(self, db: Session):
+        """Builds a formatted list of UNUSED tickets."""
+        tickets = db.query(Ticket).filter(Ticket.status == "UNUSED").all()
+        if not tickets: return "No tickets currently available."
+        
+        lines = []
+        for t in tickets:
+            lines.append(
+                f"-- {t.name}\n"
+                f"-- {t.amount} pts\n"
+                f"-- {t.id}"
+            )
         return "\n".join(lines)
 
 engine = SimEngine()

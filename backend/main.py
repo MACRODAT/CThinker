@@ -61,11 +61,11 @@ def seed_db(db: Session):
             "[MODE]\nnext_mode_id\n[END MODE]"
         )
         templates = [
-            models.PromptTemplate(
+        models.PromptTemplate(
             id="Creator",
             name="Creator / Actionist",
             system_prompt="You are a proactive agent focused on creation and project execution.",
-            user_prompt_template="# STATUS\nName: {name}\nWallet: {wallet}pt\n{dept}\n\n# INSTRUCTIONS\n{directives}\n\n# RECENT ACTIVITY\n{actions}\n\n# PENDING INVITES\n{pending_invitation}\n\n# LAST INVITE STATUS\n{invitation_status}\n\n# TOOLS\n{tools}\n\n# MEMORY\n{memory}\n\nTASK: Generate strategy or take action.",
+            user_prompt_template="# STATUS\nName: {name}\nWallet: {wallet}pt\n{dept}\n\n# INSTRUCTIONS\n{directives}\n\n# RECENT ACTIVITY\n{actions}\n\n# AVAILABLE TICKETS\n{{available_tickets}}\n\n# PENDING INVITES\n{{pending_invitation}}\n\n# LAST INVITE STATUS\n{{invitation_status}}\n\n# TOOLS\n{tools}\n\n# MEMORY\n{memory}\n\nTASK: Generate strategy or take action.",
             custom_directives="- Identify opportunities\n- Create threads for new ideas\n- Invite collaborators to your threads.\n- Accept or Decline invitations promptly."
         ),
             models.PromptTemplate(
@@ -140,6 +140,16 @@ def seed_db(db: Session):
 
     # ── Agent tools ───────────────────────────────────────────────────────────
     tool_defs = [
+        models.AgentTool(
+            id="create_thread",
+            name="Create Thread",
+            description="[CALL_TOOL]\n- create_thread\n- topic\n- aim (memo/strategy)\n- ticket_id (optional)\n[END_CALL_TOOL]\nStart a new thread. Costs 100/25 pts. Tickets add bonus funds.",
+            enabled=True),
+        models.AgentTool(
+            id="invest_thread",
+            name="Invest Points",
+            description="[CALL_TOOL]\n- invest_thread\n- thread_id\n- amount\n[END_CALL_TOOL]\nAdd points to a thread's budget.",
+            enabled=True),
         models.AgentTool(
             id="modify_own_tick",
             name="Dynamic Frequency Adjustment",
@@ -231,6 +241,15 @@ def seed_db(db: Session):
         db.add_all(agents)
         db.commit()
 
+    # ── Seed Tickets ──────────────────────────────────────────────────────────
+    if db.query(models.Ticket).first() is None:
+        seed_tkts = [
+            models.Ticket(id="TKT-VOX-001", name="Founder Objective: Neural Expansion", amount=250),
+            models.Ticket(id="TKT-STP-001", name="Founder Objective: Strategic Pivot", amount=150),
+        ]
+        db.add_all(seed_tkts)
+        db.commit()
+
 
 # ── WebSocket ─────────────────────────────────────────────────────────────────
 
@@ -285,7 +304,30 @@ def get_state(db: Session = Depends(database.get_db)):
 
     state_threads = {}
     for t in threads:
-        msgs = [{"when": m.when, "who": m.who, "what": m.what, "points": m.points} for m in thread_msgs if m.thread_id == t.id]
+        msgs = []
+        for m in thread_msgs:
+            if m.thread_id == t.id:
+                content = m.what
+                if "{{invitation_status}}" in content:
+                    # Find quest for the agent involved (m.who or target of the message)
+                    # For simplicity, we check the quest status for the agent mentioned or the author
+                    # Let's try to find a quest in this thread for an agent
+                    q = db.query(models.JoinQuest).filter(
+                        models.JoinQuest.thread_id == t.id,
+                        models.JoinQuest.agent_id == m.who
+                    ).order_by(models.JoinQuest.id.desc()).first()
+                    # Also check for invites TO the agent
+                    if not q:
+                         q = db.query(models.JoinQuest).filter(
+                            models.JoinQuest.thread_id == t.id,
+                            models.JoinQuest.is_invite == True
+                        ).order_by(models.JoinQuest.id.desc()).first()
+                    
+                    status_text = q.status if q else "N/A"
+                    content = content.replace("{{invitation_status}}", status_text)
+
+                msgs.append({"when": m.when, "who": m.who, "what": content, "points": m.points})
+
         state_threads[t.id] = {
             "id": t.id, "owner_department": t.owner_department_id, "owner_agent": t.owner_agent_id,
             "topic": t.topic, "aim": t.aim, "status": t.status, "created": t.created,
@@ -656,3 +698,16 @@ async def get_ollama_models(db: Session = Depends(database.get_db)):
             return {"status": "error", "models": [], "message": f"Ollama returned {resp.status_code}"}
     except Exception as e:
         return {"status": "error", "models": [], "message": str(e)}
+
+# ── Tickets API ───────────────────────────────────────────────────────────────
+
+@app.post("/api/tickets")
+async def create_ticket(data: dict, db: Session = Depends(database.get_db)):
+    t = models.Ticket(
+        id=data.get("id"),
+        name=data.get("name"),
+        amount=data.get("amount")
+    )
+    db.add(t)
+    db.commit()
+    return {"status": "success", "ticket": data.get("id")}

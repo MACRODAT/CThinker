@@ -2,9 +2,9 @@
 ## INSTRUCTION
 You can call tools as much as you need:
 - Formulate response STRICTLY in format below.
-- The tool will perform (cost: 1 point)
+- Tool is called (cost: 1 point)
 - You get a response
-- You may continue your final response
+- You may continue your final response or call a tool again
 
 ## FORMAT
 [CALL_TOOL]
