@@ -109,6 +109,16 @@ def run():
         print("Added ticket_value to threads")
     except Exception as e: print("ticket_value:", e)
 
+    try:
+        c.execute('ALTER TABLE tickets ADD COLUMN expiry_date TEXT')
+        print("Added expiry_date to tickets")
+    except Exception as e: print("expiry_date:", e)
+
+    try:
+        c.execute('ALTER TABLE join_quests ADD COLUMN expires_at TEXT')
+        print("Added expires_at to join_quests")
+    except Exception as e: print("expires_at:", e)
+
     conn.commit()
     conn.close()
     print("Migration complete.")

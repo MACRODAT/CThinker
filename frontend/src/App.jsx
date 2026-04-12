@@ -374,7 +374,7 @@ function Logger({ liveLogs, state }) {
 
 // ── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [state, setState] = useState({ heartbeat: 0, departments: {}, agents: {}, threads: {}, prompts: {}, settings: {}, tools: {} });
+  const [state, setState] = useState({ heartbeat: 0, departments: {}, agents: {}, threads: {}, prompts: {}, settings: {}, tools: {}, tickets: [] });
   const [feed, setFeed]   = useState([]);
   const [logs, setLogs]   = useState([]);   // live log stream from WebSocket
   const [expandedFeedId, setExpandedFeedId] = useState(null);
@@ -382,9 +382,13 @@ export default function App() {
 
   const fetchState = useCallback(async () => {
     try {
-      const r    = await fetch(`${API_BASE}/state`);
-      const body = await r.json();
-      setState(s => ({ ...s, ...body }));
+      const [stateRes, tktRes] = await Promise.all([
+        fetch(`${API_BASE}/state`),
+        fetch(`${API_BASE}/tickets`),
+      ]);
+      const body = await stateRes.json();
+      const tkts = await tktRes.json();
+      setState(s => ({ ...s, ...body, tickets: Array.isArray(tkts) ? tkts : [] }));
     } catch (e) { console.error("fetch state error", e); }
   }, []);
 
@@ -457,6 +461,7 @@ export default function App() {
     { id: "threads",     label: "Threads",       icon: "💬" },
     { id: "tools",       label: "Agent Tools",   icon: "🛠️" },
     { id: "founder",     label: "Economy",       icon: "👑" },
+    { id: "tickets",     label: "Tickets",       icon: "🎟️" },
     { id: "prompts",     label: "Prompt Design", icon: "✨" },
     { id: "logger",      label: "System Logger", icon: "📋" },
     { id: "settings",    label: "Settings",      icon: "⚙️" },
@@ -540,6 +545,7 @@ export default function App() {
           {view === "threads"     && <Threads      state={state} approveThread={approveThread} rejectThread={rejectThread} deleteThread={deleteThread} updateThread={updateThread} postMessage={postMessage} />}
           {view === "tools"       && <Tools        state={state} fetchState={fetchState} />}
           {view === "founder"     && <Founder      state={state} addDeptPoints={addDeptPoints} />}
+          {view === "tickets"     && <Tickets      state={state} fetchState={fetchState} />}
           {view === "prompts"     && <Prompts      state={state} updatePrompt={updatePrompt} />}
           {view === "logger"      && <Logger       liveLogs={logs} state={state} />}
           {view === "settings"    && <Settings     state={state} updateSetting={updateSetting} />}
@@ -579,6 +585,237 @@ export default function App() {
             );
           })}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Tickets ───────────────────────────────────────────────────────────────────
+function Tickets({ state, fetchState }) {
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm]         = useState({ id: "", name: "", amount: "", expiry_date: "" });
+  const [saving, setSaving]     = useState(false);
+  const [filter, setFilter]     = useState("ALL"); // ALL | AVAILABLE | USED
+  const tickets = state.tickets || [];
+
+  const genId = () => {
+    const rnd = Math.random().toString(36).slice(2, 5).toUpperCase();
+    setForm(f => ({ ...f, id: `TKT-${rnd}-${String(Date.now()).slice(-3)}` }));
+  };
+
+  const createTicket = async () => {
+    if (!form.id || !form.name || !form.amount) return;
+    setSaving(true);
+    await fetch(`${API_BASE}/tickets`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...form, amount: parseInt(form.amount) }),
+    });
+    setSaving(false);
+    setForm({ id: "", name: "", amount: "", expiry_date: "" });
+    setShowForm(false);
+    fetchState();
+  };
+
+  const deleteTicket = async (tid) => {
+    if (!window.confirm(`Delete ticket ${tid}?`)) return;
+    await fetch(`${API_BASE}/tickets/${tid}`, { method: "DELETE" });
+    fetchState();
+  };
+
+  const isExpired = (t) => t.expiry_date && new Date(t.expiry_date) < new Date();
+
+  const visible = tickets.filter(t => {
+    if (filter === "AVAILABLE") return t.status === "UNUSED" && !isExpired(t);
+    if (filter === "USED")      return t.status === "USED";
+    return true;
+  });
+
+  const unused = tickets.filter(t => t.status === "UNUSED" && !isExpired(t)).length;
+  const used   = tickets.filter(t => t.status === "USED").length;
+  const expired = tickets.filter(t => t.status === "UNUSED" && isExpired(t)).length;
+
+  const inputSt = { background: "#0b0c10", border: "1px solid #1e222d", color: "#e2e8f0",
+    borderRadius: 6, padding: "8px 12px", fontSize: 12, width: "100%", outline: "none" };
+
+  return (
+    <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+
+      {/* ── Header ── */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        <div>
+          <h2 style={{ margin: 0, color: "#fff", fontSize: 20 }}>🎟️ Founder Tickets</h2>
+          <div style={{ fontSize: 12, color: "#6b7280", marginTop: 5, display: "flex", gap: 14 }}>
+            <span style={{ color: "#10b981", fontWeight: 600 }}>{unused} available</span>
+            <span style={{ color: "#6b7280" }}>{used} used</span>
+            {expired > 0 && <span style={{ color: "#ef4444" }}>{expired} expired</span>}
+          </div>
+        </div>
+        <button className="btn btn-primary" onClick={() => setShowForm(v => !v)}>
+          {showForm ? "✕ Cancel" : "+ New Ticket"}
+        </button>
+      </div>
+
+      {/* ── Add form ── */}
+      {showForm && (
+        <div className="card" style={{ marginBottom: 24, border: "1px solid #6366f1" }}>
+          <div className="card-header" style={{ fontSize: 13, fontWeight: 700, color: "#818cf8" }}>
+            Issue New Founder Ticket
+          </div>
+          <div className="card-body" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 16 }}>
+              <div>
+                <label style={{ display: "block", fontSize: 11, color: "#6b7280", marginBottom: 5, fontWeight: 600 }}>
+                  TICKET ID *
+                </label>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <input value={form.id}
+                    onChange={e => setForm(f => ({ ...f, id: e.target.value.toUpperCase() }))}
+                    placeholder="TKT-VOX-001" style={inputSt} />
+                  <button className="btn btn-soft" style={{ fontSize: 12, padding: "0 12px", flexShrink: 0 }}
+                    onClick={genId} title="Auto-generate ID">⚡</button>
+                </div>
+                <div style={{ fontSize: 10, color: "#4b5563", marginTop: 4 }}>Unique mnemonic identifier</div>
+              </div>
+              <div>
+                <label style={{ display: "block", fontSize: 11, color: "#6b7280", marginBottom: 5, fontWeight: 600 }}>
+                  OBJECTIVE NAME *
+                </label>
+                <input value={form.name}
+                  onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                  placeholder="Founder Objective: Neural Expansion" style={inputSt} />
+              </div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+              <div>
+                <label style={{ display: "block", fontSize: 11, color: "#6b7280", marginBottom: 5, fontWeight: 600 }}>
+                  POINT VALUE *
+                </label>
+                <input type="number" min="1" value={form.amount}
+                  onChange={e => setForm(f => ({ ...f, amount: e.target.value }))}
+                  placeholder="250" style={inputSt} />
+                <div style={{ fontSize: 10, color: "#4b5563", marginTop: 4 }}>
+                  Transferred to thread wallet on use · 5× penalty on rejection
+                </div>
+              </div>
+              <div>
+                <label style={{ display: "block", fontSize: 11, color: "#6b7280", marginBottom: 5, fontWeight: 600 }}>
+                  EXPIRY DATE <span style={{ fontWeight: 400 }}>(optional)</span>
+                </label>
+                <input type="date" value={form.expiry_date}
+                  onChange={e => setForm(f => ({ ...f, expiry_date: e.target.value }))}
+                  style={inputSt} />
+              </div>
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+              <button className="btn btn-soft" onClick={() => setShowForm(false)}>Cancel</button>
+              <button className="btn btn-primary"
+                onClick={createTicket}
+                disabled={saving || !form.id || !form.name || !form.amount}
+                style={{ minWidth: 100 }}>
+                {saving ? "Issuing…" : "🎟️ Issue Ticket"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Filter bar ── */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+        {["ALL", "AVAILABLE", "USED"].map(f => (
+          <button key={f} onClick={() => setFilter(f)}
+            style={{
+              padding: "5px 14px", fontSize: 11, cursor: "pointer", borderRadius: 6, fontWeight: 600,
+              background: filter === f ? "#6366f1" : "#11141a",
+              border: `1px solid ${filter === f ? "#6366f1" : "#1e222d"}`,
+              color: filter === f ? "#fff" : "#6b7280",
+            }}>
+            {f}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Grid ── */}
+      {visible.length === 0 && (
+        <div style={{ textAlign: "center", color: "#4b5563", padding: 80, fontSize: 13 }}>
+          {tickets.length === 0
+            ? "No tickets yet — issue one with the button above."
+            : "No tickets match this filter."}
+        </div>
+      )}
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 }}>
+        {visible.map(t => {
+          const exp        = isExpired(t);
+          const isUsed     = t.status === "USED";
+          const statusCol  = isUsed ? "#6b7280" : exp ? "#ef4444" : "#10b981";
+          const statusLbl  = isUsed ? "USED" : exp ? "EXPIRED" : "AVAILABLE";
+
+          return (
+            <div key={t.id} className="card"
+              style={{ opacity: (isUsed || exp) ? 0.65 : 1, borderTop: `3px solid ${statusCol}`, transition: "opacity 0.2s" }}>
+              <div className="card-body" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+
+                {/* Name + badge */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, color: "#e2e8f0", fontSize: 14, lineHeight: 1.4,
+                      overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+                      {t.name}
+                    </div>
+                    <div className="mono" style={{ fontSize: 10, color: "#6366f1", marginTop: 3 }}>{t.id}</div>
+                  </div>
+                  <span style={{
+                    fontSize: 9, fontWeight: 800, padding: "3px 8px", borderRadius: 4, letterSpacing: 0.8,
+                    background: statusCol + "22", color: statusCol, border: `1px solid ${statusCol}55`,
+                    flexShrink: 0, whiteSpace: "nowrap",
+                  }}>{statusLbl}</span>
+                </div>
+
+                {/* Points */}
+                <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+                  <span className="mono" style={{ fontSize: 32, fontWeight: 700, color: isUsed ? "#4b5563" : "#10b981" }}>
+                    {t.amount}
+                  </span>
+                  <span style={{ fontSize: 12, color: "#6b7280" }}>pts</span>
+                  {!isUsed && !exp && (
+                    <span style={{ fontSize: 10, color: "#4b5563", marginLeft: 4 }}>
+                      · ×5 rejection penalty
+                    </span>
+                  )}
+                </div>
+
+                {/* Meta rows */}
+                <div style={{ borderTop: "1px solid #1a1d24", paddingTop: 10, display: "flex", flexDirection: "column", gap: 5 }}>
+                  {[
+                    ["Created",  t.created   ? new Date(t.created).toLocaleDateString()     : "—",      "#9ca3af"],
+                    ["Expires",  t.expiry_date ? new Date(t.expiry_date).toLocaleDateString() : "No expiry", exp ? "#ef4444" : "#9ca3af"],
+                    ...(isUsed ? [["Used by", t.used_by_name || t.used_by || "—", "#818cf8"]] : []),
+                  ].map(([label, val, col]) => (
+                    <div key={label} style={{ display: "flex", justifyContent: "space-between", fontSize: 11 }}>
+                      <span style={{ color: "#6b7280" }}>{label}</span>
+                      <span className="mono" style={{ color: col, fontWeight: isUsed && label === "Used by" ? 600 : 400 }}>{val}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Delete button for unused/unexpired */}
+                {!isUsed && (
+                  <button onClick={() => deleteTicket(t.id)}
+                    style={{
+                      padding: "6px 0", width: "100%", background: "none",
+                      border: "1px solid #1e222d", borderRadius: 6, color: "#6b7280",
+                      fontSize: 11, cursor: "pointer", transition: "all 0.15s",
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = "#ef4444"; e.currentTarget.style.color = "#ef4444"; }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = "#1e222d"; e.currentTarget.style.color = "#6b7280"; }}>
+                    🗑 Delete Ticket
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -906,7 +1143,10 @@ function Threads({ state, approveThread, rejectThread, deleteThread, updateThrea
   const [sel, setSel] = useState(null);
   const [editMode, setEditMode] = useState(false);
   const [newTopic, setNewTopic] = useState("");
-  
+  const [msg, setMsg]           = useState("");
+  const [sending, setSending]   = useState(false);
+  const msgEndRef               = useRef(null);
+
   const tArr   = Object.values(state.threads).reverse();
   const thread = sel ? state.threads[sel] : null;
 
@@ -917,9 +1157,22 @@ function Threads({ state, approveThread, rejectThread, deleteThread, updateThrea
     }
   }, [sel]);
 
+  // Auto-scroll discussion log to bottom when messages change
+  useEffect(() => {
+    msgEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [thread?.messages_log?.length]);
+
   const saveTopic = () => {
     updateThread(sel, { topic: newTopic });
     setEditMode(false);
+  };
+
+  const sendMsg = async () => {
+    if (!msg.trim() || sending) return;
+    setSending(true);
+    await postMessage(sel, "FOUNDER", msg.trim());
+    setMsg("");
+    setSending(false);
   };
 
   return (
@@ -985,16 +1238,58 @@ function Threads({ state, approveThread, rejectThread, deleteThread, updateThrea
               <div className="card" style={{ display: "flex", flexDirection: "column" }}>
                 <div className="card-header" style={{ fontSize: 11, fontWeight: 800, color: "#6366f1", letterSpacing: 1.5 }}>DISCUSSION LOG</div>
                 <div className="card-body" style={{ flex: 1, overflowY: "auto", background: "#08090c" }}>
-                  {thread.messages_log?.filter(m => !m.what.startsWith("INVESTMENT")).map((m, i) => (
-                    <div key={i} style={{ marginBottom: 16 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                        <span style={{ fontWeight: 600, color: "#818cf8", fontSize: 12 }}>{state.agents[m.who]?.name_id || m.who}</span>
-                        <span className="mono" style={{ fontSize: 10, color: "#4b5563" }}>{hhmm(m.when)}</span>
+                  {thread.messages_log?.filter(m => !m.what.startsWith("INVESTMENT")).map((m, i) => {
+                    const isFounder = m.who === "FOUNDER";
+                    const isSystem  = m.who === "SYSTEM";
+                    return (
+                      <div key={i} style={{ marginBottom: 16 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4,
+                          justifyContent: isFounder ? "flex-end" : "flex-start" }}>
+                          {!isFounder && (
+                            <span style={{ fontWeight: 600, color: isSystem ? "#f59e0b" : "#818cf8", fontSize: 12 }}>
+                              {isSystem ? "⚙ SYSTEM" : (state.agents[m.who]?.name_id || m.who)}
+                            </span>
+                          )}
+                          <span className="mono" style={{ fontSize: 10, color: "#4b5563" }}>{hhmm(m.when)}</span>
+                          {isFounder && (
+                            <span style={{ fontWeight: 700, color: "#6366f1", fontSize: 12 }}>👑 FOUNDER</span>
+                          )}
+                        </div>
+                        <div style={{
+                          color: "#e2e8f0",
+                          backgroundColor: isFounder ? "#1e1b4b" : isSystem ? "#1c1400" : "#11141a",
+                          padding: "10px 14px",
+                          borderRadius: isFounder ? "10px 2px 10px 10px" : "2px 10px 10px 10px",
+                          fontSize: 13, border: `1px solid ${isFounder ? "#3730a3" : isSystem ? "#78350f" : "#1a1d24"}`,
+                          lineHeight: 1.5,
+                          marginLeft: isFounder ? "auto" : 0,
+                          marginRight: isFounder ? 0 : "auto",
+                          maxWidth: "85%",
+                        }}
+                          dangerouslySetInnerHTML={{ __html: renderMd(m.what) }} />
                       </div>
-                      <div style={{ color: "#e2e8f0", backgroundColor: "#11141a", padding: "12px 16px", borderRadius: "0 10px 10px 10px", fontSize: 13, border: "1px solid #1a1d24", lineHeight: 1.5 }}
-                         dangerouslySetInnerHTML={{ __html: renderMd(m.what) }} />
-                    </div>
-                  ))}
+                    );
+                  })}
+                  <div ref={msgEndRef} />
+                </div>
+                {/* ── Founder compose bar ── */}
+                <div style={{ padding: "10px 14px", borderTop: "1px solid #1a1d24", display: "flex", gap: 8, background: "#0a0b0e" }}>
+                  <input
+                    placeholder="Post as Founder…"
+                    value={msg}
+                    onChange={e => setMsg(e.target.value)}
+                    onKeyDown={e => e.key === "Enter" && !e.shiftKey && sendMsg()}
+                    style={{ flex: 1, fontSize: 12, padding: "7px 12px" }}
+                    disabled={sending}
+                  />
+                  <button
+                    className="btn btn-primary"
+                    onClick={sendMsg}
+                    disabled={sending || !msg.trim()}
+                    style={{ fontSize: 12, padding: "0 16px", flexShrink: 0 }}
+                  >
+                    {sending ? "…" : "Post"}
+                  </button>
                 </div>
               </div>
 

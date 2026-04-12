@@ -154,23 +154,72 @@ class SimEngine:
             if not agent: return
             
             # 1. Get Prompts
+            p_template = db.query(PromptTemplate).filter(PromptTemplate.id == agent.mode).first()
+            if not p_template:
+                p_template = db.query(PromptTemplate).first()
+            if not p_template:
+                return
+
             # 2. Context
-            inv_context = self.get_rich_invitation_context(db, agent)
-            tkt_context = self.get_available_tickets_context(db)
             # Find last quest for status placeholder
             last_q = db.query(JoinQuest).filter(JoinQuest.agent_id == agent.id).order_by(JoinQuest.id.desc()).first()
-            q_status = last_q.status if last_q else "None"
 
             # Last actions
             actions = db.query(LogAction).filter(LogAction.agent_id == agent.id).order_by(LogAction.id.desc()).limit(5).all()
             actions_str = "\n".join([f"- {a.what} ({a.points} pts)" for a in actions]) if actions else "No recent actions."
+
+            # SUM UP RECENT AGENT ACTIONS
+            SYSTEM_PROMPT_SUMMER = """
+            You are a "Memory Summer" for an AI agent. 
+            Sum up this agent's recent actions in less than 50 words.
+            Speak as the agent using words like "I".
+            Focus on his last actions, and provide insight on what he should do next if any. Be short and on point. KEEP key information such as ID.
+
+            INPUT:
+            Recent Actions (last 5).
+
+            OUTPUT FORMAT
+            Return the summary in less than 50 words.
+            """
+
+            USER_PROMPT_SUMMER = f"""
+            {actions_str}
+            """
+
+            # 3. Call LLM
+            s_url = db.query(Setting).filter(Setting.key == "ollama_server").first()
+            s_mod = db.query(Setting).filter(Setting.key == "ollama_model").first()
+            server = s_url.value if s_url else "http://localhost:11434"
+            model  = s_mod.value if s_mod else "gemma4:e4b"
+
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    f"{server}/api/generate",
+                    json={
+                        "model": "gemma4:e4b",
+                        "system": SYSTEM_PROMPT_SUMMER,
+                        "prompt": USER_PROMPT_SUMMER,
+                        "stream": False
+                    },
+                    timeout=120.0
+                )
+                raw = resp.json().get("response", "")
+
+
+
+            actions_str = raw
+            print(actions_str)  
+
+            # CONTINUE
             
             dept_info = f"Department: {agent.department.name} (Balance: {agent.department.ledger_current} pts)" if agent.department else "No Department"
             
             system_prompt = p_template.system_prompt
             
-            # Injection logic for placeholders
-            directives = (p_template.custom_directives or "").replace("{{pending_invitation}}", inv_context).replace("{{invitation_status}}", q_status).replace("{{available_tickets}}", tkt_context)
+            # Injection logic for placeholders (pre-format pass on directives)
+            directives = self.resolve_placeholders(
+                p_template.custom_directives or "", db, agent, last_q
+            )
 
             user_prompt = p_template.user_prompt_template.format(
                 name=agent.name_id,
@@ -183,18 +232,16 @@ class SimEngine:
                 directives=directives,
                 message=""
             )
-            # Second pass for placeholders in the formatted template
-            # If the template used {{pending_invitation}}, it became {pending_invitation} after .format()
-            user_prompt = user_prompt.replace("{{pending_invitation}}", inv_context).replace("{pending_invitation}", inv_context)
-            user_prompt = user_prompt.replace("{{invitation_status}}", q_status).replace("{invitation_status}", q_status)
-            user_prompt = user_prompt.replace("{{available_tickets}}", tkt_context).replace("{available_tickets}", tkt_context)
+            # Second pass: resolve all {{...}} that survived .format()
+            user_prompt = self.resolve_placeholders(user_prompt, db, agent, last_q)
+            system_prompt = self.resolve_placeholders(system_prompt, db, agent, last_q)
 
-            # 3. Call LLM
-            s_url = db.query(Setting).filter(Setting.key == "ollama_server").first()
-            s_mod = db.query(Setting).filter(Setting.key == "ollama_model").first()
-            server = s_url.value if s_url else "http://localhost:11434"
-            model  = s_mod.value if s_mod else "gemma4:e4b"
 
+            # debugging
+            print(system_prompt)
+            print(user_prompt)
+
+            
             async with httpx.AsyncClient() as client:
                 resp = await client.post(
                     f"{server}/api/generate",
@@ -204,7 +251,7 @@ class SimEngine:
                         "prompt": user_prompt,
                         "stream": False
                     },
-                    timeout=90.0
+                    timeout=180.0
                 )
                 raw = resp.json().get("response", "")
 
@@ -623,20 +670,48 @@ class SimEngine:
         # ── get_threads ────────────────────────────────────────────────────────
         elif tool_name == "get_threads":
             try:
-                f_status = args[0].strip().upper() if len(args) > 0 and args[0].strip().lower() != "none" else None
+                # f_status = args[0].strip().upper() if len(args) > 0 and args[0].strip().lower() != "none" else None
                 f_dept   = args[1].strip().upper() if len(args) > 1 and args[1].strip() else None
                 f_owner  = args[2].strip().upper() if len(args) > 2 and args[2].strip() else None
                 
                 q = db.query(Thread)
-                if f_status: q = q.filter(Thread.status == f_status)
+                # if f_status: q = q.filter(Thread.status == f_status)
+                q = q.filter(Thread.status == "ACTIVE" or Thread.status == "OPEN")
                 if f_dept:   q = q.filter(Thread.owner_department_id == f_dept)
                 if f_owner:  q = q.filter(Thread.owner_agent_id == f_owner)
-                
+
                 threads = q.order_by(Thread.created.desc()).limit(20).all()
+                lines = []
+                owner_lines = []
+                collab_lines = []
+                superior_lines = []
+                ceo_lines = []
+                need_join = []
                 if not threads:
                     result = "THREADS_LIST: No threads matching filters."
                 else:
-                    lines = [f"{t.id} | {t.topic} | {t.aim} | {t.budget}pt | {t.status}" for t in threads]
+                    for t in threads:
+                        if t.owner_agent_id == agent.id:
+                            owner_lines.append(f"{t.id} | {t.topic} | {t.aim} | {t.budget}pt")
+                        elif db.query(ThreadCollaborator).filter(ThreadCollaborator.thread_id == t.id, ThreadCollaborator.agent_id == agent.id).first() is not None:
+                            collab_lines.append(f"{t.id} | {t.topic} | {t.aim} | {t.budget}pt")
+                        elif db.query(Agent).filter(Agent.department_id == t.owner_department_id, Agent.is_ceo == True).first().id == agent.id:
+                            ceo_lines.append(f"{t.id} | {t.topic} | {t.aim} | {t.budget}pt")
+                        # elif (ceo and ceo.id == agent.id):
+                        #     superior_lines.append(f"{t.id} | {t.topic} | {t.aim} | {t.budget}pt")
+                        else:
+                            need_join.append(f"{t.id} | {t.topic} | {t.aim} | {t.budget}pt")
+                    if owner_lines:
+                        lines.append("Threads you own:\n" + "\n".join(owner_lines))
+                    if collab_lines:
+                        lines.append("Threads you can post in as collaborator:\n" + "\n".join(collab_lines))
+                    if ceo_lines:
+                        lines.append("Threads you can post in as CEO:\n" + "\n".join(ceo_lines))
+                    if superior_lines:
+                        lines.append("Threads you can post in as superior:\n" + "\n".join(superior_lines))
+                    if need_join:
+                        lines.append("Threads you NEED to JOIN to post in:\n" + "\n".join(need_join))
+
                     result = "THREADS_LIST:\n" + "\n".join(lines)
             except Exception as e: result = f"THREADS_ERROR: {str(e)}"
 
@@ -728,11 +803,82 @@ class SimEngine:
         
         lines = []
         for t in tickets:
+            exp = f" | Expires: {t.expiry_date}" if getattr(t, "expiry_date", None) else ""
             lines.append(
                 f"-- {t.name}\n"
                 f"-- {t.amount} pts\n"
-                f"-- {t.id}"
+                f"-- {t.id}{exp}"
             )
         return "\n".join(lines)
+
+    def resolve_placeholders(self, text: str, db: Session, agent, last_quest):
+        """
+        Resolve ALL {{...}} placeholders in a prompt string.
+
+        Supports:
+          • Simple:      {{available_tickets}}  {{pending_invitation}}  etc.
+          • Exist flags: {{available_tickets_exist}}  (→ "Yes" / "No")
+          • Conditionals:
+              {{KEY ??
+              - string if TRUE
+              - string if FALSE
+              }}
+        """
+        # ── Compute boolean context ──────────────────────────────────────────
+        tkt_exist = db.query(Ticket).filter(Ticket.status == "UNUSED").count() > 0
+        inv_exist = db.query(JoinQuest).filter(
+            JoinQuest.agent_id == agent.id,
+            JoinQuest.status   == "PENDING",
+            JoinQuest.is_invite == True,
+        ).count() > 0
+        inv_status_exist = last_quest is not None
+
+        bool_ctx = {
+            "available_tickets_exist":  tkt_exist,
+            "pending_invitation_exist": inv_exist,
+            "exist_invitation_status":  inv_status_exist,
+        }
+
+        # ── Simple value map ─────────────────────────────────────────────────
+        simple = {
+            "available_tickets":        self.get_available_tickets_context(db),
+            "pending_invitation":       self.get_rich_invitation_context(db, agent),
+            "invitation_status":        last_quest.status if last_quest else "None",
+            "available_tickets_exist":  "Yes" if tkt_exist  else "No",
+            "pending_invitation_exist": "Yes" if inv_exist  else "No",
+            "exist_invitation_status":  "Yes" if inv_status_exist else "No",
+        }
+
+        # ── 1. Resolve conditionals first ────────────────────────────────────
+        # Pattern: {{KEY ??   (optional whitespace/newlines)
+        #           - true string
+        #           - false string
+        #           }}
+        def _cond_replacer(m):
+            key   = m.group(1).strip()
+            body  = m.group(2)
+            # Collect lines starting with "- "
+            option_lines = [
+                l.strip()[2:]          # strip leading "- "
+                for l in body.split("\n")
+                if l.strip().startswith("- ")
+            ]
+            true_str  = option_lines[0] if len(option_lines) > 0 else ""
+            false_str = option_lines[1] if len(option_lines) > 1 else ""
+            return true_str if bool_ctx.get(key, False) else false_str
+
+        text = re.sub(
+            r"\{\{(\w+)\s*\?\?(.*?)\}\}",
+            _cond_replacer,
+            text,
+            flags=re.DOTALL,
+        )
+
+        # ── 2. Simple replacements (both {{key}} and {key} after .format()) ──
+        for key, val in simple.items():
+            text = text.replace("{{" + key + "}}", val)
+            text = text.replace("{" + key + "}", val)
+
+        return text
 
 engine = SimEngine()

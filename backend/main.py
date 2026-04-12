@@ -396,7 +396,12 @@ def create_thread(thread: schemas.ThreadCreate, db: Session = Depends(database.g
 @app.post("/api/threads/{thread_id}/messages")
 def create_message(thread_id: str, message: schemas.MessageCreate, db: Session = Depends(database.get_db)):
     t = db.query(models.Thread).filter(models.Thread.id == thread_id).first()
+    # print("Received message: ", message)
     if not t: return {"error": "Thread not found"}
+    if message.who.upper() == "FOUNDER":
+        msg = models.Message(thread_id=thread_id, who="Founder", what=message.what, points=0)
+        db.add(msg); db.commit(); db.refresh(msg)
+        return msg
     agent = db.query(models.Agent).filter(models.Agent.id == message.who).first()
     if not agent: return {"error": "Agent not found"}
     is_owner = (t.owner_agent_id == agent.id)
@@ -701,13 +706,40 @@ async def get_ollama_models(db: Session = Depends(database.get_db)):
 
 # ── Tickets API ───────────────────────────────────────────────────────────────
 
+@app.get("/api/tickets")
+def get_tickets(db: Session = Depends(database.get_db)):
+    tickets = db.query(models.Ticket).order_by(models.Ticket.created.desc()).all()
+    result = []
+    for t in tickets:
+        agent_name = None
+        if t.used_by:
+            ag = db.query(models.Agent).filter(models.Agent.id == t.used_by).first()
+            agent_name = ag.name_id if ag else t.used_by
+        result.append({
+            "id": t.id, "name": t.name, "amount": t.amount,
+            "status": t.status, "used_by": t.used_by,
+            "used_by_name": agent_name,
+            "expiry_date": t.expiry_date, "created": t.created,
+        })
+    return result
+
 @app.post("/api/tickets")
 async def create_ticket(data: dict, db: Session = Depends(database.get_db)):
     t = models.Ticket(
         id=data.get("id"),
         name=data.get("name"),
-        amount=data.get("amount")
+        amount=data.get("amount"),
+        expiry_date=data.get("expiry_date"),
     )
     db.add(t)
     db.commit()
     return {"status": "success", "ticket": data.get("id")}
+
+@app.delete("/api/tickets/{ticket_id}")
+def delete_ticket(ticket_id: str, db: Session = Depends(database.get_db)):
+    t = db.query(models.Ticket).filter(models.Ticket.id == ticket_id).first()
+    if not t: return {"error": "Ticket not found"}
+    if t.status == "USED": return {"error": "Cannot delete a used ticket"}
+    db.delete(t)
+    db.commit()
+    return {"status": "success"}

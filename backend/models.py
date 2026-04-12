@@ -107,6 +107,7 @@ class Ticket(Base):
     amount = Column(Integer)
     status = Column(String, default="UNUSED") # UNUSED, USED
     used_by = Column(String, ForeignKey("agents.id"), nullable=True)
+    expiry_date = Column(String, nullable=True)   # ISO date string, optional
     created = Column(String, default=get_stamp)
 
 class LogAction(Base):
