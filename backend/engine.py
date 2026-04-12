@@ -512,6 +512,20 @@ class SimEngine:
             db.add(Message(thread_id=tid, who=agent.id, what=f"✅ {agent.name_id} approved {joiner_id}'s join quest.", points=quest.offer_points))
             result = "JOIN_APPROVED"
 
+        # ── decline_join ───────────────────────────────────────────────────────
+        elif tool_name == "decline_join":
+            tid, joiner_id = args[0].upper(), args[1].upper()
+            t = db.query(Thread).filter(Thread.id == tid).first()
+            if not t or t.owner_agent_id != agent.id: return "AUTH_ERROR"
+            quest = db.query(JoinQuest).filter(JoinQuest.thread_id == tid, JoinQuest.agent_id == joiner_id, JoinQuest.status=="PENDING").first()
+            if not quest: return "QUEST_NOT_FOUND"
+            quest.status = "DECLINED"
+            # points should be returned to the joiner (only half)
+            joiner = db.query(Agent).filter(Agent.id == joiner_id).first()
+            joiner.wallet_current += quest.offer_points // 2
+            db.add(Message(thread_id=tid, who=agent.id, what=f"✅ {agent.name_id} declined {joiner_id}'s join quest.", points=quest.offer_points))
+            result = "JOIN_DECLINED"
+
         # ── post_in_thread ─────────────────────────────────────────────────────
         elif tool_name == "post_in_thread":
             tid, content = args[0].upper(), args[1]
