@@ -737,20 +737,36 @@ def get_transactions(limit: int = 100, db: Session = Depends(database.get_db)):
 async def invoke_tool(tool_id: str, req: schemas.ToolInvokeRequest, db: Session = Depends(database.get_db)):
     agent = db.query(models.Agent).filter(models.Agent.id == req.agent_id).first()
     if not agent: return {"error": "Agent not found"}
-    
-    # Safely parse the CSV-style arguments provided in the API request
+
+    # Parse CSV-style args from the request body
     import io, csv
-    f = io.StringIO(req.args)
+    f = io.StringIO(req.args or "")
     reader = csv.reader(f, skipinitialspace=True, delimiter=',', quotechar='"')
     try:
         args_list = next(reader)
-    except:
-        args_list = [req.args] if req.args.strip() else []
-    
-    # Directly hit the core command router! No string-faking required.
-    result = await sim_engine._execute_inline_command(tool_id, args_list, db, agent)
-    db.commit() 
-    
+    except StopIteration:
+        args_list = []
+
+    # ── Step 1: execute the tool ──────────────────────────────────────────────
+    # Built-in tools (get_time, HTTP_GET, …) return their final value directly.
+    # Custom tools return their prompt_template with {arg_N} already substituted,
+    # but still containing {{ conditionals }}, [CALL_TOOL] blocks, {variables}, …
+    raw = await sim_engine._execute_inline_command(tool_id, args_list, db, agent)
+
+    # ── Step 2: full resolve pass ─────────────────────────────────────────────
+    # This is a no-op for already-resolved built-in results, but it fully
+    # expands conditionals, nested tool calls, and simple variables that a
+    # custom tool template may have produced in step 1.
+    last_q = (db.query(models.JoinQuest)
+                .filter(models.JoinQuest.agent_id == agent.id)
+                .order_by(models.JoinQuest.id.desc()).first())
+    try:
+        result = await sim_engine.resolve_placeholders(raw, db, agent, last_q)
+    except Exception as e:
+        result = raw  # fall back to the unresolved string if something blows up
+        result += f"\n[RESOLVE_ERROR: {e}]"
+
+    db.commit()
     return {"status": "success", "result": result}
 
 

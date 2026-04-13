@@ -1145,65 +1145,9 @@ class SimEngine:
                 return f"[FILE_NOT_FOUND:{fname}]"
         return re.sub(r'\[READ_FILE:([^\]]+)\]', _rf, arg)
     async def _execute_inline_command(self, cmd: str, args: list, db: Session, agent: Agent) -> str:
-        """Routes inline function calls (*/cmd|args/*) to the right logic."""
-        import os as _os
-        safe_dir = _os.path.join(_os.path.dirname(__file__), "tool_outputs")
-        _os.makedirs(safe_dir, exist_ok=True)
-
-        if cmd == "CREATE_FILE":
-            fname = _os.path.basename(args[0].strip()) if args else "out.txt"
-            content = args[1] if len(args) > 1 else ""
-            try:
-                with open(_os.path.join(safe_dir, fname), "w", encoding="utf-8") as f:
-                    f.write(content)
-                return f"[FILE_CREATED:{fname}]"
-            except Exception as e: return f"[FILE_ERROR:{e}]"
-
-        elif cmd == "READ_FILE":
-            fname = _os.path.basename(args[0].strip()) if args else ""
-            try:
-                with open(_os.path.join(safe_dir, fname), "r", encoding="utf-8") as f:
-                    return f.read(800)
-            except: return f"[FILE_NOT_FOUND:{fname}]"
-
-        elif cmd == "HTTP_GET":
-            url = args[0].strip() if args else ""
-            try:
-                async with httpx.AsyncClient() as client:
-                    r = await client.get(url, timeout=10.0, follow_redirects=True)
-                return f"[HTTP({r.status_code}):{r.text[:400]}]"
-            except Exception as e: return f"[HTTP_ERROR:{e}]"
-
-        elif cmd == "HTTP_POST":
-            url = args[0].strip() if len(args) > 0 else ""
-            body = args[1].strip() if len(args) > 1 else ""
-            try:
-                async with httpx.AsyncClient() as client:
-                    r = await client.post(url, content=body, timeout=10.0)
-                return f"[POST({r.status_code}):{r.text[:300]}]"
-            except Exception as e: return f"[POST_ERROR:{e}]"
-
-        # Standard Tool Routing
-        tool_obj = db.query(AgentTool).filter(AgentTool.id == cmd, AgentTool.enabled == True).first()
-        if not tool_obj:
-            return f"[UNKNOWN_FUNC:{cmd}]"
-
-        # If it's custom, we run our deterministic executor.
-        if tool_obj.is_custom:
-            return await self.execute_custom_tool(db, agent, tool_obj, args)
-        
-        # If it's a built-in standard tool:
-        # Pay the owner if a price is attached to the built-in tool override
-        if (tool_obj.price or 0) > 0:
-            owner_id = tool_obj.owner_id or "FOUNDER"
-            if owner_id != agent.id:
-                ok = await self.produce_transaction(db, agent.id, owner_id, tool_obj.price, f"inline_call:{cmd}")
-                if not ok: return f"[TOOL_NO_FUNDS:{cmd} costs {tool_obj.price}pts]"
-
-        try:
-            return await self.execute_tool_logic(db, agent, cmd, args)
-        except Exception as e:
-            return f"[TOOL_ERR:{cmd}:{e}]"
+        """Thin shim kept for backward-compat (invoke_tool API endpoint).
+        All real logic lives in run_tool_logic."""
+        return await self.run_tool_logic(db, agent, cmd, args)
 
     def _evaluate_conditional(self, inner: str, bool_ctx: dict) -> str:
         """
@@ -1325,42 +1269,103 @@ class SimEngine:
     async def _process_innermost_regex(self, text, pattern, func):
         matches = list(re.finditer(pattern, text, re.DOTALL))
         for m in reversed(matches):
-            res = await func(m.group(0)) if asyncio.iscoroutinefunction(func) else func(m.group(0))
+            # Call the function (could be a sync lambda wrapping an async method).
+            # asyncio.iscoroutinefunction() always returns False for lambdas, so
+            # we inspect the *result* with asyncio.iscoroutine() instead.
+            res = func(m.group(0))
+            if asyncio.iscoroutine(res):
+                res = await res
             text = text[:m.start()] + str(res) + text[m.end():]
         return text
 
     async def run_tool_logic(self, db, agent, cmd: str, args: list) -> str:
-        """Central hub for tool execution and payment."""
-        # Check if it's a known AgentTool in DB
-        tool_rec = db.query(AgentTool).filter(AgentTool.id == cmd).first()
-        
-        if tool_rec and (tool_rec.price or 0) > 0:
-            # Payment Logic
-            if tool_rec.owner_id and tool_rec.owner_id != agent.id:
-                success = await self.produce_transaction(
-                    db, agent.id, tool_rec.owner_id, tool_rec.price, f"Use tool: {cmd}"
-                )
-                if not success:
-                    return f"[ERROR: Insufficient funds for {cmd}]"
+        """
+        Single, authoritative hub for ALL tool execution — called from:
+          • resolve_placeholders  (via _eval_block_tool / _eval_inline_func)
+          • _execute_inline_command  (API endpoint passthrough)
 
-        # Routing
+        Return value rules
+        ──────────────────
+        • Built-in commands   → final result string, ready to inline.
+        • Custom DB tools     → execute_custom_tool() returns the substituted
+                                template; the resolve_placeholders loop will
+                                catch any nested */func/* or [CALL_TOOL] blocks
+                                on its next iteration.
+        • System DB tools     → execute_tool_logic() returns the final result.
+        """
+        import os as _os
+        safe_dir = _os.path.join(_os.path.dirname(__file__), "tool_outputs")
+        _os.makedirs(safe_dir, exist_ok=True)
+
+        # ── 1. Pure built-in file / network commands ──────────────────────────
         if cmd == "CREATE_FILE":
-            # Logic for file creation...
-            return f"File {args[0]} created."
-        elif cmd == "READ_FILE":
-            # Logic for file reading...
-            return f"Content of {args[0]}"
-        elif cmd == "get_time":
-            return datetime.datetime.now().strftime("%H:%M:%S")
-        
-        # Fallback to Custom Tool logic if it has a template
-        if tool_rec and tool_rec.prompt_template:
-            # Injects args into template then returns for another round of parsing
-            tpl = tool_rec.prompt_template
-            for i, arg in enumerate(args):
-                tpl = tpl.replace(f"{{arg_{i}}}", arg)
-            return tpl
+            fname   = _os.path.basename(args[0].strip()) if args else "out.txt"
+            content = args[1] if len(args) > 1 else ""
+            try:
+                with open(_os.path.join(safe_dir, fname), "w", encoding="utf-8") as f:
+                    f.write(content)
+                return f"[FILE_CREATED:{fname}]"
+            except Exception as e:
+                return f"[FILE_ERROR:{e}]"
 
-        return f"[Unknown Tool: {cmd}]"
+        elif cmd == "READ_FILE":
+            fname = _os.path.basename(args[0].strip()) if args else ""
+            try:
+                with open(_os.path.join(safe_dir, fname), "r", encoding="utf-8") as f:
+                    return f.read(800)
+            except Exception:
+                return f"[FILE_NOT_FOUND:{fname}]"
+
+        elif cmd == "HTTP_GET":
+            url = args[0].strip() if args else ""
+            try:
+                async with httpx.AsyncClient() as client:
+                    r = await client.get(url, timeout=10.0, follow_redirects=True)
+                return f"[HTTP({r.status_code}):{r.text[:400]}]"
+            except Exception as e:
+                return f"[HTTP_ERROR:{e}]"
+
+        elif cmd == "HTTP_POST":
+            url  = args[0].strip() if len(args) > 0 else ""
+            body = args[1].strip() if len(args) > 1 else ""
+            try:
+                async with httpx.AsyncClient() as client:
+                    r = await client.post(url, content=body, timeout=10.0)
+                return f"[POST({r.status_code}):{r.text[:300]}]"
+            except Exception as e:
+                return f"[POST_ERROR:{e}]"
+
+        # ── 2. DB-registered tools (custom or system) ──────────────────────────
+        tool_obj = db.query(AgentTool).filter(
+            AgentTool.id == cmd, AgentTool.enabled == True
+        ).first()
+
+        if tool_obj:
+            # Payment: charge the caller if this tool has a non-zero price
+            # and the owner is someone other than the calling agent.
+            if (tool_obj.price or 0) > 0:
+                owner_id = tool_obj.owner_id or "FOUNDER"
+                if owner_id != agent.id:
+                    ok = await self.produce_transaction(
+                        db, agent.id, owner_id, tool_obj.price,
+                        f"tool_use:{cmd}"
+                    )
+                    if not ok:
+                        return f"[TOOL_NO_FUNDS:{cmd} costs {tool_obj.price}pts]"
+
+            if tool_obj.is_custom:
+                # Returns the substituted template string.
+                # Any */func/* or [CALL_TOOL] blocks inside will be resolved
+                # by resolve_placeholders on the next loop iteration.
+                return await self.execute_custom_tool(db, agent, tool_obj, args)
+
+            # Built-in system tool (create_thread, get_time, invest_thread …)
+            try:
+                return await self.execute_tool_logic(db, agent, cmd, args)
+            except Exception as e:
+                return f"[TOOL_ERR:{cmd}:{e}]"
+
+        # ── 3. Unknown ─────────────────────────────────────────────────────────
+        return f"[UNKNOWN_TOOL:{cmd}]"
 
 engine = SimEngine()

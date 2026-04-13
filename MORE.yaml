@@ -1,20 +1,42 @@
 I have an app in d:\ai\Cthinker.
 I have implemented a tools workshop system which didn't go well.
-
-It's not really what I want. 
+My idea:
 I want a complete function prompt executor.
-So I've got this parser: async def resolve_placeholders(self, text: str, db: Session, agent, last_quest) -> str at line 1168 in engine.py
+So I've got this parser: 
+async def resolve_placeholders(self, text: str, db: Session, agent, last_quest) -> str at line 1168 in engine.py
 That parses nested conditionals and simple variables and boolean variables.
+IT WORKS WELL. IT PARSES THOSE VARIABLES CORRECTLY.
+But the functions/tools do NOT work.
 But I need to implement:
-- functions without args, format: *\/func\/*
-- functions with arguments, format: *\/func|arg1|arg2\/*
-- other custom_tools with/without args, format: *\/custom_tool|arg1\/*
-- Also, when a paid external tool is called, you must pay its owner.
-Some of this is implemented, just not correctly.
-Also, why call an LLM in execute_custom_tool?
+- functions without args, format: 
+[CALL_TOOL]
+func
+[END_CALL_TOOL]
+- functions with arguments, format: 
+[CALL_TOOL]
+func
+arg1
+arg2
+[END_CALL_TOOL]
+- other custom_tools with/without args, format: 
+[CALL_TOOL]
+custom_tool
+arg1
+[END_CALL_TOOL]
+- Also, when a paid external tool is called, you must pay its owner. (may be implemented)
+
+Also, why call an LLM in execute_custom_tool? => DO NOT! PARSE the prompt in code.
 Basically, use resolve_placeholders, which should help you with conditionals and simple variables. Catch: some variables may be inside functions and some functions may be inside conditionals.
 So, resolve_placeholders calls execute_custom_tool and vice versa until everything is resolved.
-You know what? See this prompt, it has all the features I want:
+
+So I want you to go over all functions that handle custom tools:
+- starts from :
+async def invoke_tool(tool_id: str, req: schemas.ToolInvokeRequest, db: Session = Depends(database.get_db)) in main.py line 737
+- calls 
+async def _execute_inline_command(self, cmd: str, args: list, db: Session, agent: Agent) -> str in engine.py line 1147
+- ....
+- The more you leave resolve_placeholders intact, the better. 
+Correct all these to handle the prompt below (as example):
 
 --------- PROMPT CODE ----------
 {{
@@ -34,16 +56,16 @@ You know what? See this prompt, it has all the features I want:
         OR even:
         [CALL_TOOL]
         HTTP_POST
-        [CALL_TOOL]
-        READ_FILE
-        url.txt
-        [END_CALL_TOOL]
+          [CALL_TOOL]
+          READ_FILE
+          url.txt
+          [END_CALL_TOOL]
         [END_CALL_TOOL]
         Basically, the parser needs to be perfect to handle every single prompt!
         {{
             pending_invitations_exist
                 Returns this sentence with the name of the agent which is {agent}
-                Now we'll send it to server
+                Now we'll send it to server. Result:
                 [CALL_TOOL]
                 HTTP_POST
                 http://localhost:98327/seen/{agent}
@@ -55,3 +77,14 @@ You know what? See this prompt, it has all the features I want:
         No mission for today
         Rest!
 }}
+
+
+
+STILL DOES NOT WORK CORRECTLY.
+THE PROMPT PARSER FUNCTION WORKS WELL. BUT THE WORKSHOP PROMPT IS NOT PARSER CORRECTLY!
+- CONDITIONALS ARE NOT PARSED! (BAD)
+- SIMPLE VARIABLES ARE PARSED. (GOOD)
+- FUNCTIONS AND external TOOLS DO NOT WORK (BAD)
+[CALL_TOOL]
+get_time
+[END_CALL_TOOL]
