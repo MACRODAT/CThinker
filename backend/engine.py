@@ -1035,51 +1035,6 @@ class SimEngine:
         db.add(Transaction(from_id=from_id, to_id=to_id or "FOUNDER", amount=amount, reason=reason))
         return True
 
-    # async def _handle_actions(self, text: str, allowed_actions: list) -> str:
-    #     """Parse and execute action blocks embedded in an LLM response."""
-    #     result = text
-    #     if "http_get" in allowed_actions:
-    #         for m in re.finditer(r'\[HTTP_GET:([^\]]+)\]', result):
-    #             url = m.group(1).strip()
-    #             try:
-    #                 async with httpx.AsyncClient() as client:
-    #                     r = await client.get(url, timeout=10.0, follow_redirects=True)
-    #                 result = result.replace(m.group(0), f"[HTTP({r.status_code}): {r.text[:400]}]")
-    #             except Exception as e:
-    #                 result = result.replace(m.group(0), f"[HTTP_ERROR: {e}]")
-    #     if "http_post" in allowed_actions:
-    #         for m in re.finditer(r'\[HTTP_POST:([^\]]+)\](.*?)\[END_HTTP\]', result, re.DOTALL):
-    #             url, body = m.group(1).strip(), m.group(2).strip()
-    #             try:
-    #                 async with httpx.AsyncClient() as client:
-    #                     r = await client.post(url, content=body, timeout=10.0)
-    #                 result = result.replace(m.group(0), f"[HTTP_POST({r.status_code}): {r.text[:300]}]")
-    #             except Exception as e:
-    #                 result = result.replace(m.group(0), f"[HTTP_POST_ERROR: {e}]")
-    #     if "create_file" in allowed_actions:
-    #         import os
-    #         safe_dir = os.path.join(os.path.dirname(__file__), "tool_outputs")
-    #         os.makedirs(safe_dir, exist_ok=True)
-    #         for m in re.finditer(r'\[CREATE_FILE:([^\]]+)\](.*?)\[END_FILE\]', result, re.DOTALL):
-    #             fname, content = os.path.basename(m.group(1).strip()), m.group(2)
-    #             try:
-    #                 with open(os.path.join(safe_dir, fname), "w", encoding="utf-8") as f: f.write(content)
-    #                 result = result.replace(m.group(0), f"[FILE_CREATED: {fname}]")
-    #             except Exception as e:
-    #                 result = result.replace(m.group(0), f"[FILE_ERROR: {e}]")
-    #     if "read_file" in allowed_actions:
-    #         import os
-    #         safe_dir = os.path.join(os.path.dirname(__file__), "tool_outputs")
-    #         for m in re.finditer(r'\[READ_FILE:([^\]]+)\]', result):
-    #             fname = os.path.basename(m.group(1).strip())
-    #             full = os.path.join(safe_dir, fname)
-    #             try:
-    #                 with open(full, "r", encoding="utf-8") as f: content = f.read(600)
-    #                 result = result.replace(m.group(0), f"[FILE_CONTENT: {content}]")
-    #             except Exception as e:
-    #                 result = result.replace(m.group(0), f"[FILE_NOT_FOUND: {fname}]")
-    #     return result
-
     async def execute_custom_tool(self, db, agent, tool: AgentTool, args: list) -> str:
         """Deterministic custom tool execution. No LLM required."""
         import json as _json
@@ -1319,10 +1274,25 @@ class SimEngine:
 
         elif cmd_ == "HTTP_GET":
             url = args[0].strip() if args else ""
+            selectors = args[1].strip() if len(args) > 1 else None
             try:
                 async with httpx.AsyncClient() as client:
                     r = await client.get(url, timeout=10.0, follow_redirects=True)
-                return f"[HTTP({r.status_code}):{r.text[:400]}]"
+                
+                if not selectors:
+                    return f"[HTTP({r.status_code}):{r.text[:10000]}]"
+                
+                try:
+                    data = r.json()
+                    results = []
+                    for sel in [s.strip() for s in selectors.split(",") if s.strip()]:
+                        res = self._get_by_selector(data, sel)
+                        if res is not None:
+                            results.append(str(res))
+                    return "\n".join(results) if results else f"[HTTP({r.status_code}): No matches found]"
+                except Exception:
+                    # Fallback to full text if JSON parsing or selection fails
+                    return f"[HTTP({r.status_code}):{r.text[:10000]}]"
             except Exception as e:
                 return f"[HTTP_ERROR:{e}]"
 
@@ -1375,5 +1345,39 @@ class SimEngine:
 
         # ── 3. Unknown ─────────────────────────────────────────────────────────
         return f"[UNKNOWN_TOOL:{cmd}]"
+
+    def _get_by_selector(self, data, selector):
+        """Helper to extract data from a JSON object using dot notation and list iteration."""
+        if ">" in selector:
+            path, item_path = [s.strip() for s in selector.split(">", 1)]
+            list_val = self._resolve_path(data, path)
+            if isinstance(list_val, list):
+                items = []
+                for item in list_val:
+                    val = self._resolve_path(item, item_path)
+                    if val is not None:
+                        items.append(str(val))
+                return "\n".join(items)
+            return None
+        else:
+            return self._resolve_path(data, selector)
+
+    def _resolve_path(self, data, path):
+        """Recursively resolves a dot-notation path on a nested dictionary/list."""
+        keys = path.split(".")
+        val = data
+        for k in keys:
+            if isinstance(val, dict) and k in val:
+                val = val[k]
+            # Handle numeric indices for arrays if needed (e.g. articles.0.title)
+            elif isinstance(val, list) and k.isdigit():
+                idx = int(k)
+                if 0 <= idx < len(val):
+                    val = val[idx]
+                else:
+                    return None
+            else:
+                return None
+        return val
 
 engine = SimEngine()
