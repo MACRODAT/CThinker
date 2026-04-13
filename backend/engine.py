@@ -551,7 +551,7 @@ class SimEngine:
 
         # ── post_in_thread ─────────────────────────────────────────────────────
         elif tool_name == "post_in_thread":
-            tid, content = args[0].upper(), args[1:]
+            tid, content = args[0].upper(), "\n".join(args[1:])
             t = db.query(Thread).filter(Thread.id == tid).first()
             if not t or t.status == "FROZEN": return "THREAD_UNAVAILABLE"
             
