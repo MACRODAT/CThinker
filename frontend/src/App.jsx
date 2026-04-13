@@ -2211,7 +2211,7 @@ function ToolTesterModal({ tool, agents, onClose }) {
 // ── Tools ─────────────────────────────────────────────────────────────────────
 function Tools({ state, fetchState }) {
   const [tab, setTab] = useState("capabilities");
-  const tools  = Object.values(state.tools || {});
+  const tools = Object.values(state.tools || {});
   const agents = Object.values(state.agents || {});
 
   const tabBtn = (id, lbl) => (
@@ -2227,19 +2227,19 @@ function Tools({ state, fetchState }) {
     <div>
       <div style={{ display: "flex", gap: 6, marginBottom: 24, borderBottom: "1px solid #1a1d24", paddingBottom: 12 }}>
         {tabBtn("capabilities", "🛠️ Capabilities")}
-        {tabBtn("workshop",     "⚗️ Workshop")}
-        {tabBtn("economy",      "💸 Economy")}
+        {tabBtn("workshop", "⚗️ Workshop")}
+        {tabBtn("economy", "💸 Economy")}
       </div>
       {tab === "capabilities" && <ToolCapabilities tools={tools} agents={agents} state={state} fetchState={fetchState} />}
-      {tab === "workshop"     && <ToolWorkshop     tools={tools} agents={agents} state={state} fetchState={fetchState} />}
-      {tab === "economy"      && <ToolEconomy      state={state} />}
+      {tab === "workshop" && <ToolWorkshop tools={tools} agents={agents} state={state} fetchState={fetchState} />}
+      {tab === "economy" && <ToolEconomy state={state} />}
     </div>
   );
 }
 
 // ── ToolCapabilities (existing tools grid) ────────────────────────────────────
 function ToolCapabilities({ tools, agents, state, fetchState }) {
-  const [instr, setInstr]     = useState(state.settings?.tools_instruction_prefix || "");
+  const [instr, setInstr] = useState(state.settings?.tools_instruction_prefix || "");
   const [testTool, setTestTool] = useState(null);
 
   useEffect(() => {
@@ -2260,10 +2260,12 @@ function ToolCapabilities({ tools, agents, state, fetchState }) {
     fetchState();
   };
 
-  const ICONS = { modify_own_tick:"⏱️", get_time:"🕐", get_weather:"🌤️", get_news:"📰",
-    get_thread_summary:"📝", get_all_summaries:"📋", get_threads:"🗂️", get_agents:"👥",
-    join_thread:"🤝", create_thread:"➕", invest_thread:"💰", change_owner:"🔑", get_owner:"👁️",
-    produce_transaction:"💸" };
+  const ICONS = {
+    modify_own_tick: "⏱️", get_time: "🕐", get_weather: "🌤️", get_news: "📰",
+    get_thread_summary: "📝", get_all_summaries: "📋", get_threads: "🗂️", get_agents: "👥",
+    join_thread: "🤝", create_thread: "➕", invest_thread: "💰", change_owner: "🔑", get_owner: "👁️",
+    produce_transaction: "💸"
+  };
   const enabled = tools.filter(t => t.enabled);
 
   const ownerLabel = (t) => {
@@ -2329,8 +2331,8 @@ function ToolCapabilities({ tools, agents, state, fetchState }) {
                   <div style={{ display: "flex", gap: 6 }}>
                     <button className="btn btn-soft" style={{ fontSize: 10, padding: "3px 9px" }} onClick={() => setTestTool(t)}>Test</button>
                     {t.is_custom && <button onClick={() => deleteTool(t.id)} style={{ fontSize: 10, padding: "3px 9px", cursor: "pointer", background: "none", border: "1px solid #1e222d", borderRadius: 5, color: "#6b7280" }}
-                      onMouseEnter={e => { e.currentTarget.style.borderColor="#ef4444"; e.currentTarget.style.color="#ef4444"; }}
-                      onMouseLeave={e => { e.currentTarget.style.borderColor="#1e222d"; e.currentTarget.style.color="#6b7280"; }}>🗑</button>}
+                      onMouseEnter={e => { e.currentTarget.style.borderColor = "#ef4444"; e.currentTarget.style.color = "#ef4444"; }}
+                      onMouseLeave={e => { e.currentTarget.style.borderColor = "#1e222d"; e.currentTarget.style.color = "#6b7280"; }}>🗑</button>}
                   </div>
                 </div>
               </div>
@@ -2345,352 +2347,364 @@ function ToolCapabilities({ tools, agents, state, fetchState }) {
 
 // ── ToolWorkshop ───────────────────────────────────────────────────────────────
 const TOOL_ACTIONS = [
-  { id: "http_get",     label: "HTTP GET",     desc: "Fetch a URL — use [HTTP_GET:url] in prompt" },
-  { id: "http_post",    label: "HTTP POST",    desc: "POST to URL — [HTTP_POST:url]body[END_HTTP]" },
-  { id: "create_file",  label: "Create File",  desc: "Write file — [CREATE_FILE:name]content[END_FILE]" },
-  { id: "read_file",    label: "Read File",    desc: "Read file — [READ_FILE:name]" },
+  { id: "http_get", label: "HTTP GET", desc: "Fetch a URL — use [HTTP_GET:url] in prompt" },
+  { id: "http_post", label: "HTTP POST", desc: "POST to URL — [HTTP_POST:url]body[END_HTTP]" },
+  { id: "create_file", label: "Create File", desc: "Write file — [CREATE_FILE:name]content[END_FILE]" },
+  { id: "read_file", label: "Read File", desc: "Read file — [READ_FILE:name]" },
 ];
 const AGENT_VARS = [
   "{agent_name}", "{agent_id}", "{agent_wallet}", "{agent_dept}", "{agent_memory}",
 ];
 const ACTION_SNIPPETS = {
-  http_get:    "[HTTP_GET:https://example.com/api]",
-  http_post:   "[HTTP_POST:https://example.com/api]\n{\"key\":\"value\"}\n[END_HTTP]",
+  http_get: "[HTTP_GET:https://example.com/api]",
+  http_post: "[HTTP_POST:https://example.com/api]\n{\"key\":\"value\"}\n[END_HTTP]",
   create_file: "[CREATE_FILE:output.txt]\nYour content here\n[END_FILE]",
-  read_file:   "[READ_FILE:output.txt]",
+  read_file: "[READ_FILE:output.txt]",
 };
 
 function ToolWorkshop({ tools, agents, state, fetchState }) {
-  const blankForm = { id: "", name: "", description: "", prompt_template: "", args: [],
-    call_tools: [], allowed_actions: [], owner_id: "FOUNDER", price: 0 };
-  const [form, setForm]       = useState(blankForm);
+  const blankForm = {
+    id: "", name: "", description: "", prompt_template: "",
+    args: [], call_tools: [], allowed_actions: [], owner_id: "FOUNDER", price: 0
+  };
+  const [form, setForm] = useState(blankForm);
   const [testAgentId, setTestAgentId] = useState("");
-  const [testArgs, setTestArgs]       = useState([]);
-  const [testResult, setTestResult]   = useState(null);
-  const [testing, setTesting]         = useState(false);
-  const [saving, setSaving]           = useState(false);
-  const [saved, setSaved]             = useState(false);
+  const [testArgs, setTestArgs] = useState([]);
+  const [testResult, setTestResult] = useState(null);
+  const [testing, setTesting] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
   const promptRef = useRef(null);
-
   const customTools = tools.filter(t => t.is_custom);
-
-  // auto-slug ID from name
-  const slugify = (n) => n.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
-
-  const setField = (k, v) => setForm(f => ({ ...f, [k]: v }));
-
-  // ── Args management
-  const addArg    = () => setForm(f => ({ ...f, args: [...f.args, { name: "", description: "" }] }));
-  const removeArg = (i) => setForm(f => ({ ...f, args: f.args.filter((_, j) => j !== i) }));
-  const setArg    = (i, k, v) => setForm(f => {
-    const a = [...f.args]; a[i] = { ...a[i], [k]: v }; return { ...f, args: a };
-  });
-
-  // ── Prompt insertion
-  const insertSnippet = (snippet) => {
-    const ta = promptRef.current;
-    if (!ta) return;
-    const s = ta.selectionStart, e = ta.selectionEnd;
-    const next = form.prompt_template.slice(0, s) + snippet + form.prompt_template.slice(e);
-    setField("prompt_template", next);
-    setTimeout(() => { ta.selectionStart = ta.selectionEnd = s + snippet.length; ta.focus(); }, 0);
+  const inputSt = {
+    background: "#0b0c10", border: "1px solid #1e222d", color: "#e2e8f0",
+    borderRadius: 6, padding: "7px 10px", fontSize: 12, width: "100%", outline: "none"
   };
 
-  // ── Sub-tool toggle
-  const toggleCallTool = (tid) => setForm(f => ({
-    ...f, call_tools: f.call_tools.includes(tid) ? f.call_tools.filter(x => x !== tid) : [...f.call_tools, tid]
-  }));
-  const toggleAction = (id) => setForm(f => ({
-    ...f, allowed_actions: f.allowed_actions.includes(id)
-      ? f.allowed_actions.filter(x => x !== id) : [...f.allowed_actions, id]
-  }));
+  const slugify = n => n.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+  const setField = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const addArg = () => setField("args", [...form.args, { name: "", description: "" }]);
+  const removeArg = i => setField("args", form.args.filter((_, j) => j !== i));
+  const setArg = (i, k, v) => setForm(f => { const a = [...f.args]; a[i] = { ...a[i], [k]: v }; return { ...f, args: a }; });
+  const toggleCallTool = tid => setField("call_tools", form.call_tools.includes(tid) ? form.call_tools.filter(x => x !== tid) : [...form.call_tools, tid]);
+  const toggleAction = id => setField("allowed_actions", form.allowed_actions.includes(id) ? form.allowed_actions.filter(x => x !== id) : [...form.allowed_actions, id]);
 
-  // ── Load existing tool for editing
-  const loadTool = (t) => {
-    let args = [];
-    try { args = JSON.parse(t.args_definition || "[]"); } catch {}
-    let callTools = [];
-    try { callTools = JSON.parse(t.call_tools || "[]"); } catch {}
-    let actions = [];
-    try { actions = JSON.parse(t.allowed_actions || "[]"); } catch {}
-    setForm({ id: t.id, name: t.name, description: t.description,
-      prompt_template: t.prompt_template || "", args,
-      call_tools: callTools, allowed_actions: actions,
-      owner_id: t.owner_id || "FOUNDER", price: t.price || 0 });
+  const insertAt = (snippet) => {
+    const ta = promptRef.current; if (!ta) return;
+    const s = ta.selectionStart, e = ta.selectionEnd;
+    setField("prompt_template", form.prompt_template.slice(0, s) + snippet + form.prompt_template.slice(e));
+    setTimeout(() => { ta.selectionStart = ta.selectionEnd = s + snippet.length; ta.focus(); }, 0);
+  };
+  const insertTool = (id) => insertAt(`{{[${id}]}}`);
+  const insertArg = (name, i) => insertAt(`{${name || `arg_${i}`}}`);
+  const insertVar = (v) => insertAt(v);
+  const insertCond = (key) => insertAt(`{{\n${key}\n    Value if TRUE\n/ELSE/\n    Value if FALSE\n}}`);
+  const insertHttp = (type) => type === "GET"
+    ? insertAt("{{[HTTP_GET:https://api.example.com/endpoint]}}")
+    : insertAt("{{[HTTP_POST:https://api.example.com/endpoint|request body here]}}");
+
+  const loadTool = t => {
+    let args = [], callTools = [], actions = [];
+    try { args = JSON.parse(t.args_definition || "[]"); } catch { }
+    try { callTools = JSON.parse(t.call_tools || "[]"); } catch { }
+    try { actions = JSON.parse(t.allowed_actions || "[]"); } catch { }
+    setForm({
+      id: t.id, name: t.name, description: t.description, prompt_template: t.prompt_template || "",
+      args, call_tools: callTools, allowed_actions: actions, owner_id: t.owner_id || "FOUNDER", price: t.price || 0
+    });
     setTestResult(null);
   };
 
-  // ── Save tool
   const saveTool = async () => {
     if (!form.id || !form.name) return;
     setSaving(true);
     const payload = {
       id: form.id, name: form.name, description: form.description,
-      prompt_template: form.prompt_template,
-      args_definition: JSON.stringify(form.args),
-      call_tools: JSON.stringify(form.call_tools),
-      allowed_actions: JSON.stringify(form.allowed_actions),
-      owner_id: form.owner_id === "FOUNDER" ? null : form.owner_id,
-      price: form.price,
+      prompt_template: form.prompt_template, args_definition: JSON.stringify(form.args),
+      call_tools: JSON.stringify(form.call_tools), allowed_actions: JSON.stringify(form.allowed_actions),
+      owner_id: form.owner_id === "FOUNDER" ? null : form.owner_id, price: form.price
     };
-    // Check if updating or creating
     const exists = tools.find(t => t.id === form.id && t.is_custom);
     if (exists) {
-      // Update via PUT (owner + price) + PUT enabled
-      await fetch(`${API_BASE}/tools/${form.id}/owner`, { method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ owner_id: payload.owner_id || "FOUNDER", price: payload.price }) });
-      // For other fields, delete + recreate (simplest given current API)
       await fetch(`${API_BASE}/tools/${form.id}`, { method: "DELETE" });
-      await fetch(`${API_BASE}/tools`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-    } else {
-      await fetch(`${API_BASE}/tools`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     }
-    setSaving(false); setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
-    fetchState();
+    await fetch(`${API_BASE}/tools`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    if (form.price > 0 || form.owner_id !== "FOUNDER") {
+      await fetch(`${API_BASE}/tools/${form.id}/owner`, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ owner_id: payload.owner_id || "FOUNDER", price: payload.price })
+      });
+    }
+    setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2000); fetchState();
   };
 
-  // ── Test tool
   const runTest = async () => {
     if (!testAgentId || !form.id) return;
     setTesting(true); setTestResult(null);
-    const argsStr = testArgs.join(", ");
-    const r = await fetch(`${API_BASE}/tools/${form.id}/invoke`, { method: "POST",
-      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ agent_id: testAgentId, args: argsStr }) });
+    const r = await fetch(`${API_BASE}/tools/${form.id}/invoke`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ agent_id: testAgentId, args: testArgs.join(", ") })
+    });
     const d = await r.json();
-    setTestResult(d.result || d.error || "No result");
-    setTesting(false);
+    setTestResult(d.result || d.error || "No result"); setTesting(false);
   };
 
-  const inputSt = { background: "#0b0c10", border: "1px solid #1e222d", color: "#e2e8f0", borderRadius: 6, padding: "7px 10px", fontSize: 12, width: "100%", outline: "none" };
-  const chipSt  = (active) => ({ fontSize: 10, padding: "3px 8px", cursor: "pointer", borderRadius: 4, fontFamily: "monospace",
-    background: active ? "#1e1b4b" : "#11141a", border: `1px solid ${active ? "#6366f1" : "#1e222d"}`, color: active ? "#a5b4fc" : "#6b7280" });
-  const secHeader = (lbl) => <div style={{ fontSize: 10, fontWeight: 800, color: "#6366f1", letterSpacing: 1, textTransform: "uppercase", marginBottom: 10 }}>{lbl}</div>;
+  const chipSt = (col = "#6366f1", active = false) => ({
+    fontSize: 10, padding: "3px 8px", cursor: "pointer",
+    borderRadius: 4, fontFamily: "monospace", background: active ? (col + "33") : "#11141a",
+    border: `1px solid ${active ? col : "#1e222d"}`, color: active ? col : "#6b7280", transition: "all 0.1s"
+  });
+  const secLbl = lbl => <div style={{
+    fontSize: 9, fontWeight: 800, color: "#6b7280", letterSpacing: 1,
+    textTransform: "uppercase", marginBottom: 8, marginTop: 14
+  }}>{lbl}</div>;
 
   return (
-    <div style={{ display: "flex", gap: 20, height: "calc(100vh - 200px)" }}>
-      {/* Left: custom tool list */}
-      <div style={{ width: 220, flexShrink: 0, display: "flex", flexDirection: "column", gap: 8 }}>
-        {secHeader("Custom Tools")}
-        <button className="btn btn-primary" style={{ fontSize: 11, marginBottom: 6 }}
-          onClick={() => { setForm(blankForm); setTestResult(null); }}>
-          + New Tool
-        </button>
-        <div style={{ flex: 1, overflowY: "auto" }}>
-          {customTools.length === 0 && <div style={{ fontSize: 11, color: "#374151", textAlign: "center", marginTop: 20 }}>No custom tools yet.</div>}
-          {customTools.map(t => (
-            <div key={t.id} onClick={() => loadTool(t)} className="card"
-              style={{ cursor: "pointer", marginBottom: 8, padding: "10px 12px",
-                borderColor: form.id === t.id ? "#6366f1" : "#1a1d24",
-                background: form.id === t.id ? "#1e1b4b" : "#11141a" }}>
-              <div style={{ fontWeight: 600, color: "#e2e8f0", fontSize: 12 }}>⚗️ {t.name}</div>
-              <div className="mono" style={{ fontSize: 9, color: "#6366f1", marginTop: 2 }}>{t.id}</div>
-              {t.price > 0 && <div style={{ fontSize: 9, color: "#34d399", marginTop: 3 }}>💰 {t.price} pts/use</div>}
-            </div>
-          ))}
-        </div>
+    <div style={{ display: "flex", gap: 14, height: "calc(100vh - 190px)" }}>
+
+      {/* ── LEFT: custom tool list ── */}
+      <div style={{ width: 200, flexShrink: 0, display: "flex", flexDirection: "column", gap: 8, overflowY: "auto" }}>
+        <button className="btn btn-primary" style={{ fontSize: 11, padding: "6px 0" }}
+          onClick={() => { setForm(blankForm); setTestResult(null); }}>+ New Tool</button>
+        {customTools.length === 0 && <div style={{ fontSize: 11, color: "#374151", textAlign: "center", marginTop: 20 }}>No custom tools.</div>}
+        {customTools.map(t => (
+          <div key={t.id} onClick={() => loadTool(t)} className="card"
+            style={{
+              cursor: "pointer", padding: "10px 12px",
+              borderColor: form.id === t.id ? "#6366f1" : "#1a1d24",
+              background: form.id === t.id ? "#1e1b4b" : "#11141a"
+            }}>
+            <div style={{ fontWeight: 600, color: "#e2e8f0", fontSize: 12 }}>⚗️ {t.name}</div>
+            <div className="mono" style={{ fontSize: 9, color: "#6366f1", marginTop: 2 }}>{t.id}</div>
+            {t.price > 0 && <div style={{ fontSize: 9, color: "#34d399", marginTop: 3 }}>💰 {t.price}pts/use</div>}
+          </div>
+        ))}
       </div>
 
-      {/* Right: editor */}
-      <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 16 }}>
-        {/* ── Header section */}
-        <div className="card">
-          <div className="card-header" style={{ fontSize: 12, fontWeight: 700, color: "#fff" }}>Tool Identity</div>
-          <div className="card-body" style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 14 }}>
-            <div>
-              <label style={{ fontSize: 10, color: "#6b7280", display: "block", marginBottom: 4, fontWeight: 600 }}>TOOL ID *</label>
-              <input value={form.id} onChange={e => setField("id", e.target.value)}
-                placeholder="my_tool" style={inputSt} />
-              <div style={{ fontSize: 9, color: "#374151", marginTop: 3 }}>Lowercase, underscores only</div>
-            </div>
-            <div>
-              <label style={{ fontSize: 10, color: "#6b7280", display: "block", marginBottom: 4, fontWeight: 600 }}>NAME *</label>
-              <input value={form.name}
-                onChange={e => { setField("name", e.target.value); if (!form.id) setField("id", slugify(e.target.value)); }}
-                placeholder="My Custom Tool" style={inputSt} />
-            </div>
-            <div style={{ gridColumn: "1 / -1" }}>
-              <label style={{ fontSize: 10, color: "#6b7280", display: "block", marginBottom: 4, fontWeight: 600 }}>DESCRIPTION — shown to agents in their prompt</label>
-              <textarea value={form.description} onChange={e => setField("description", e.target.value)}
-                placeholder="[CALL_TOOL]\n- my_tool\n- arg1\n[END_CALL_TOOL]\nDescribe what this tool does…"
-                rows={3} style={{ ...inputSt, resize: "vertical", fontFamily: "monospace" }} />
-            </div>
-          </div>
-        </div>
+      {/* ── CENTER: prompt editor ── */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8, minWidth: 0 }}>
 
-        {/* ── Arguments section */}
-        <div className="card">
-          <div className="card-header" style={{ justifyContent: "space-between" }}>
-            <span style={{ fontSize: 12, fontWeight: 700, color: "#fff" }}>Arguments ({form.args.length})</span>
-            <button className="btn btn-soft" style={{ fontSize: 11, padding: "3px 10px" }} onClick={addArg}>+ Add Arg</button>
+        {/* Toolbar: insert chips */}
+        <div style={{
+          background: "#0b0c10", border: "1px solid #1a1d24", borderRadius: 8, padding: "10px 14px",
+          display: "flex", flexDirection: "column", gap: 8
+        }}>
+
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+            <span style={{ fontSize: 9, color: "#6b7280", fontWeight: 700, letterSpacing: 1 }}>AGENT:</span>
+            {["{agent_name}", "{agent_id}", "{agent_wallet}", "{agent_dept}", "{agent_memory}"].map(v => (
+              <button key={v} onClick={() => insertVar(v)} style={chipSt("#10b981")}>{v}</button>
+            ))}
+            {form.args.map((a, i) => {
+              const v = `{${a.name || `arg_${i}`}}`;
+              return <button key={i} onClick={() => insertArg(a.name, i)} style={chipSt("#34d399")}>{v}</button>;
+            })}
           </div>
-          <div className="card-body" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {form.args.length === 0 && <div style={{ fontSize: 11, color: "#374151", fontStyle: "italic" }}>No args — tool takes no input.</div>}
-            {form.args.map((arg, i) => (
-              <div key={i} style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <div style={{ background: "#1e1b4b", border: "1px solid #3730a3", borderRadius: 5, padding: "3px 8px", fontSize: 10, color: "#818cf8", flexShrink: 0, fontFamily: "monospace" }}>
-                  arg_{i} / {"{" + (arg.name || `arg_${i}`) + "}"}
-                </div>
-                <input value={arg.name} onChange={e => setArg(i, "name", e.target.value)}
-                  placeholder="name (e.g. topic)" style={{ ...inputSt, flex: "0 0 140px" }} />
-                <input value={arg.description} onChange={e => setArg(i, "description", e.target.value)}
-                  placeholder="description" style={{ ...inputSt, flex: 1 }} />
-                <button onClick={() => removeArg(i)} style={{ background: "none", border: "none", color: "#6b7280", cursor: "pointer", fontSize: 16, flexShrink: 0 }}>✕</button>
-              </div>
+
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+            <span style={{ fontSize: 9, color: "#6b7280", fontWeight: 700, letterSpacing: 1 }}>TOOLS:</span>
+            {tools.filter(t => t.id !== form.id && t.enabled).map(t => (
+              <button key={t.id} onClick={() => insertTool(t.id)} title={t.description}
+                style={chipSt("#818cf8")}>{`{{[${t.id}]}}`}</button>
             ))}
           </div>
-        </div>
 
-        {/* ── Prompt template */}
-        <div className="card">
-          <div className="card-header" style={{ fontSize: 12, fontWeight: 700, color: "#fff" }}>Prompt Template</div>
-          <div className="card-body" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {/* Variable chips */}
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-              <span style={{ fontSize: 9, color: "#6b7280", fontWeight: 700, letterSpacing: 1 }}>INSERT:</span>
-              {AGENT_VARS.map(v => (
-                <button key={v} onClick={() => insertSnippet(v)} style={chipSt(false)} title="Insert variable">{v}</button>
-              ))}
-              {form.args.map((arg, i) => {
-                const v = "{" + (arg.name || `arg_${i}`) + "}";
-                return <button key={i} onClick={() => insertSnippet(v)} style={{ ...chipSt(false), color: "#34d399", borderColor: "#065f46", background: "#022c22" }}>{v}</button>;
-              })}
-              {form.allowed_actions.map(a => (
-                <button key={a} onClick={() => insertSnippet(ACTION_SNIPPETS[a] || a)}
-                  style={{ ...chipSt(false), color: "#f59e0b", borderColor: "#78350f", background: "#1c0f00" }} title="Insert action block">
-                  {a}
-                </button>
-              ))}
-            </div>
-            <textarea ref={promptRef} value={form.prompt_template}
-              onChange={e => setField("prompt_template", e.target.value)}
-              placeholder={"You are executing the tool: " + (form.name || "My Tool") + ".\n\nInput: {arg_0}\nAgent: {agent_name} (wallet: {agent_wallet} pts)\n\nTask: Process the input and return a result.\nBe concise."}
-              style={{ ...inputSt, height: 200, resize: "vertical", fontFamily: "'JetBrains Mono', monospace", fontSize: 12, lineHeight: 1.6 }} />
-            <div style={{ fontSize: 10, color: "#4b5563" }}>
-              The LLM receives this prompt filled with arg values + agent context. Its response is the tool's output. Use <code style={{ color: "#a5b4fc" }}>[CALL_TOOL]</code> blocks in the response to chain sub-tools.
-            </div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+            <span style={{ fontSize: 9, color: "#6b7280", fontWeight: 700, letterSpacing: 1 }}>PLACEHOLDERS:</span>
+            {["available_tickets", "pending_invitation", "thread_summary", "agent"].map(k => (
+              <button key={k} onClick={() => insertAt(`{{${k}}}`)} style={chipSt("#a5b4fc")}>{`{{${k}}}`}</button>
+            ))}
+            {["pending_quests_exist", "available_tickets_exist", "pending_invitation_exist"].map(k => (
+              <button key={k} onClick={() => insertCond(k)} title={`Insert conditional for ${k}`}
+                style={chipSt("#f59e0b")}>{k.replace(/_/g, " ")} ??</button>
+            ))}
+          </div>
+
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+            <span style={{ fontSize: 9, color: "#6b7280", fontWeight: 700, letterSpacing: 1 }}>ACTIONS:</span>
+            <button onClick={() => insertAt("[CREATE_FILE:output.txt]Your content here[END_FILE]")} style={chipSt("#f97316")}>CREATE_FILE</button>
+            <button onClick={() => insertAt("[READ_FILE:output.txt]")} style={chipSt("#f97316")}>READ_FILE</button>
+            <button onClick={() => insertHttp("GET")} style={chipSt("#22d3ee")}>HTTP_GET</button>
+            <button onClick={() => insertHttp("POST")} style={chipSt("#22d3ee")}>HTTP_POST</button>
           </div>
         </div>
 
-        {/* ── Sub-tools + Actions (side by side) */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-          <div className="card">
-            <div className="card-header" style={{ fontSize: 12, fontWeight: 700, color: "#fff" }}>Call Other Tools</div>
-            <div className="card-body" style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 200, overflowY: "auto" }}>
-              {tools.filter(t => t.id !== form.id).map(t => (
-                <label key={t.id} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", padding: "4px 0" }}>
-                  <input type="checkbox" checked={form.call_tools.includes(t.id)}
-                    onChange={() => toggleCallTool(t.id)}
-                    style={{ accentColor: "#6366f1" }} />
-                  <div>
-                    <div style={{ fontSize: 12, color: "#e2e8f0" }}>{t.name}</div>
-                    <div className="mono" style={{ fontSize: 9, color: "#6b7280" }}>{t.id}</div>
-                  </div>
-                </label>
-              ))}
-            </div>
-          </div>
-          <div className="card">
-            <div className="card-header" style={{ fontSize: 12, fontWeight: 700, color: "#fff" }}>Allowed Actions</div>
-            <div className="card-body" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {TOOL_ACTIONS.map(a => (
-                <label key={a.id} style={{ display: "flex", alignItems: "flex-start", gap: 8, cursor: "pointer" }}>
-                  <input type="checkbox" checked={form.allowed_actions.includes(a.id)}
-                    onChange={() => toggleAction(a.id)}
-                    style={{ accentColor: "#6366f1", marginTop: 2 }} />
-                  <div>
-                    <div style={{ fontSize: 12, color: "#e2e8f0", fontWeight: 600 }}>{a.label}</div>
-                    <div style={{ fontSize: 10, color: "#6b7280" }}>{a.desc}</div>
-                  </div>
-                </label>
-              ))}
-            </div>
-          </div>
-        </div>
+        {/* Big textarea */}
+        <textarea ref={promptRef} value={form.prompt_template}
+          onChange={e => setField("prompt_template", e.target.value)}
+          placeholder={"You are a custom tool: " + (form.name || "MyTool") + "\n\n" +
+            "Agent: {agent_name} | Wallet: {agent_wallet}pts\n\n" +
+            "Input: {arg_0}\n\n" +
+            "{{pending_quests_exist\n" +
+            "    There are pending quests. Suggest checking them.\n" +
+            "/ELSE/\n" +
+            "    No pending quests today.\n" +
+            "}}\n\n" +
+            "Current time: {{[get_time]}}\n" +
+            "News: {{[get_news|{arg_0}]}}\n\n" +
+            "Task: Process the input and return a result."}
+          style={{
+            flex: 1, fontFamily: "'JetBrains Mono',monospace", fontSize: 12,
+            background: "#08090c", border: "1px solid #1e222d", color: "#d4d8e8",
+            padding: "14px 16px", borderRadius: 8, resize: "none", lineHeight: 1.7, outline: "none"
+          }} />
 
-        {/* ── Economy */}
-        <div className="card">
-          <div className="card-header" style={{ fontSize: 12, fontWeight: 700, color: "#fff" }}>Economy &amp; Ownership</div>
-          <div className="card-body" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-            <div>
-              <label style={{ fontSize: 10, color: "#6b7280", display: "block", marginBottom: 5, fontWeight: 600 }}>OWNER</label>
-              <select value={form.owner_id} onChange={e => setField("owner_id", e.target.value)} style={{ ...inputSt, width: "100%" }}>
-                <option value="FOUNDER">👑 Founder (free for all)</option>
-                {Object.values(state.agents || {}).map(a => (
-                  <option key={a.id} value={a.id}>{a.name_id} ({a.department || "—"})</option>
-                ))}
-              </select>
-              <div style={{ fontSize: 10, color: "#4b5563", marginTop: 4 }}>Owner uses tool for free and earns the price per usage</div>
-            </div>
-            <div>
-              <label style={{ fontSize: 10, color: "#6b7280", display: "block", marginBottom: 5, fontWeight: 600 }}>PRICE PER USE (pts)</label>
-              <input type="number" min="0" value={form.price}
-                onChange={e => setField("price", parseInt(e.target.value) || 0)}
-                style={{ ...inputSt, width: "100%" }} />
-              <div style={{ fontSize: 10, color: "#4b5563", marginTop: 4 }}>Charged to non-owner agents on each use. 0 = free for all.</div>
-            </div>
+        {/* Bottom bar: save + test */}
+        <div style={{
+          display: "flex", gap: 10, alignItems: "flex-end",
+          background: "#0b0c10", border: "1px solid #1a1d24", borderRadius: 8, padding: "12px 14px"
+        }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 9, color: "#6b7280", fontWeight: 700, letterSpacing: 1, marginBottom: 5 }}>TEST AS AGENT</div>
+            <select value={testAgentId} onChange={e => setTestAgentId(e.target.value)} style={{ ...inputSt, width: "100%" }}>
+              <option value="">— select agent —</option>
+              {Object.values(state.agents || {}).map(a => (
+                <option key={a.id} value={a.id}>{a.name_id} ({a.wallet?.current || 0}pts)</option>
+              ))}
+            </select>
           </div>
-        </div>
-
-        {/* ── Save */}
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
-          <button className="btn btn-soft" onClick={() => { setForm(blankForm); setTestResult(null); }}>Reset</button>
-          <button className="btn btn-primary" onClick={saveTool}
-            disabled={saving || !form.id || !form.name}
-            style={{ minWidth: 130 }}>
-            {saving ? "Saving…" : saved ? "✓ Saved!" : (tools.find(t => t.id === form.id && t.is_custom) ? "Update Tool" : "Create Tool")}
+          {form.args.length > 0 && (
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 9, color: "#6b7280", fontWeight: 700, letterSpacing: 1, marginBottom: 5 }}>TEST ARGS (comma-sep)</div>
+              <input value={testArgs.join(",")} onChange={e => setTestArgs(e.target.value.split(","))}
+                placeholder="arg0, arg1, …" style={inputSt} />
+            </div>
+          )}
+          <button className="btn btn-soft" style={{ flexShrink: 0, minWidth: 90, height: 34, fontSize: 11 }}
+            onClick={runTest} disabled={testing || !testAgentId || !form.id}>
+            {testing ? "⏳…" : "▶ Test"}
+          </button>
+          <button className="btn btn-primary" style={{ flexShrink: 0, minWidth: 110, height: 34, fontSize: 11 }}
+            onClick={saveTool} disabled={saving || !form.id || !form.name}>
+            {saving ? "Saving…" : saved ? "✓ Saved!" : (tools.find(t => t.id === form.id && t.is_custom) ? "Update" : "Create")}
           </button>
         </div>
 
-        {/* ── Test section */}
-        <div className="card" style={{ border: "1px solid #1e3a2f" }}>
-          <div className="card-header" style={{ fontSize: 12, fontWeight: 700, color: "#10b981" }}>Test Tool</div>
-          <div className="card-body" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-              <div style={{ flex: "1 1 200px" }}>
-                <label style={{ fontSize: 10, color: "#6b7280", display: "block", marginBottom: 4, fontWeight: 600 }}>EXECUTE AS AGENT</label>
-                <select value={testAgentId} onChange={e => setTestAgentId(e.target.value)} style={inputSt}>
-                  <option value="">— select —</option>
-                  {Object.values(state.agents || {}).map(a => (
-                    <option key={a.id} value={a.id}>{a.name_id} ({a.wallet?.current || 0} pts)</option>
-                  ))}
-                </select>
-              </div>
+        {/* Test result */}
+        {testResult && (
+          <div style={{
+            background: "#040506", border: "1px solid #1a1d24", borderRadius: 8,
+            padding: "12px 14px", fontSize: 12, color: "#e2e8f0", fontFamily: "monospace",
+            lineHeight: 1.6, whiteSpace: "pre-wrap", maxHeight: 160, overflowY: "auto"
+          }}>
+            {testResult}
+          </div>
+        )}
+      </div>
+
+      {/* ── RIGHT: properties panel ── */}
+      <div style={{
+        width: 300, flexShrink: 0, overflowY: "auto", display: "flex", flexDirection: "column", gap: 0,
+        background: "#0b0c10", border: "1px solid #1a1d24", borderRadius: 8, padding: "14px"
+      }}>
+
+        <div style={{ fontSize: 11, fontWeight: 700, color: "#fff", marginBottom: 12 }}>⚗️ Tool Properties</div>
+
+        {/* Identity */}
+        {secLbl("Identity")}
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div>
+            <label style={{ fontSize: 9, color: "#6b7280", display: "block", marginBottom: 3, fontWeight: 600 }}>TOOL ID *</label>
+            <input value={form.id} onChange={e => setField("id", e.target.value)}
+              placeholder="my_tool" style={inputSt} />
+          </div>
+          <div>
+            <label style={{ fontSize: 9, color: "#6b7280", display: "block", marginBottom: 3, fontWeight: 600 }}>NAME *</label>
+            <input value={form.name}
+              onChange={e => { setField("name", e.target.value); if (!form.id) setField("id", slugify(e.target.value)); }}
+              placeholder="My Custom Tool" style={inputSt} />
+          </div>
+          <div>
+            <label style={{ fontSize: 9, color: "#6b7280", display: "block", marginBottom: 3, fontWeight: 600 }}>DESCRIPTION (shown to agents)</label>
+            <textarea value={form.description} onChange={e => setField("description", e.target.value)}
+              placeholder="[CALL_TOOL]\n- my_tool\n- arg\n[END_CALL_TOOL]\nDescribes what this tool does…"
+              rows={3} style={{ ...inputSt, resize: "vertical", fontFamily: "monospace", fontSize: 11 }} />
+          </div>
+        </div>
+
+        {/* Arguments */}
+        {secLbl(`Arguments (${form.args.length})`)}
+        <button className="btn btn-soft" style={{ fontSize: 10, padding: "3px 0", width: "100%", marginBottom: 8 }}
+          onClick={addArg}>+ Add Argument</button>
+        {form.args.length === 0 && <div style={{ fontSize: 10, color: "#374151", fontStyle: "italic" }}>No args defined.</div>}
+        {form.args.map((arg, i) => (
+          <div key={i} style={{
+            background: "#11141a", border: "1px solid #1e222d", borderRadius: 6,
+            padding: "8px 10px", marginBottom: 6
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <code style={{ fontSize: 9, color: "#818cf8", background: "#1e1b4b", padding: "1px 6px", borderRadius: 3 }}>
+                {`{${arg.name || `arg_${i}`}}`}
+              </code>
+              <button onClick={() => removeArg(i)} style={{ background: "none", border: "none", color: "#6b7280", cursor: "pointer", fontSize: 14 }}>✕</button>
             </div>
-            {form.args.length > 0 && (
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                {form.args.map((arg, i) => (
-                  <div key={i} style={{ flex: "1 1 160px" }}>
-                    <label style={{ fontSize: 10, color: "#6b7280", display: "block", marginBottom: 4 }}>
-                      {arg.name || `arg_${i}`} {arg.description && <span style={{ color: "#374151" }}>— {arg.description}</span>}
-                    </label>
-                    <input value={testArgs[i] || ""} onChange={e => {
-                      const a = [...testArgs]; a[i] = e.target.value; setTestArgs(a);
-                    }} placeholder={`arg_${i} value`} style={inputSt} />
-                  </div>
-                ))}
+            <input value={arg.name} onChange={e => setArg(i, "name", e.target.value)}
+              placeholder="name (e.g. topic)" style={{ ...inputSt, marginBottom: 5, fontSize: 11 }} />
+            <input value={arg.description} onChange={e => setArg(i, "description", e.target.value)}
+              placeholder="description" style={{ ...inputSt, fontSize: 11 }} />
+          </div>
+        ))}
+
+        {/* Call other tools */}
+        {secLbl("Chain Tools")}
+        <div style={{ maxHeight: 140, overflowY: "auto", display: "flex", flexDirection: "column", gap: 5, marginBottom: 8 }}>
+          {tools.filter(t => t.id !== form.id).map(t => (
+            <label key={t.id} style={{
+              display: "flex", alignItems: "center", gap: 8, cursor: "pointer",
+              padding: "4px 6px", borderRadius: 5, background: form.call_tools.includes(t.id) ? "#1e1b4b" : "transparent"
+            }}>
+              <input type="checkbox" checked={form.call_tools.includes(t.id)}
+                onChange={() => toggleCallTool(t.id)} style={{ accentColor: "#6366f1" }} />
+              <div>
+                <div style={{ fontSize: 11, color: "#e2e8f0" }}>{t.name}</div>
+                <div className="mono" style={{ fontSize: 9, color: "#6366f1" }}>{t.id}</div>
               </div>
-            )}
-            <button className="btn btn-primary" onClick={runTest}
-              disabled={testing || !testAgentId || !form.id}
-              style={{ alignSelf: "flex-start", minWidth: 120 }}>
-              {testing ? "⏳ Running…" : "▶ Run Test"}
-            </button>
-            {testResult && (
-              <div style={{ background: "#040506", border: "1px solid #1a1d24", borderRadius: 8, padding: 14, fontSize: 12, color: "#e2e8f0", fontFamily: "monospace", lineHeight: 1.6, whiteSpace: "pre-wrap", maxHeight: 200, overflowY: "auto" }}>
-                {testResult}
-              </div>
-            )}
+            </label>
+          ))}
+        </div>
+
+        {/* Actions */}
+        {secLbl("Allowed Actions")}
+        {[{ id: "http_get", label: "HTTP GET" }, { id: "http_post", label: "HTTP POST" },
+        { id: "create_file", label: "Create File" }, { id: "read_file", label: "Read File" }].map(a => (
+          <label key={a.id} style={{
+            display: "flex", alignItems: "center", gap: 8, cursor: "pointer",
+            padding: "4px 0", marginBottom: 4
+          }}>
+            <input type="checkbox" checked={form.allowed_actions.includes(a.id)}
+              onChange={() => toggleAction(a.id)} style={{ accentColor: "#6366f1" }} />
+            <span style={{ fontSize: 11, color: "#e2e8f0" }}>{a.label}</span>
+          </label>
+        ))}
+
+        {/* Economy */}
+        {secLbl("Economy & Ownership")}
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div>
+            <label style={{ fontSize: 9, color: "#6b7280", display: "block", marginBottom: 3, fontWeight: 600 }}>OWNER</label>
+            <select value={form.owner_id} onChange={e => setField("owner_id", e.target.value)} style={inputSt}>
+              <option value="FOUNDER">👑 Founder (free for all)</option>
+              {Object.values(state.agents || {}).map(a => (
+                <option key={a.id} value={a.id}>{a.name_id}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label style={{ fontSize: 9, color: "#6b7280", display: "block", marginBottom: 3, fontWeight: 600 }}>PRICE PER USE (pts)</label>
+            <input type="number" min="0" value={form.price}
+              onChange={e => setField("price", parseInt(e.target.value) || 0)} style={inputSt} />
+            <div style={{ fontSize: 9, color: "#374151", marginTop: 3 }}>
+              Non-owners pay this. Owner earns it. 0 = free.
+            </div>
           </div>
         </div>
       </div>
     </div>
   );
 }
-
 // ── ToolEconomy ────────────────────────────────────────────────────────────────
 function ToolEconomy({ state }) {
-  const [txns, setTxns]   = useState([]);
+  const [txns, setTxns] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {

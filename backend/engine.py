@@ -172,7 +172,7 @@ class SimEngine:
             
             s_prefix = db.query(Setting).filter(Setting.key == "tools_instruction_prefix").first()
             tools_block = s_prefix.value + "\n" + tools_block if s_prefix else f"AVAILABLE TOOLS: {self.get_tools(db)}\n{tools_block}"
-            tools_block = self.resolve_placeholders(tools_block, db, agent, "")
+            tools_block = await self.resolve_placeholders(tools_block, db, agent, "")
             print(tools_block)
 
             # 2. Context
@@ -232,7 +232,7 @@ class SimEngine:
             system_prompt = p_template.system_prompt
             
             # Injection logic for placeholders (pre-format pass on directives)
-            directives = self.resolve_placeholders(
+            directives = await self.resolve_placeholders(
                 p_template.custom_directives or "", db, agent, last_q
             )
 
@@ -248,8 +248,8 @@ class SimEngine:
                 message=""
             )
             # Second pass: resolve all {{...}} that survived .format()
-            user_prompt = self.resolve_placeholders(user_prompt, db, agent, last_q)
-            system_prompt = self.resolve_placeholders(system_prompt, db, agent, last_q)
+            user_prompt = await self.resolve_placeholders(user_prompt, db, agent, last_q)
+            system_prompt = await self.resolve_placeholders(system_prompt, db, agent, last_q)
 
 
             # debugging
@@ -1122,7 +1122,7 @@ class SimEngine:
         s_url = db.query(Setting).filter(Setting.key == "ollama_server").first()
         s_mod = db.query(Setting).filter(Setting.key == "ollama_model").first()
         server = (s_url.value if s_url else "http://localhost:11434").rstrip("/")
-        model  = s_mod.value if s_mod else "gemma3:4b"
+        model  = s_mod.value if s_mod else "gemma4:e4b"
         try:
             async with httpx.AsyncClient() as client:
                 resp = await client.post(f"{server}/api/generate", timeout=60.0,
@@ -1138,34 +1138,84 @@ class SimEngine:
         if allowed: raw = await self._handle_actions(raw, allowed)
         return f"[{tool.id.upper()}]: {raw[:600]}"
 
-    def resolve_placeholders(self, text: str, db: Session, agent, last_quest):
-        """
-        Resolves complex, nested {{...}} placeholders from the inside out.
-        """
-        import re
+    def _split_pipe_aware(self, s: str) -> list:
+        """Split string on | but not within [...] or nested brackets."""
+        parts, depth, cur = [], 0, []
+        for ch in s:
+            if ch == '[': depth += 1
+            elif ch == ']': depth = max(0, depth - 1)
+            if ch == '|' and depth == 0:
+                parts.append(''.join(cur).strip())
+                cur = []
+            else:
+                cur.append(ch)
+        if cur: parts.append(''.join(cur).strip())
+        return [p for p in parts if p]
 
-        # ── Compute boolean context ──────────────────────────────────────────
+    def _expand_file_ops_in_arg(self, arg: str) -> str:
+        """Expand bare [READ_FILE:name] within a single arg string."""
+        import os as _os
+        safe_dir = _os.path.join(_os.path.dirname(__file__), "tool_outputs")
+        def _rf(m):
+            fname = _os.path.basename(m.group(1).strip())
+            try:
+                with open(_os.path.join(safe_dir, fname), "r", encoding="utf-8") as f:
+                    return f.read(800)
+            except:
+                return f"[FILE_NOT_FOUND:{fname}]"
+        return re.sub(r'\[READ_FILE:([^\]]+)\]', _rf, arg)
+
+    async def resolve_placeholders(self, text: str, db: Session, agent, last_quest) -> str:
+        """
+        Full async prompt parser. Handles in order, from innermost outward:
+          • [CREATE_FILE:name]content[END_FILE]  → creates file, emits [FILE_CREATED:name]
+          • [READ_FILE:name]                      → emits file contents (bare, outside {{}})
+          • {{[tool_id:arg1|arg2]}}               → inline tool call (: or | after tool name)
+          • {{[HTTP_GET:url]}}                    → inline HTTP GET
+          • {{[HTTP_POST:url|body]}}              → inline HTTP POST
+          • {{key\ntrue\n/ELSE/\nfalse}}          → conditional block
+          • {{key ?? \n- true\n- false\n}}        → legacy conditional
+          • {{key}}                               → simple substitution
+          • {key}                                 → single-brace substitution
+        All inline tool calls charge non-owner agents and pay the tool owner.
+        """
+        import os as _os
+        safe_dir = _os.path.join(_os.path.dirname(__file__), "tool_outputs")
+        _os.makedirs(safe_dir, exist_ok=True)
+
+        # ── Stage 1: bare CREATE_FILE (side-effect only) ────────────────────
+        def _create_file(m):
+            fname = _os.path.basename(m.group(1).strip())
+            try:
+                with open(_os.path.join(safe_dir, fname), "w", encoding="utf-8") as f:
+                    f.write(m.group(2))
+                return f"[FILE_CREATED:{fname}]"
+            except Exception as e:
+                return f"[FILE_ERROR:{e}]"
+        text = re.sub(r'\[CREATE_FILE:([^\]]+)\](.*?)\[END_FILE\]', _create_file, text, flags=re.DOTALL)
+
+        # ── Stage 2: bare READ_FILE outside {{}} ────────────────────────────
+        def _read_file(m):
+            fname = _os.path.basename(m.group(1).strip())
+            try:
+                with open(_os.path.join(safe_dir, fname), "r", encoding="utf-8") as f:
+                    return f.read(800)
+            except:
+                return f"[FILE_NOT_FOUND:{fname}]"
+        # Only replace when NOT inside {{...}} — use a simple heuristic: replace all for now
+        text = re.sub(r'\[READ_FILE:([^\]]+)\]', _read_file, text)
+
+        # ── Stage 3: build context maps ─────────────────────────────────────
         tkt_exist = db.query(Ticket).filter(Ticket.status == "UNUSED").count() > 0
         pending_quests_exist = (
-            db.query(JoinQuest)
-            .join(Thread, JoinQuest.thread_id == Thread.id)
-            .filter(
-                JoinQuest.status == "PENDING",
-                JoinQuest.is_invite.is_(True),
-                Thread.owner_agent_id == agent.id,
-            )
-            .count() > 0
+            db.query(JoinQuest).join(Thread, JoinQuest.thread_id == Thread.id)
+            .filter(JoinQuest.status == "PENDING", JoinQuest.is_invite.is_(True),
+                    Thread.owner_agent_id == agent.id).count() > 0
         )
         inv_exist = (
-            db.query(JoinQuest)
-            .filter(
-                JoinQuest.agent_id == agent.id,
-                JoinQuest.status == "PENDING",
-                JoinQuest.is_invite == True
-            )
-            .count() > 0
+            db.query(JoinQuest).filter(JoinQuest.agent_id == agent.id,
+                JoinQuest.status == "PENDING", JoinQuest.is_invite == True).count() > 0
         )
-
         inv_status_exist = last_quest is not None
 
         bool_ctx = {
@@ -1174,208 +1224,142 @@ class SimEngine:
             "pending_quests_exist":     pending_quests_exist,
             "exist_invitation_status":  inv_status_exist,
         }
-
-        # ── Simple value map ─────────────────────────────────────────────────
         simple = {
             "available_tickets":        self.get_available_tickets_context(db),
             "pending_quests":           self.get_rich_quests_to_join_context(db, agent),
             "pending_invitation":       self.get_rich_invitation_context(db, agent),
             "invitation_status":        last_quest.status if last_quest else "None",
-            "available_tickets_exist":  "Yes" if tkt_exist  else "No",
-            "pending_invitation_exist": "Yes" if inv_exist  else "No",
-            "all_enabled_tools":        self.get_tools(db),
-            "all_quest_tools":        self.get_quest_tools(db),
-            "pending_quests_exist":     "Yes" if pending_quests_exist  else "No",
-            "exist_invitation_status":  "Yes" if inv_status_exist else "No",
-            "agent":                    agent.name_id, 
-        }
-
-        # ── 1. Resolve nested {{ ... }} blocks from the inside out ───────────
-        pattern = r"\{\{((?:(?!\{\{|\}\}).)*)\}\}"
-        
-        def _inner_replacer(m):
-            content = m.group(1)
-            match = re.match(r'^\s*([a-zA-Z0-9_]+)(.*)', content, flags=re.DOTALL)
-            
-            if not match:
-                # Unrecognized format: escape to prevent infinite loops, resolved at the end.
-                return f"\x01LBRACE\x01{content}\x01RBRACE\x01"
-                
-            key = match.group(1)
-            remainder = match.group(2)
-            
-            if key in bool_ctx or "/ELSE/" in remainder or "??" in remainder:
-                condition_val = bool_ctx.get(key, False) 
-                
-                if "??" in remainder:
-                    body = remainder.replace("??", "", 1).strip()
-                    parts = re.split(r'^\s*-\s+', body, flags=re.MULTILINE)
-                    options = [p.strip() for p in parts if p]
-                    true_str  = options[0] if len(options) > 0 else ""
-                    false_str = options[1] if len(options) > 1 else ""
-                    return true_str if condition_val else false_str
-                    
-                else:
-                    # split on first /ELSE/ only
-                    parts = remainder.split('/ELSE/', 1)
-                    true_str = parts[0].strip()
-                    false_str = parts[1].strip() if len(parts) > 1 else ""
-                    return true_str if condition_val else false_str
-
-            elif key in simple and remainder.strip() == "":
-                return str(simple[key])
-                
-            # If valid key pattern but unknown key, escape it.
-            return f"\x01LBRACE\x01{content}\x01RBRACE\x01"
-
-        max_iters = 20
-        for _ in range(max_iters):
-            new_text = re.sub(pattern, _inner_replacer, text, flags=re.DOTALL)
-            if new_text == text:
-                break
-            text = new_text
-
-        # Restore escaped brackets for unresolved variables
-        text = text.replace("\x01LBRACE\x01", "{{").replace("\x01RBRACE\x01", "}}")
-
-        # ── 2. Resolve single {key} replacements ─────────────────────────────
-        def _single_replacer(m):
-            match_key = m.group(1)
-            return str(simple.get(match_key, m.group(0)))
-
-        keys_pattern = "|".join(re.escape(k) for k in simple.keys())
-        single_pattern = r"\{(" + keys_pattern + r")\}"
-        text = re.sub(single_pattern, _single_replacer, text)
-
-        return text
-    def resolve_placeholders_backup(self, text: str, db: Session, agent, last_quest):
-        """
-        Resolve ALL {{...}} placeholders in a prompt string from the inside out.
-
-        Supports:
-          • Simple:      {{available_tickets}}  {{pending_invitation}}  etc.
-          • Single:      {agent}
-          • Conditionals:
-              {{ condition_key
-                  True block text
-              /ELSE/
-                  False block text
-              }}
-          • Legacy Conditionals:
-              {{KEY ??
-              - string if TRUE
-              - string if FALSE
-              }}
-          • Infinite Nesting of the above.
-        """
-        import re
-
-        # ── Compute boolean context ──────────────────────────────────────────
-        tkt_exist = db.query(Ticket).filter(Ticket.status == "UNUSED").count() > 0
-        pending_quests_exist = (
-            db.query(JoinQuest)
-            .join(Thread, JoinQuest.thread_id == Thread.id)
-            .filter(
-                JoinQuest.status == "PENDING",
-                JoinQuest.is_invite.is_(True),
-                Thread.owner_agent_id == agent.id,
-            )
-            .count() > 0
-        )
-        inv_exist = (
-            db.query(JoinQuest)
-            .filter(
-                JoinQuest.agent_id == agent.id,
-                JoinQuest.status == "PENDING",
-                JoinQuest.is_invite == True
-            )
-            .count() > 0
-        )
-
-        inv_status_exist = last_quest is not None
-
-        bool_ctx = {
-            "available_tickets_exist":  tkt_exist,
-            "pending_invitation_exist": inv_exist,
-            "pending_quests_exist":     pending_quests_exist,
-            "exist_invitation_status":  inv_status_exist,
-        }
-
-        # ── Simple value map ─────────────────────────────────────────────────
-        simple = {
-            "available_tickets":        self.get_available_tickets_context(db),
-            "pending_quests":           self.get_rich_quests_to_join_context(db, agent),
-            "pending_invitation":       self.get_rich_invitation_context(db, agent),
-            "invitation_status":        last_quest.status if last_quest else "None",
-            "available_tickets_exist":  "Yes" if tkt_exist  else "No",
-            "pending_invitation_exist": "Yes" if inv_exist  else "No",
+            "available_tickets_exist":  "Yes" if tkt_exist else "No",
+            "pending_invitation_exist": "Yes" if inv_exist else "No",
             "all_enabled_tools":        self.get_tools(db),
             "all_quest_tools":          self.get_quest_tools(db),
-            "pending_quests_exist":     "Yes" if pending_quests_exist  else "No",
+            "pending_quests_exist":     "Yes" if pending_quests_exist else "No",
             "exist_invitation_status":  "Yes" if inv_status_exist else "No",
             "agent":                    agent.name_id,
             "thread_summary":           self.get_thread_summaries_context(db),
         }
 
-        # ── 1. Resolve nested {{ ... }} blocks from the inside out ───────────
-        # This regex finds the innermost brackets that do not contain other brackets.
-        pattern = r"\{\{((?:(?!\{\{|\}\}).)*)\}\}"
-        
-        def _inner_replacer(m):
-            content = m.group(1)
-            # Match the first word (the key) and capture the rest of the block
-            match = re.match(r'^\s*([a-zA-Z0-9_]+)(.*)', content, flags=re.DOTALL)
-            if not match:
-                return m.group(0)
-                
-            key = match.group(1)
-            remainder = match.group(2)
-            
-            # Check if it's a conditional block
-            if key in bool_ctx or "/ELSE/" in remainder or "??" in remainder:
-                condition_val = bool_ctx.get(key, False) 
-                
-                # Legacy syntax: {{ KEY ?? \n - True \n - False }}
-                if "??" in remainder:
-                    body = remainder.replace("??", "", 1).strip()
+        # ── Stage 4: iterative inside-out {{ }} resolution ──────────────────
+        # Matches innermost {{ ... }} — no nested {{ }} inside
+        inner_pat = re.compile(r'\{\{((?:(?!\{\{|\}\}).)*)\}\}', re.DOTALL)
+        LBRACE, RBRACE = "\x02LBRACE\x02", "\x02RBRACE\x02"
+
+        async def _resolve_inner(content: str) -> str:
+            stripped = content.strip()
+
+            # ── Inline tool / HTTP call: content starts with [
+            if stripped.startswith('['):
+                # Find matching closing ] at depth 0
+                depth, i = 0, 0
+                for i, ch in enumerate(stripped):
+                    if ch == '[': depth += 1
+                    elif ch == ']':
+                        depth -= 1
+                        if depth == 0: break
+                inner_content = stripped[1:i]   # between outermost [ ]
+
+                # Split tool name from args on first : or |
+                sep = re.match(r'^([a-zA-Z0-9_]+)([:|]?)(.*)', inner_content, re.DOTALL)
+                if not sep:
+                    return LBRACE + content + RBRACE
+                tool_id   = sep.group(1)
+                rest      = sep.group(3).strip()
+                # Split remaining args on | (pipe-aware)
+                raw_args = self._split_pipe_aware(rest) if rest else []
+                # Expand [READ_FILE:...] within each arg
+                args = [self._expand_file_ops_in_arg(a) for a in raw_args]
+
+                # ── HTTP_GET ────────────────────────────────────────────────
+                if tool_id == "HTTP_GET":
+                    url = args[0].strip() if args else ""
+                    try:
+                        async with httpx.AsyncClient() as client:
+                            r = await client.get(url, timeout=10.0, follow_redirects=True)
+                        return f"[HTTP({r.status_code}):{r.text[:400]}]"
+                    except Exception as e:
+                        return f"[HTTP_ERROR:{e}]"
+
+                # ── HTTP_POST ───────────────────────────────────────────────
+                if tool_id == "HTTP_POST":
+                    url  = args[0].strip() if len(args) > 0 else ""
+                    body = args[1].strip() if len(args) > 1 else ""
+                    try:
+                        async with httpx.AsyncClient() as client:
+                            r = await client.post(url, content=body, timeout=10.0)
+                        return f"[POST({r.status_code}):{r.text[:300]}]"
+                    except Exception as e:
+                        return f"[POST_ERROR:{e}]"
+
+                # ── Registered tool ──────────────────────────────────────────
+                tool_obj = db.query(AgentTool).filter(AgentTool.id == tool_id,
+                                                       AgentTool.enabled == True).first()
+                if not tool_obj:
+                    return f"[TOOL_NOT_FOUND:{tool_id}]"
+
+                # Payment for non-owner callers
+                if (tool_obj.price or 0) > 0:
+                    owner_id = tool_obj.owner_id or "FOUNDER"
+                    if owner_id != agent.id:
+                        ok = await self.produce_transaction(
+                            db, agent.id, owner_id, tool_obj.price, f"inline_call:{tool_id}")
+                        if not ok:
+                            return f"[TOOL_NO_FUNDS:{tool_id} costs {tool_obj.price}pts]"
+
+                # Execute
+                try:
+                    if tool_obj.is_custom:
+                        result = await self.execute_custom_tool(db, agent, tool_obj, args)
+                    else:
+                        result = await self.execute_tool_logic(db, agent, tool_id, args)
+                    return str(result)
+                except Exception as e:
+                    return f"[TOOL_ERR:{tool_id}:{e}]"
+
+            # ── Conditional or simple placeholder ───────────────────────────
+            key_m = re.match(r'^\s*([a-zA-Z0-9_]+)(.*)', stripped, re.DOTALL)
+            if not key_m:
+                return LBRACE + content + RBRACE
+
+            key, remainder = key_m.group(1), key_m.group(2)
+
+            if key in bool_ctx or '/ELSE/' in remainder or '??' in remainder:
+                cond_val = bool_ctx.get(key, False)
+                if '??' in remainder:
+                    body = remainder.replace('??', '', 1).strip()
                     parts = re.split(r'^\s*-\s+', body, flags=re.MULTILINE)
-                    options = [p.strip() for p in parts if p]
-                    true_str  = options[0] if len(options) > 0 else ""
-                    false_str = options[1] if len(options) > 1 else ""
-                    return true_str if condition_val else false_str
-                    
-                # New nested syntax: {{ KEY \n True block \n /ELSE/ \n False block }}
+                    opts = [p.strip() for p in parts if p]
+                    return opts[0] if cond_val else (opts[1] if len(opts) > 1 else "")
                 else:
-                    parts = remainder.split('/ELSE/')
-                    true_str = parts[0].strip()
-                    false_str = parts[1].strip() if len(parts) > 1 else ""
-                    return true_str if condition_val else false_str
+                    parts = remainder.split('/ELSE/', 1)
+                    return parts[0].strip() if cond_val else (parts[1].strip() if len(parts) > 1 else "")
 
-            # Check if it's a simple placeholder (e.g., {{ available_tickets }})
-            elif key in simple and remainder.strip() == "":
+            if key in simple and not remainder.strip():
                 return str(simple[key])
-                
-            # If unrecognized, leave the block intact
-            return m.group(0)
 
-        # Iteratively process innermost brackets until none are left
-        # (Capped at 20 iterations to prevent infinite loops from bad formatting)
-        max_iters = 20
-        for _ in range(max_iters):
-            new_text = re.sub(pattern, _inner_replacer, text, flags=re.DOTALL)
-            if new_text == text:
-                break
-            text = new_text
+            # Unknown — preserve with sentinel
+            return LBRACE + content + RBRACE
 
-        # ── 2. Resolve single {key} replacements ─────────────────────────────
-        def _single_replacer(m):
-            match_key = m.group(1)
-            return str(simple.get(match_key, m.group(0)))
+        # Iterative passes — up to 30 to handle deep nesting
+        for _ in range(30):
+            matches = list(inner_pat.finditer(text))
+            if not matches: break
+            changed = False
+            for m in reversed(matches):
+                result = await _resolve_inner(m.group(1))
+                replacement = LBRACE + m.group(1) + RBRACE
+                if result != replacement:
+                    text = text[:m.start()] + result + text[m.end():]
+                    changed = True
+            if not changed: break
 
-        keys_pattern = "|".join(re.escape(k) for k in simple.keys())
-        single_pattern = r"\{(" + keys_pattern + r")\}"
-        text = re.sub(single_pattern, _single_replacer, text)
+        # Restore unresolved sentinels
+        text = text.replace(LBRACE, "{{").replace(RBRACE, "}}")
 
+        # ── Stage 5: {single_var} substitution ──────────────────────────────
+        if simple:
+            kpat = "|".join(re.escape(k) for k in simple)
+            text = re.sub(r'\{(' + kpat + r')\}',
+                          lambda m: str(simple[m.group(1)]), text)
         return text
-
+                
 engine = SimEngine()

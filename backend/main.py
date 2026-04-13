@@ -862,7 +862,7 @@ async def debug_parse_prompt(data: dict, db: Session = Depends(database.get_db))
 
     # ── Step 1: resolve_placeholders pass ───────────────────────────────────
     try:
-        resolved = sim_engine.resolve_placeholders(prompt_text, db, agent, last_q)
+        resolved = await sim_engine.resolve_placeholders(prompt_text, db, agent, last_q)
     except Exception as e:
         return {"error": f"resolve_placeholders failed: {e}"}
 
@@ -916,3 +916,12 @@ async def summarize_thread(thread_id: str, db: Session = Depends(database.get_db
     if not t: return {"error": "Thread not found"}
     asyncio.create_task(sim_engine.compute_thread_summary(thread_id))
     return {"status": "queued", "thread_id": thread_id}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "main:app",      # module:app
+        host="0.0.0.0",
+        port=8000,
+        reload=True
+    )

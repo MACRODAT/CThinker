@@ -1,7 +1,17 @@
-This is not what I want.
-I want a full editor for the prompt of the Workshop. It should take most of the screen. 
-Plus add a side panel with all properties of the tool.
-Also, when a paid external tool is called, you must pay its owner. 
+I have an API with execute_custom_tool in engine.py line 1091.
+It's not really what I want. 
+I want a complete function prompt executor.
+So I've got this parser: async def resolve_placeholders(self, text: str, db: Session, agent, last_quest) -> str at line 1168 in engine.py
+That parses nested conditionals and simple variables and boolean variables.
+But I need to implement:
+- functions without args, format: *\/func\/*
+- functions with arguments, format: *\/func|arg1|arg2\/*
+- other custom_tools with/without args, format: *\/custom_tool|arg1\/*
+- Also, when a paid external tool is called, you must pay its owner.
+Some of this is implemented, just not correctly.
+Also, why call an LLM in execute_custom_tool?
+Basically, use resolve_placeholders, which should help you with conditionals and simple variables. Catch: some variables may be inside functions and some functions may be inside conditionals.
+So, resolve_placeholders calls execute_custom_tool and vice versa until everything is resolved.
 You know what? See this prompt, it has all the features I want:
 
 --------- PROMPT CODE ----------
@@ -11,16 +21,16 @@ You know what? See this prompt, it has all the features I want:
         Turn ideas into structured artifacts that can justify the cost of threads and lead to approval rewards.
         You are allowed to be creative here — but only in ways that can be **finished**, **used**, and **approved**.
         We may call tools and do nested conditionals.
-        When you arrive here, it should call automatically this function and put in the result. File created: [CREATE_FILE:content.txt]More content on your hard drive![END_FILE]
-        When you get in here, it should call an external tool. Current time: {{[get_time]}}
-        I could also call another external paid tool with arguments like so. Result: {{[external_paid_tool:arg1|arg2]}}.
+        When you arrive here, it should call automatically this function and put in the result. File created: *\/CREATE_FILE|content.txt|More content on your hard drive!\/*
+        When you get in here, it should call an external tool. Current time: *\/get_time\/*
+        I could also call another external paid tool with arguments like so. Result: *\/external_paid_tool|arg1|arg2\/*
         I may also produce complex stuff like:
-        {{[get_news|[READ_FILE:my_city.txt]}}
+        *\/get_news|*\/READ_FILE:my_city.txt\/*
         OR even:
-        {{[HTTP_POST:[READ_FILE:url.txt]This is a new post![END_HTTP]]}}
+        *\/HTTP_POST|*\/READ_FILE|url.txt\/*|This is a new post!\/*
         Basically, the parser needs to be perfect to handle every single prompt!
         {{
-            pending_invitationss_exist
+            pending_invitations_exist
                 Returns this sentence with the name of the agent which is {agent}
             /ELSE/
                 Returns another sentence with the name of the agent which is {agent}
