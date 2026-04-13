@@ -49,6 +49,9 @@ def seed_db(db: Session):
             "RECENT ACTIONS:\n{actions}\n\n"
             "{directives}\n\n"
             "{tools}\n\n"
+            "MANDATORY FORMAT FOR STATE UPDATES AT THE END:\n"
+            "[MEMORY]\nupdated_memory_content\n[END MEMORY]\n\n"
+            "[MODE]\nnext_mode_id\n[END MODE]"
         )
         templates = [
         models.PromptTemplate(
@@ -98,9 +101,6 @@ def seed_db(db: Session):
                     "RECENT ACTIONS:\n{actions}\n\n"
                     "{directives}\n\n"
                     "{tools}\n\n"
-                    "TASK: Describe 1 definitive action you take. You can use tools.\n\n"
-                    "TOOL CALLING FORMAT:\n"
-                    "[CALL_TOOL]\n- tool_name\n- arg1\n[END_CALL_TOOL]\n\n"
                     "MANDATORY FORMAT FOR STATE UPDATES:\n"
                     "[MEMORY]\nupdated_memory_content\n[END MEMORY]\n\n"
                     "[MODE]\nnext_mode_id\n[END MODE]"
@@ -343,7 +343,17 @@ def get_state(db: Session = Depends(database.get_db)):
         "threads":     state_threads,
         "prompts":     {p.id: {"id": p.id, "name": p.name, "system_prompt": p.system_prompt, "user_prompt_template": p.user_prompt_template, "custom_directives": p.custom_directives} for p in prompts},
         "settings":    {s.key: s.value for s in settings},
-        "tools":       {t.id: {"id": t.id, "name": t.name, "description": t.description, "enabled": t.enabled, "config": t.config_json} for t in tools},
+        "tools":       {t.id: {
+            "id": t.id, "name": t.name, "description": t.description,
+            "enabled": t.enabled, "config": t.config_json,
+            "is_custom": bool(t.is_custom),
+            "owner_id": t.owner_id,
+            "price": t.price or 0,
+            "prompt_template": t.prompt_template,
+            "args_definition": t.args_definition or "[]",
+            "call_tools": t.call_tools or "[]",
+            "allowed_actions": t.allowed_actions or "[]",
+        } for t in tools},
     }
 
 
@@ -645,6 +655,83 @@ def update_tool(tool_id: str, req: schemas.AgentToolUpdate, db: Session = Depend
     if req.config_json is not None: tool.config_json = req.config_json
     db.commit()
     return {"status": "success"}
+
+@app.post("/api/tools")
+def create_tool(req: schemas.ToolCreateRequest, db: Session = Depends(database.get_db)):
+    if db.query(models.AgentTool).filter(models.AgentTool.id == req.id).first():
+        return {"error": f"Tool ID '{req.id}' already exists"}
+    tool = models.AgentTool(
+        id=req.id, name=req.name, description=req.description,
+        enabled=True, is_custom=True,
+        prompt_template=req.prompt_template,
+        args_definition=req.args_definition,
+        call_tools=req.call_tools,
+        allowed_actions=req.allowed_actions,
+        owner_id=req.owner_id if req.owner_id and req.owner_id != "FOUNDER" else None,
+        price=req.price,
+    )
+    db.add(tool); db.commit()
+    return {"status": "success", "id": req.id}
+
+@app.delete("/api/tools/{tool_id}")
+def delete_tool(tool_id: str, db: Session = Depends(database.get_db)):
+    tool = db.query(models.AgentTool).filter(models.AgentTool.id == tool_id).first()
+    if not tool: return {"error": "Tool not found"}
+    if not tool.is_custom: return {"error": "Cannot delete built-in tools"}
+    db.delete(tool); db.commit()
+    return {"status": "success"}
+
+@app.get("/api/tools/{tool_id}/owner")
+def get_tool_owner(tool_id: str, db: Session = Depends(database.get_db)):
+    tool = db.query(models.AgentTool).filter(models.AgentTool.id == tool_id).first()
+    if not tool: return {"error": "Tool not found"}
+    owner_name = "FOUNDER"
+    if tool.owner_id:
+        ag = db.query(models.Agent).filter(models.Agent.id == tool.owner_id).first()
+        owner_name = ag.name_id if ag else tool.owner_id
+    return {"tool_id": tool_id, "owner_id": tool.owner_id or "FOUNDER", "owner_name": owner_name, "price": tool.price or 0}
+
+@app.put("/api/tools/{tool_id}/owner")
+def set_tool_owner(tool_id: str, payload: dict, db: Session = Depends(database.get_db)):
+    tool = db.query(models.AgentTool).filter(models.AgentTool.id == tool_id).first()
+    if not tool: return {"error": "Tool not found"}
+    new_owner = payload.get("owner_id")
+    tool.owner_id = None if (not new_owner or new_owner == "FOUNDER") else new_owner
+    if "price" in payload: tool.price = int(payload["price"])
+    db.commit()
+    return {"status": "success"}
+
+@app.post("/api/transactions")
+def create_transaction(req: schemas.TransactionCreate, db: Session = Depends(database.get_db)):
+    if req.amount <= 0: return {"error": "Amount must be positive"}
+    if req.from_id != "FOUNDER":
+        ag = db.query(models.Agent).filter(models.Agent.id == req.from_id).first()
+        if not ag: return {"error": "Source agent not found"}
+        if ag.wallet_current < req.amount: return {"error": "Insufficient funds"}
+        ag.wallet_current -= req.amount
+    if req.to_id != "FOUNDER":
+        ag = db.query(models.Agent).filter(models.Agent.id == req.to_id).first()
+        if ag: ag.wallet_current += req.amount
+    db.add(models.Transaction(from_id=req.from_id, to_id=req.to_id, amount=req.amount, reason=req.reason))
+    db.commit()
+    return {"status": "success"}
+
+@app.get("/api/transactions")
+def get_transactions(limit: int = 100, db: Session = Depends(database.get_db)):
+    txns = db.query(models.Transaction).order_by(models.Transaction.id.desc()).limit(limit).all()
+    result = []
+    agent_cache = {}
+    def get_name(uid):
+        if uid == "FOUNDER": return "👑 Founder"
+        if uid not in agent_cache:
+            ag = db.query(models.Agent).filter(models.Agent.id == uid).first()
+            agent_cache[uid] = ag.name_id if ag else uid
+        return agent_cache[uid]
+    for t in txns:
+        result.append({"id": t.id, "from_id": t.from_id, "from_name": get_name(t.from_id),
+                        "to_id": t.to_id, "to_name": get_name(t.to_id),
+                        "amount": t.amount, "reason": t.reason, "created": t.created})
+    return result
 
 @app.post("/api/tools/{tool_id}/invoke")
 async def invoke_tool(tool_id: str, req: schemas.ToolInvokeRequest, db: Session = Depends(database.get_db)):

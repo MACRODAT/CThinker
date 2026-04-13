@@ -132,9 +132,26 @@ class AgentTool(Base):
     __tablename__ = "agent_tools"
     id = Column(String, primary_key=True)
     name = Column(String)
-    description = Column(Text)
+    description = Column(Text)          # shown to agents in their prompt
     enabled = Column(Boolean, default=True)
     config_json = Column(Text, default="{}")
+    # ── Programmatic tool fields ──────────────────────────────────────────────
+    is_custom = Column(Boolean, default=False)
+    owner_id = Column(String, nullable=True)    # "FOUNDER" or agent ID
+    price = Column(Integer, default=0)          # pts charged to non-owners per use
+    prompt_template = Column(Text, nullable=True)
+    args_definition = Column(Text, default="[]")   # JSON [{name, description}, ...]
+    call_tools = Column(Text, default="[]")         # JSON [tool_id, ...]
+    allowed_actions = Column(Text, default="[]")    # JSON ["http_get","create_file",...]
+
+class Transaction(Base):
+    __tablename__ = "transactions"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    from_id = Column(String)      # agent ID or "FOUNDER"
+    to_id = Column(String)        # agent ID or "FOUNDER"
+    amount = Column(Integer)
+    reason = Column(String)
+    created = Column(String, default=get_stamp)
 
 # ── System Logger ─────────────────────────────────────────────────────────────
 # Stores every meaningful engine event: ticks, LLM calls, tool use, points, errors.

@@ -2210,79 +2210,546 @@ function ToolTesterModal({ tool, agents, onClose }) {
 
 // ── Tools ─────────────────────────────────────────────────────────────────────
 function Tools({ state, fetchState }) {
-  const tools = Object.values(state.tools || {});
+  const [tab, setTab] = useState("capabilities");
+  const tools  = Object.values(state.tools || {});
   const agents = Object.values(state.agents || {});
-  const [instr, setInstr] = useState(state.settings?.tools_instruction_prefix || "");
+
+  const tabBtn = (id, lbl) => (
+    <button key={id} onClick={() => setTab(id)} style={{
+      padding: "7px 18px", fontSize: 12, cursor: "pointer", borderRadius: 6, fontWeight: 600,
+      background: tab === id ? "#6366f1" : "#11141a",
+      border: `1px solid ${tab === id ? "#6366f1" : "#1e222d"}`,
+      color: tab === id ? "#fff" : "#6b7280", transition: "all 0.15s",
+    }}>{lbl}</button>
+  );
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 6, marginBottom: 24, borderBottom: "1px solid #1a1d24", paddingBottom: 12 }}>
+        {tabBtn("capabilities", "🛠️ Capabilities")}
+        {tabBtn("workshop",     "⚗️ Workshop")}
+        {tabBtn("economy",      "💸 Economy")}
+      </div>
+      {tab === "capabilities" && <ToolCapabilities tools={tools} agents={agents} state={state} fetchState={fetchState} />}
+      {tab === "workshop"     && <ToolWorkshop     tools={tools} agents={agents} state={state} fetchState={fetchState} />}
+      {tab === "economy"      && <ToolEconomy      state={state} />}
+    </div>
+  );
+}
+
+// ── ToolCapabilities (existing tools grid) ────────────────────────────────────
+function ToolCapabilities({ tools, agents, state, fetchState }) {
+  const [instr, setInstr]     = useState(state.settings?.tools_instruction_prefix || "");
   const [testTool, setTestTool] = useState(null);
 
   useEffect(() => {
     if (state.settings?.tools_instruction_prefix !== undefined) setInstr(state.settings.tools_instruction_prefix);
   }, [state.settings?.tools_instruction_prefix]);
 
-  const toggleTool = async (tid, current) => {
-    await fetch(`${API_BASE}/tools/${tid}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled: !current }) });
+  const toggleTool = async (tid, cur) => {
+    await fetch(`${API_BASE}/tools/${tid}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled: !cur }) });
     fetchState();
   };
   const saveInstr = async () => {
     await fetch(`${API_BASE}/settings/tools_instruction_prefix`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ value: instr }) });
     fetchState();
   };
+  const deleteTool = async (tid) => {
+    if (!window.confirm(`Delete custom tool "${tid}"?`)) return;
+    await fetch(`${API_BASE}/tools/${tid}`, { method: "DELETE" });
+    fetchState();
+  };
 
-  const TOOL_ICONS = { modify_own_tick: "⏱️", get_time: "🕐", get_weather: "🌤️", get_news: "📰" };
-  const enabledTools = tools.filter(t => t.enabled);
-  const previewText = `${instr}\n\n${enabledTools.map(t => `- ${t.description}`).join("\n") || "No tools."}`;
+  const ICONS = { modify_own_tick:"⏱️", get_time:"🕐", get_weather:"🌤️", get_news:"📰",
+    get_thread_summary:"📝", get_all_summaries:"📋", get_threads:"🗂️", get_agents:"👥",
+    join_thread:"🤝", create_thread:"➕", invest_thread:"💰", change_owner:"🔑", get_owner:"👁️",
+    produce_transaction:"💸" };
+  const enabled = tools.filter(t => t.enabled);
+
+  const ownerLabel = (t) => {
+    if (!t.owner_id) return null;
+    const ag = Object.values(state.agents || {}).find(a => a.id === t.owner_id);
+    return ag ? ag.name_id : t.owner_id;
+  };
 
   return (
     <div style={{ maxWidth: 1200, margin: "0 auto" }}>
-      <div style={{ display: "flex", gap: 32, marginBottom: 40, alignItems: "stretch" }}>
+      <div style={{ display: "flex", gap: 32, marginBottom: 32, alignItems: "stretch" }}>
         <div style={{ flex: 1 }}>
-          <h1 style={{ color: "#fff", fontSize: 22, marginBottom: 8 }}>Agent Capabilities</h1>
-          <p style={{ color: "#6b7280", fontSize: 13, marginBottom: 20 }}>Define the global tool instructions and toggle individual tools on/off.</p>
           <div className="card" style={{ padding: 20 }}>
-            <label style={{ display: "block", fontSize: 10, color: "#6366f1", fontWeight: 800, letterSpacing: 1.5, marginBottom: 10, textTransform: "uppercase" }}>Global Tool Instruction Prompt</label>
-            <textarea value={instr} onChange={e => setInstr(e.target.value)} style={{ height: 120, width: "100%", fontSize: 13, padding: 12, marginBottom: 14, background: "#0b0c10", border: "1px solid #1e222d", color: "#e2e8f0", borderRadius: 8 }} />
+            <label style={{ fontSize: 10, color: "#6366f1", fontWeight: 800, letterSpacing: 1.5, display: "block", marginBottom: 10, textTransform: "uppercase" }}>Global Tool Instruction Prompt</label>
+            <textarea value={instr} onChange={e => setInstr(e.target.value)} style={{ height: 100, width: "100%", fontSize: 12, padding: 12, marginBottom: 12, background: "#0b0c10", border: "1px solid #1e222d", color: "#e2e8f0", borderRadius: 8 }} />
             <div style={{ display: "flex", justifyContent: "flex-end" }}>
               <button className="btn btn-primary" onClick={saveInstr} disabled={instr === state.settings?.tools_instruction_prefix}>Save Prompt</button>
             </div>
           </div>
         </div>
-        <div style={{ width: 420 }}>
-          <label style={{ display: "block", fontSize: 10, color: "#9ca3af", fontWeight: 800, letterSpacing: 1.5, marginBottom: 10, textTransform: "uppercase" }}>Agent Context Preview</label>
-          <div className="card" style={{ flex: 1, background: "#0b0c10", padding: 16, border: "1px dashed #1e222d", position: "relative", height: "calc(100% - 26px)" }}>
-            <div style={{ position: "absolute", top: 8, right: 10, fontSize: 9, color: "#4b5563", background: "#11141a", padding: "2px 6px", borderRadius: 4 }}>READ ONLY</div>
-            <pre style={{ whiteSpace: "pre-wrap", fontSize: 11, color: "#6b7280", lineHeight: 1.6, margin: 0, fontFamily: "monospace" }}>{previewText}</pre>
+        <div style={{ width: 360 }}>
+          <label style={{ fontSize: 10, color: "#9ca3af", fontWeight: 800, letterSpacing: 1.5, display: "block", marginBottom: 10, textTransform: "uppercase" }}>Context Preview</label>
+          <div className="card" style={{ background: "#0b0c10", padding: 14, border: "1px dashed #1e222d", height: "calc(100% - 30px)", overflow: "auto" }}>
+            <pre style={{ whiteSpace: "pre-wrap", fontSize: 10, color: "#6b7280", lineHeight: 1.5, margin: 0, fontFamily: "monospace" }}>
+              {`${instr}\n\n${enabled.map(t => `- ${t.description}`).join("\n") || "No tools."}`}
+            </pre>
           </div>
         </div>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 20 }}>
-        {tools.map(t => (
-          <div key={t.id} className="card" style={{ opacity: t.enabled ? 1 : 0.55 }}>
-            <div className="card-header" style={{ justifyContent: "space-between" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <div style={{ width: 32, height: 32, borderRadius: 8, background: t.enabled ? "#1e1b4b" : "#1a1d24", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <span style={{ fontSize: 16 }}>{TOOL_ICONS[t.id] || "🔧"}</span>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(290px, 1fr))", gap: 16 }}>
+        {tools.map(t => {
+          const owner = ownerLabel(t);
+          return (
+            <div key={t.id} className="card" style={{ opacity: t.enabled ? 1 : 0.55, borderTop: t.is_custom ? "2px solid #6366f1" : undefined }}>
+              <div className="card-header" style={{ justifyContent: "space-between" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <div style={{ width: 30, height: 30, borderRadius: 7, background: t.is_custom ? "#1e1b4b" : (t.enabled ? "#1a1d24" : "#111"), display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <span style={{ fontSize: 14 }}>{t.is_custom ? "⚗️" : (ICONS[t.id] || "🔧")}</span>
+                  </div>
+                  <div>
+                    <div style={{ fontWeight: 700, color: "#fff", fontSize: 13 }}>{t.name}</div>
+                    <div className="mono" style={{ fontSize: 9, color: "#6366f1" }}>{t.id}</div>
+                  </div>
                 </div>
-                <div>
-                  <div style={{ fontWeight: 700, color: "#fff" }}>{t.name}</div>
-                  <div className="mono" style={{ fontSize: 10, color: "#6366f1" }}>{t.id}</div>
+                <div onClick={() => toggleTool(t.id, t.enabled)}
+                  style={{ width: 40, height: 20, borderRadius: 100, background: t.enabled ? "#6366f1" : "#1a1d24", position: "relative", cursor: "pointer", transition: "all 0.3s", border: "1px solid #1e222d", flexShrink: 0 }}>
+                  <div style={{ width: 14, height: 14, borderRadius: "50%", background: "#fff", position: "absolute", top: 2, left: t.enabled ? 22 : 3, transition: "all 0.3s" }} />
                 </div>
               </div>
-              <div onClick={() => toggleTool(t.id, t.enabled)}
-                style={{ width: 44, height: 22, borderRadius: 100, background: t.enabled ? "#6366f1" : "#1a1d24", position: "relative", cursor: "pointer", transition: "all 0.3s", border: "1px solid #1e222d" }}>
-                <div style={{ width: 16, height: 16, borderRadius: "50%", background: "#fff", position: "absolute", top: 2, left: t.enabled ? 24 : 3, transition: "all 0.3s" }} />
+              <div className="card-body">
+                <div style={{ fontSize: 11, color: "#9ca3af", lineHeight: 1.5, marginBottom: 10 }}>{t.description?.slice(0, 120)}</div>
+                {(owner || t.price > 0) && (
+                  <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
+                    {owner && <span style={{ fontSize: 9, padding: "2px 7px", borderRadius: 4, background: "#1e1b4b", color: "#818cf8", border: "1px solid #3730a3" }}>👤 {owner}</span>}
+                    {t.price > 0 && <span style={{ fontSize: 9, padding: "2px 7px", borderRadius: 4, background: "#064e3b", color: "#34d399", border: "1px solid #065f46" }}>💰 {t.price} pts/use</span>}
+                  </div>
+                )}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 10, borderTop: "1px solid #1a1d24" }}>
+                  <span style={{ fontSize: 10, color: "#4b5563" }}>
+                    {t.is_custom ? <span style={{ color: "#818cf8" }}>Custom</span> : "Built-in"} · <span style={{ color: t.enabled ? "#10b981" : "#ef4444" }}>{t.enabled ? "ON" : "OFF"}</span>
+                  </span>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button className="btn btn-soft" style={{ fontSize: 10, padding: "3px 9px" }} onClick={() => setTestTool(t)}>Test</button>
+                    {t.is_custom && <button onClick={() => deleteTool(t.id)} style={{ fontSize: 10, padding: "3px 9px", cursor: "pointer", background: "none", border: "1px solid #1e222d", borderRadius: 5, color: "#6b7280" }}
+                      onMouseEnter={e => { e.currentTarget.style.borderColor="#ef4444"; e.currentTarget.style.color="#ef4444"; }}
+                      onMouseLeave={e => { e.currentTarget.style.borderColor="#1e222d"; e.currentTarget.style.color="#6b7280"; }}>🗑</button>}
+                  </div>
+                </div>
               </div>
             </div>
-            <div className="card-body">
-              <div style={{ fontSize: 12, color: "#9ca3af", lineHeight: 1.6, marginBottom: 12 }}>{t.description}</div>
-              <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 12, borderTop: "1px solid #1a1d24", alignItems: "center" }}>
-                <span style={{ fontSize: 11, color: "#4b5563" }}>Status: <span style={{ fontWeight: 600, color: t.enabled ? "#10b981" : "#ef4444" }}>{t.enabled ? "ACTIVE" : "DISABLED"}</span></span>
-                <button className="btn btn-soft" style={{ fontSize: 10, padding: "4px 10px" }} onClick={() => setTestTool(t)}>Test Tool</button>
-              </div>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
       {testTool && <ToolTesterModal tool={testTool} agents={agents} onClose={() => setTestTool(null)} />}
+    </div>
+  );
+}
+
+// ── ToolWorkshop ───────────────────────────────────────────────────────────────
+const TOOL_ACTIONS = [
+  { id: "http_get",     label: "HTTP GET",     desc: "Fetch a URL — use [HTTP_GET:url] in prompt" },
+  { id: "http_post",    label: "HTTP POST",    desc: "POST to URL — [HTTP_POST:url]body[END_HTTP]" },
+  { id: "create_file",  label: "Create File",  desc: "Write file — [CREATE_FILE:name]content[END_FILE]" },
+  { id: "read_file",    label: "Read File",    desc: "Read file — [READ_FILE:name]" },
+];
+const AGENT_VARS = [
+  "{agent_name}", "{agent_id}", "{agent_wallet}", "{agent_dept}", "{agent_memory}",
+];
+const ACTION_SNIPPETS = {
+  http_get:    "[HTTP_GET:https://example.com/api]",
+  http_post:   "[HTTP_POST:https://example.com/api]\n{\"key\":\"value\"}\n[END_HTTP]",
+  create_file: "[CREATE_FILE:output.txt]\nYour content here\n[END_FILE]",
+  read_file:   "[READ_FILE:output.txt]",
+};
+
+function ToolWorkshop({ tools, agents, state, fetchState }) {
+  const blankForm = { id: "", name: "", description: "", prompt_template: "", args: [],
+    call_tools: [], allowed_actions: [], owner_id: "FOUNDER", price: 0 };
+  const [form, setForm]       = useState(blankForm);
+  const [testAgentId, setTestAgentId] = useState("");
+  const [testArgs, setTestArgs]       = useState([]);
+  const [testResult, setTestResult]   = useState(null);
+  const [testing, setTesting]         = useState(false);
+  const [saving, setSaving]           = useState(false);
+  const [saved, setSaved]             = useState(false);
+  const promptRef = useRef(null);
+
+  const customTools = tools.filter(t => t.is_custom);
+
+  // auto-slug ID from name
+  const slugify = (n) => n.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+
+  const setField = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  // ── Args management
+  const addArg    = () => setForm(f => ({ ...f, args: [...f.args, { name: "", description: "" }] }));
+  const removeArg = (i) => setForm(f => ({ ...f, args: f.args.filter((_, j) => j !== i) }));
+  const setArg    = (i, k, v) => setForm(f => {
+    const a = [...f.args]; a[i] = { ...a[i], [k]: v }; return { ...f, args: a };
+  });
+
+  // ── Prompt insertion
+  const insertSnippet = (snippet) => {
+    const ta = promptRef.current;
+    if (!ta) return;
+    const s = ta.selectionStart, e = ta.selectionEnd;
+    const next = form.prompt_template.slice(0, s) + snippet + form.prompt_template.slice(e);
+    setField("prompt_template", next);
+    setTimeout(() => { ta.selectionStart = ta.selectionEnd = s + snippet.length; ta.focus(); }, 0);
+  };
+
+  // ── Sub-tool toggle
+  const toggleCallTool = (tid) => setForm(f => ({
+    ...f, call_tools: f.call_tools.includes(tid) ? f.call_tools.filter(x => x !== tid) : [...f.call_tools, tid]
+  }));
+  const toggleAction = (id) => setForm(f => ({
+    ...f, allowed_actions: f.allowed_actions.includes(id)
+      ? f.allowed_actions.filter(x => x !== id) : [...f.allowed_actions, id]
+  }));
+
+  // ── Load existing tool for editing
+  const loadTool = (t) => {
+    let args = [];
+    try { args = JSON.parse(t.args_definition || "[]"); } catch {}
+    let callTools = [];
+    try { callTools = JSON.parse(t.call_tools || "[]"); } catch {}
+    let actions = [];
+    try { actions = JSON.parse(t.allowed_actions || "[]"); } catch {}
+    setForm({ id: t.id, name: t.name, description: t.description,
+      prompt_template: t.prompt_template || "", args,
+      call_tools: callTools, allowed_actions: actions,
+      owner_id: t.owner_id || "FOUNDER", price: t.price || 0 });
+    setTestResult(null);
+  };
+
+  // ── Save tool
+  const saveTool = async () => {
+    if (!form.id || !form.name) return;
+    setSaving(true);
+    const payload = {
+      id: form.id, name: form.name, description: form.description,
+      prompt_template: form.prompt_template,
+      args_definition: JSON.stringify(form.args),
+      call_tools: JSON.stringify(form.call_tools),
+      allowed_actions: JSON.stringify(form.allowed_actions),
+      owner_id: form.owner_id === "FOUNDER" ? null : form.owner_id,
+      price: form.price,
+    };
+    // Check if updating or creating
+    const exists = tools.find(t => t.id === form.id && t.is_custom);
+    if (exists) {
+      // Update via PUT (owner + price) + PUT enabled
+      await fetch(`${API_BASE}/tools/${form.id}/owner`, { method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ owner_id: payload.owner_id || "FOUNDER", price: payload.price }) });
+      // For other fields, delete + recreate (simplest given current API)
+      await fetch(`${API_BASE}/tools/${form.id}`, { method: "DELETE" });
+      await fetch(`${API_BASE}/tools`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    } else {
+      await fetch(`${API_BASE}/tools`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    }
+    setSaving(false); setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+    fetchState();
+  };
+
+  // ── Test tool
+  const runTest = async () => {
+    if (!testAgentId || !form.id) return;
+    setTesting(true); setTestResult(null);
+    const argsStr = testArgs.join(", ");
+    const r = await fetch(`${API_BASE}/tools/${form.id}/invoke`, { method: "POST",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ agent_id: testAgentId, args: argsStr }) });
+    const d = await r.json();
+    setTestResult(d.result || d.error || "No result");
+    setTesting(false);
+  };
+
+  const inputSt = { background: "#0b0c10", border: "1px solid #1e222d", color: "#e2e8f0", borderRadius: 6, padding: "7px 10px", fontSize: 12, width: "100%", outline: "none" };
+  const chipSt  = (active) => ({ fontSize: 10, padding: "3px 8px", cursor: "pointer", borderRadius: 4, fontFamily: "monospace",
+    background: active ? "#1e1b4b" : "#11141a", border: `1px solid ${active ? "#6366f1" : "#1e222d"}`, color: active ? "#a5b4fc" : "#6b7280" });
+  const secHeader = (lbl) => <div style={{ fontSize: 10, fontWeight: 800, color: "#6366f1", letterSpacing: 1, textTransform: "uppercase", marginBottom: 10 }}>{lbl}</div>;
+
+  return (
+    <div style={{ display: "flex", gap: 20, height: "calc(100vh - 200px)" }}>
+      {/* Left: custom tool list */}
+      <div style={{ width: 220, flexShrink: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+        {secHeader("Custom Tools")}
+        <button className="btn btn-primary" style={{ fontSize: 11, marginBottom: 6 }}
+          onClick={() => { setForm(blankForm); setTestResult(null); }}>
+          + New Tool
+        </button>
+        <div style={{ flex: 1, overflowY: "auto" }}>
+          {customTools.length === 0 && <div style={{ fontSize: 11, color: "#374151", textAlign: "center", marginTop: 20 }}>No custom tools yet.</div>}
+          {customTools.map(t => (
+            <div key={t.id} onClick={() => loadTool(t)} className="card"
+              style={{ cursor: "pointer", marginBottom: 8, padding: "10px 12px",
+                borderColor: form.id === t.id ? "#6366f1" : "#1a1d24",
+                background: form.id === t.id ? "#1e1b4b" : "#11141a" }}>
+              <div style={{ fontWeight: 600, color: "#e2e8f0", fontSize: 12 }}>⚗️ {t.name}</div>
+              <div className="mono" style={{ fontSize: 9, color: "#6366f1", marginTop: 2 }}>{t.id}</div>
+              {t.price > 0 && <div style={{ fontSize: 9, color: "#34d399", marginTop: 3 }}>💰 {t.price} pts/use</div>}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Right: editor */}
+      <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 16 }}>
+        {/* ── Header section */}
+        <div className="card">
+          <div className="card-header" style={{ fontSize: 12, fontWeight: 700, color: "#fff" }}>Tool Identity</div>
+          <div className="card-body" style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 14 }}>
+            <div>
+              <label style={{ fontSize: 10, color: "#6b7280", display: "block", marginBottom: 4, fontWeight: 600 }}>TOOL ID *</label>
+              <input value={form.id} onChange={e => setField("id", e.target.value)}
+                placeholder="my_tool" style={inputSt} />
+              <div style={{ fontSize: 9, color: "#374151", marginTop: 3 }}>Lowercase, underscores only</div>
+            </div>
+            <div>
+              <label style={{ fontSize: 10, color: "#6b7280", display: "block", marginBottom: 4, fontWeight: 600 }}>NAME *</label>
+              <input value={form.name}
+                onChange={e => { setField("name", e.target.value); if (!form.id) setField("id", slugify(e.target.value)); }}
+                placeholder="My Custom Tool" style={inputSt} />
+            </div>
+            <div style={{ gridColumn: "1 / -1" }}>
+              <label style={{ fontSize: 10, color: "#6b7280", display: "block", marginBottom: 4, fontWeight: 600 }}>DESCRIPTION — shown to agents in their prompt</label>
+              <textarea value={form.description} onChange={e => setField("description", e.target.value)}
+                placeholder="[CALL_TOOL]\n- my_tool\n- arg1\n[END_CALL_TOOL]\nDescribe what this tool does…"
+                rows={3} style={{ ...inputSt, resize: "vertical", fontFamily: "monospace" }} />
+            </div>
+          </div>
+        </div>
+
+        {/* ── Arguments section */}
+        <div className="card">
+          <div className="card-header" style={{ justifyContent: "space-between" }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: "#fff" }}>Arguments ({form.args.length})</span>
+            <button className="btn btn-soft" style={{ fontSize: 11, padding: "3px 10px" }} onClick={addArg}>+ Add Arg</button>
+          </div>
+          <div className="card-body" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {form.args.length === 0 && <div style={{ fontSize: 11, color: "#374151", fontStyle: "italic" }}>No args — tool takes no input.</div>}
+            {form.args.map((arg, i) => (
+              <div key={i} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <div style={{ background: "#1e1b4b", border: "1px solid #3730a3", borderRadius: 5, padding: "3px 8px", fontSize: 10, color: "#818cf8", flexShrink: 0, fontFamily: "monospace" }}>
+                  arg_{i} / {"{" + (arg.name || `arg_${i}`) + "}"}
+                </div>
+                <input value={arg.name} onChange={e => setArg(i, "name", e.target.value)}
+                  placeholder="name (e.g. topic)" style={{ ...inputSt, flex: "0 0 140px" }} />
+                <input value={arg.description} onChange={e => setArg(i, "description", e.target.value)}
+                  placeholder="description" style={{ ...inputSt, flex: 1 }} />
+                <button onClick={() => removeArg(i)} style={{ background: "none", border: "none", color: "#6b7280", cursor: "pointer", fontSize: 16, flexShrink: 0 }}>✕</button>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Prompt template */}
+        <div className="card">
+          <div className="card-header" style={{ fontSize: 12, fontWeight: 700, color: "#fff" }}>Prompt Template</div>
+          <div className="card-body" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {/* Variable chips */}
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+              <span style={{ fontSize: 9, color: "#6b7280", fontWeight: 700, letterSpacing: 1 }}>INSERT:</span>
+              {AGENT_VARS.map(v => (
+                <button key={v} onClick={() => insertSnippet(v)} style={chipSt(false)} title="Insert variable">{v}</button>
+              ))}
+              {form.args.map((arg, i) => {
+                const v = "{" + (arg.name || `arg_${i}`) + "}";
+                return <button key={i} onClick={() => insertSnippet(v)} style={{ ...chipSt(false), color: "#34d399", borderColor: "#065f46", background: "#022c22" }}>{v}</button>;
+              })}
+              {form.allowed_actions.map(a => (
+                <button key={a} onClick={() => insertSnippet(ACTION_SNIPPETS[a] || a)}
+                  style={{ ...chipSt(false), color: "#f59e0b", borderColor: "#78350f", background: "#1c0f00" }} title="Insert action block">
+                  {a}
+                </button>
+              ))}
+            </div>
+            <textarea ref={promptRef} value={form.prompt_template}
+              onChange={e => setField("prompt_template", e.target.value)}
+              placeholder={"You are executing the tool: " + (form.name || "My Tool") + ".\n\nInput: {arg_0}\nAgent: {agent_name} (wallet: {agent_wallet} pts)\n\nTask: Process the input and return a result.\nBe concise."}
+              style={{ ...inputSt, height: 200, resize: "vertical", fontFamily: "'JetBrains Mono', monospace", fontSize: 12, lineHeight: 1.6 }} />
+            <div style={{ fontSize: 10, color: "#4b5563" }}>
+              The LLM receives this prompt filled with arg values + agent context. Its response is the tool's output. Use <code style={{ color: "#a5b4fc" }}>[CALL_TOOL]</code> blocks in the response to chain sub-tools.
+            </div>
+          </div>
+        </div>
+
+        {/* ── Sub-tools + Actions (side by side) */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          <div className="card">
+            <div className="card-header" style={{ fontSize: 12, fontWeight: 700, color: "#fff" }}>Call Other Tools</div>
+            <div className="card-body" style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 200, overflowY: "auto" }}>
+              {tools.filter(t => t.id !== form.id).map(t => (
+                <label key={t.id} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", padding: "4px 0" }}>
+                  <input type="checkbox" checked={form.call_tools.includes(t.id)}
+                    onChange={() => toggleCallTool(t.id)}
+                    style={{ accentColor: "#6366f1" }} />
+                  <div>
+                    <div style={{ fontSize: 12, color: "#e2e8f0" }}>{t.name}</div>
+                    <div className="mono" style={{ fontSize: 9, color: "#6b7280" }}>{t.id}</div>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
+          <div className="card">
+            <div className="card-header" style={{ fontSize: 12, fontWeight: 700, color: "#fff" }}>Allowed Actions</div>
+            <div className="card-body" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {TOOL_ACTIONS.map(a => (
+                <label key={a.id} style={{ display: "flex", alignItems: "flex-start", gap: 8, cursor: "pointer" }}>
+                  <input type="checkbox" checked={form.allowed_actions.includes(a.id)}
+                    onChange={() => toggleAction(a.id)}
+                    style={{ accentColor: "#6366f1", marginTop: 2 }} />
+                  <div>
+                    <div style={{ fontSize: 12, color: "#e2e8f0", fontWeight: 600 }}>{a.label}</div>
+                    <div style={{ fontSize: 10, color: "#6b7280" }}>{a.desc}</div>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* ── Economy */}
+        <div className="card">
+          <div className="card-header" style={{ fontSize: 12, fontWeight: 700, color: "#fff" }}>Economy &amp; Ownership</div>
+          <div className="card-body" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+            <div>
+              <label style={{ fontSize: 10, color: "#6b7280", display: "block", marginBottom: 5, fontWeight: 600 }}>OWNER</label>
+              <select value={form.owner_id} onChange={e => setField("owner_id", e.target.value)} style={{ ...inputSt, width: "100%" }}>
+                <option value="FOUNDER">👑 Founder (free for all)</option>
+                {Object.values(state.agents || {}).map(a => (
+                  <option key={a.id} value={a.id}>{a.name_id} ({a.department || "—"})</option>
+                ))}
+              </select>
+              <div style={{ fontSize: 10, color: "#4b5563", marginTop: 4 }}>Owner uses tool for free and earns the price per usage</div>
+            </div>
+            <div>
+              <label style={{ fontSize: 10, color: "#6b7280", display: "block", marginBottom: 5, fontWeight: 600 }}>PRICE PER USE (pts)</label>
+              <input type="number" min="0" value={form.price}
+                onChange={e => setField("price", parseInt(e.target.value) || 0)}
+                style={{ ...inputSt, width: "100%" }} />
+              <div style={{ fontSize: 10, color: "#4b5563", marginTop: 4 }}>Charged to non-owner agents on each use. 0 = free for all.</div>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Save */}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+          <button className="btn btn-soft" onClick={() => { setForm(blankForm); setTestResult(null); }}>Reset</button>
+          <button className="btn btn-primary" onClick={saveTool}
+            disabled={saving || !form.id || !form.name}
+            style={{ minWidth: 130 }}>
+            {saving ? "Saving…" : saved ? "✓ Saved!" : (tools.find(t => t.id === form.id && t.is_custom) ? "Update Tool" : "Create Tool")}
+          </button>
+        </div>
+
+        {/* ── Test section */}
+        <div className="card" style={{ border: "1px solid #1e3a2f" }}>
+          <div className="card-header" style={{ fontSize: 12, fontWeight: 700, color: "#10b981" }}>Test Tool</div>
+          <div className="card-body" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+              <div style={{ flex: "1 1 200px" }}>
+                <label style={{ fontSize: 10, color: "#6b7280", display: "block", marginBottom: 4, fontWeight: 600 }}>EXECUTE AS AGENT</label>
+                <select value={testAgentId} onChange={e => setTestAgentId(e.target.value)} style={inputSt}>
+                  <option value="">— select —</option>
+                  {Object.values(state.agents || {}).map(a => (
+                    <option key={a.id} value={a.id}>{a.name_id} ({a.wallet?.current || 0} pts)</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            {form.args.length > 0 && (
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                {form.args.map((arg, i) => (
+                  <div key={i} style={{ flex: "1 1 160px" }}>
+                    <label style={{ fontSize: 10, color: "#6b7280", display: "block", marginBottom: 4 }}>
+                      {arg.name || `arg_${i}`} {arg.description && <span style={{ color: "#374151" }}>— {arg.description}</span>}
+                    </label>
+                    <input value={testArgs[i] || ""} onChange={e => {
+                      const a = [...testArgs]; a[i] = e.target.value; setTestArgs(a);
+                    }} placeholder={`arg_${i} value`} style={inputSt} />
+                  </div>
+                ))}
+              </div>
+            )}
+            <button className="btn btn-primary" onClick={runTest}
+              disabled={testing || !testAgentId || !form.id}
+              style={{ alignSelf: "flex-start", minWidth: 120 }}>
+              {testing ? "⏳ Running…" : "▶ Run Test"}
+            </button>
+            {testResult && (
+              <div style={{ background: "#040506", border: "1px solid #1a1d24", borderRadius: 8, padding: 14, fontSize: 12, color: "#e2e8f0", fontFamily: "monospace", lineHeight: 1.6, whiteSpace: "pre-wrap", maxHeight: 200, overflowY: "auto" }}>
+                {testResult}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── ToolEconomy ────────────────────────────────────────────────────────────────
+function ToolEconomy({ state }) {
+  const [txns, setTxns]   = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/transactions?limit=150`)
+      .then(r => r.json()).then(d => { setTxns(Array.isArray(d) ? d : []); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const tools = Object.values(state.tools || {});
+  const customTools = tools.filter(t => t.is_custom);
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 380px", gap: 20, maxWidth: 1200, margin: "0 auto" }}>
+      {/* Transaction ledger */}
+      <div className="card" style={{ display: "flex", flexDirection: "column" }}>
+        <div className="card-header" style={{ fontSize: 12, fontWeight: 700, color: "#10b981" }}>
+          Transaction Ledger
+          <span style={{ fontSize: 10, color: "#374151", fontWeight: 400, marginLeft: 8 }}>{txns.length} records</span>
+        </div>
+        <div style={{ flex: 1, overflowY: "auto", maxHeight: "calc(100vh - 280px)" }}>
+          {loading && <div style={{ padding: 40, textAlign: "center", color: "#6b7280" }}>Loading…</div>}
+          {!loading && txns.length === 0 && <div style={{ padding: 40, textAlign: "center", color: "#374151" }}>No transactions yet.</div>}
+          {txns.map(t => (
+            <div key={t.id} style={{ padding: "9px 16px", borderBottom: "1px solid #111316", display: "flex", alignItems: "center", gap: 12 }}>
+              <span className="mono" style={{ fontSize: 9, color: "#2d3748", minWidth: 64 }}>
+                {t.created ? new Date(t.created).toLocaleTimeString() : "—"}
+              </span>
+              <span style={{ fontSize: 11, color: "#818cf8", minWidth: 90, fontWeight: 600 }}>{t.from_name}</span>
+              <span style={{ fontSize: 10, color: "#374151" }}>→</span>
+              <span style={{ fontSize: 11, color: "#34d399", minWidth: 90, fontWeight: 600 }}>{t.to_name}</span>
+              <span className="mono" style={{ fontSize: 12, fontWeight: 700, color: "#10b981", minWidth: 60 }}>+{t.amount} pt</span>
+              <span style={{ fontSize: 10, color: "#4b5563", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.reason}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Tool ownership overview */}
+      <div className="card" style={{ display: "flex", flexDirection: "column" }}>
+        <div className="card-header" style={{ fontSize: 12, fontWeight: 700, color: "#818cf8" }}>Custom Tool Ownership</div>
+        <div style={{ flex: 1, overflowY: "auto", padding: "0 0 8px" }}>
+          {customTools.length === 0 && <div style={{ padding: 40, textAlign: "center", color: "#374151" }}>No custom tools yet.</div>}
+          {customTools.map(t => {
+            const owner = t.owner_id ? (Object.values(state.agents || {}).find(a => a.id === t.owner_id)?.name_id || t.owner_id) : "👑 Founder";
+            return (
+              <div key={t.id} style={{ padding: "12px 16px", borderBottom: "1px solid #111316" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                  <span style={{ fontWeight: 600, color: "#e2e8f0", fontSize: 13 }}>⚗️ {t.name}</span>
+                  {t.price > 0 && <span style={{ fontSize: 11, color: "#34d399", fontWeight: 700 }}>{t.price} pts/use</span>}
+                </div>
+                <div className="mono" style={{ fontSize: 9, color: "#6366f1", marginBottom: 4 }}>{t.id}</div>
+                <div style={{ fontSize: 11, color: "#6b7280" }}>
+                  Owner: <span style={{ color: "#818cf8", fontWeight: 600 }}>{owner}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }

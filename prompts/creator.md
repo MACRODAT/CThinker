@@ -38,13 +38,13 @@ c- Then, decide on actions that are creative. You can:
     - Store memory for next run.
                     /ELSE/
 b- Then, decide on actions that are creative. You can:
-    - Post in existing threads
+    - (BEST) Post in existing threads
         -- Short is better
         -- Use bullet points
-    -- You may use markdown
-- Start new:
-    -- strategy drafts for long-term
-    -- memos that clarify complex issues
+        -- You may use markdown
+    - (Okay) Start new:
+        -- strategy drafts for long-term 
+        -- memos that clarify complex issues
 - Store memory for next run.
 Best to stick with your previous memory.
 c- Finally, You MUST store memory and next mode:

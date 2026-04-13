@@ -126,8 +126,32 @@ class AgentToolResponse(BaseModel):
     description: str
     enabled: bool
     config_json: str
+    is_custom: bool = False
+    owner_id: Optional[str] = None
+    price: int = 0
+    prompt_template: Optional[str] = None
+    args_definition: str = "[]"
+    call_tools: str = "[]"
+    allowed_actions: str = "[]"
     class Config:
         from_attributes = True
+
+class ToolCreateRequest(BaseModel):
+    id: str
+    name: str
+    description: str
+    prompt_template: str = ""
+    args_definition: str = "[]"
+    call_tools: str = "[]"
+    allowed_actions: str = "[]"
+    owner_id: Optional[str] = None
+    price: int = 0
+
+class TransactionCreate(BaseModel):
+    from_id: str
+    to_id: str
+    amount: int
+    reason: str
 
 class SystemLogResponse(BaseModel):
     id: int

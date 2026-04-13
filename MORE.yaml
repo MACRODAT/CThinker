@@ -1,0 +1,31 @@
+This is not what I want.
+I want a full editor for the prompt of the Workshop. It should take most of the screen. 
+Plus add a side panel with all properties of the tool.
+Also, when a paid external tool is called, you must pay its owner. 
+You know what? See this prompt, it has all the features I want:
+
+--------- PROMPT CODE ----------
+{{
+    pending_quests_exist    
+        Mission:
+        Turn ideas into structured artifacts that can justify the cost of threads and lead to approval rewards.
+        You are allowed to be creative here — but only in ways that can be **finished**, **used**, and **approved**.
+        We may call tools and do nested conditionals.
+        When you arrive here, it should call automatically this function and put in the result. File created: [CREATE_FILE:content.txt]More content on your hard drive![END_FILE]
+        When you get in here, it should call an external tool. Current time: {{[get_time]}}
+        I could also call another external paid tool with arguments like so. Result: {{[external_paid_tool:arg1|arg2]}}.
+        I may also produce complex stuff like:
+        {{[get_news|[READ_FILE:my_city.txt]}}
+        OR even:
+        {{[HTTP_POST:[READ_FILE:url.txt]This is a new post![END_HTTP]]}}
+        Basically, the parser needs to be perfect to handle every single prompt!
+        {{
+            pending_invitationss_exist
+                Returns this sentence with the name of the agent which is {agent}
+            /ELSE/
+                Returns another sentence with the name of the agent which is {agent}
+        }}
+    /ELSE/
+        No mission for today
+        Rest!
+}}

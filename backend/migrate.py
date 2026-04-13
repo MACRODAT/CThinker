@@ -124,6 +124,55 @@ def run():
         print("Added expires_at to join_quests")
     except Exception as e: print("expires_at:", e)
 
+    try:
+        c.execute('ALTER TABLE agent_tools ADD COLUMN is_custom BOOLEAN DEFAULT 0')
+        print("Added is_custom to agent_tools")
+    except Exception as e: print("is_custom:", e)
+
+    try:
+        c.execute('ALTER TABLE agent_tools ADD COLUMN owner_id TEXT')
+        print("Added owner_id to agent_tools")
+    except Exception as e: print("owner_id:", e)
+
+    try:
+        c.execute('ALTER TABLE agent_tools ADD COLUMN price INTEGER DEFAULT 0')
+        print("Added price to agent_tools")
+    except Exception as e: print("price:", e)
+
+    try:
+        c.execute('ALTER TABLE agent_tools ADD COLUMN prompt_template TEXT')
+        print("Added prompt_template to agent_tools")
+    except Exception as e: print("prompt_template:", e)
+
+    try:
+        c.execute("ALTER TABLE agent_tools ADD COLUMN args_definition TEXT DEFAULT '[]'")
+        print("Added args_definition to agent_tools")
+    except Exception as e: print("args_definition:", e)
+
+    try:
+        c.execute("ALTER TABLE agent_tools ADD COLUMN call_tools TEXT DEFAULT '[]'")
+        print("Added call_tools to agent_tools")
+    except Exception as e: print("call_tools:", e)
+
+    try:
+        c.execute("ALTER TABLE agent_tools ADD COLUMN allowed_actions TEXT DEFAULT '[]'")
+        print("Added allowed_actions to agent_tools")
+    except Exception as e: print("allowed_actions:", e)
+
+    try:
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS transactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                from_id TEXT,
+                to_id TEXT,
+                amount INTEGER,
+                reason TEXT,
+                created TEXT
+            )
+        ''')
+        print("Created transactions table")
+    except Exception as e: print("transactions table:", e)
+
     conn.commit()
     conn.close()
     print("Migration complete.")

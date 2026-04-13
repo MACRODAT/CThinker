@@ -10,7 +10,7 @@ from database import SessionLocal
 from models import (
     Agent, Thread, LogAction, LogLedger,
     PromptTemplate, Setting, AgentTool, SystemLog,
-    ThreadCollaborator, JoinQuest, Message, Ticket
+    ThreadCollaborator, JoinQuest, Message, Ticket, Transaction
 )
 
 
@@ -806,6 +806,55 @@ class SimEngine:
                 else: result = "MESSAGE_NOT_FOUND"
             except Exception as e: result = f"DELETE_ERROR: {str(e)}"
 
+        # ── get_owner ──────────────────────────────────────────────────────────
+        elif tool_name == "get_owner":
+            try:
+                tid = args[0].strip() if args else ""
+                tool_obj = db.query(AgentTool).filter(AgentTool.id == tid).first()
+                if not tool_obj: return f"OWNER_ERROR: Tool '{tid}' not found."
+                owner = tool_obj.owner_id or "FOUNDER"
+                name = owner
+                if owner != "FOUNDER":
+                    ag = db.query(Agent).filter(Agent.id == owner).first()
+                    name = ag.name_id if ag else owner
+                price_info = f", price: {tool_obj.price} pts/use" if tool_obj.price else ", free"
+                result = f"OWNER_INFO: {tid} → {name}{price_info}"
+            except Exception as e: result = f"OWNER_ERROR: {e}"
+
+        # ── change_owner ───────────────────────────────────────────────────────
+        elif tool_name == "change_owner":
+            try:
+                tid = args[0].strip() if args else ""
+                new_owner = args[1].strip() if len(args) > 1 else "FOUNDER"
+                tool_obj = db.query(AgentTool).filter(AgentTool.id == tid).first()
+                if not tool_obj: return f"OWNER_ERROR: Tool '{tid}' not found."
+                if tool_obj.owner_id and tool_obj.owner_id != agent.id: return "OWNER_ERROR: Not the current owner."
+                tool_obj.owner_id = None if new_owner == "FOUNDER" else new_owner
+                if len(args) > 2:
+                    try: tool_obj.price = int(args[2])
+                    except: pass
+                result = f"OWNER_CHANGED: {tid} → {new_owner}"
+            except Exception as e: result = f"OWNER_ERROR: {e}"
+
+        # ── produce_transaction ────────────────────────────────────────────────
+        elif tool_name == "produce_transaction":
+            try:
+                if len(args) < 3: return "TXN_ERROR: requires from_id, to_id, amount [,reason]"
+                from_id, to_id, amount = args[0], args[1], int(args[2])
+                reason = args[3] if len(args) > 3 else "agent_transfer"
+                # Agents can only initiate from themselves
+                if from_id != agent.id: return "TXN_ERROR: Can only transfer from own wallet."
+                ok = await self.produce_transaction(db, from_id, to_id, amount, reason)
+                result = f"TXN_OK: {amount} pts  {from_id} → {to_id}" if ok else "TXN_FAILED: Insufficient funds"
+            except Exception as e: result = f"TXN_ERROR: {e}"
+
+        # ── custom / programmatic tool fallback ────────────────────────────────
+        else:
+            tool_obj = db.query(AgentTool).filter(AgentTool.id == tool_name).first()
+            if tool_obj and tool_obj.is_custom:
+                result = await self.execute_custom_tool(db, agent, tool_obj, args)
+            # else result stays "UNKNOWN_TOOL"
+
         return result
 
     # ── Helpers ───────────────────────────────────────────────────────────────
@@ -980,6 +1029,114 @@ class SimEngine:
                 f" {t.id} | {t.name} | {t.amount} pts | {exp}"
             )
         return "\n".join(lines)
+
+    async def produce_transaction(self, db, from_id: str, to_id: str, amount: int, reason: str) -> bool:
+        """Transfer points between agents (or FOUNDER). Returns True on success."""
+        if amount <= 0: return True
+        if from_id != "FOUNDER":
+            ag = db.query(Agent).filter(Agent.id == from_id).first()
+            if not ag or ag.wallet_current < amount: return False
+            ag.wallet_current -= amount
+        if to_id not in (None, "FOUNDER"):
+            ag = db.query(Agent).filter(Agent.id == to_id).first()
+            if ag: ag.wallet_current += amount
+        db.add(Transaction(from_id=from_id, to_id=to_id or "FOUNDER", amount=amount, reason=reason))
+        return True
+
+    async def _handle_actions(self, text: str, allowed_actions: list) -> str:
+        """Parse and execute action blocks embedded in an LLM response."""
+        result = text
+        if "http_get" in allowed_actions:
+            for m in re.finditer(r'\[HTTP_GET:([^\]]+)\]', result):
+                url = m.group(1).strip()
+                try:
+                    async with httpx.AsyncClient() as client:
+                        r = await client.get(url, timeout=10.0, follow_redirects=True)
+                    result = result.replace(m.group(0), f"[HTTP({r.status_code}): {r.text[:400]}]")
+                except Exception as e:
+                    result = result.replace(m.group(0), f"[HTTP_ERROR: {e}]")
+        if "http_post" in allowed_actions:
+            for m in re.finditer(r'\[HTTP_POST:([^\]]+)\](.*?)\[END_HTTP\]', result, re.DOTALL):
+                url, body = m.group(1).strip(), m.group(2).strip()
+                try:
+                    async with httpx.AsyncClient() as client:
+                        r = await client.post(url, content=body, timeout=10.0)
+                    result = result.replace(m.group(0), f"[HTTP_POST({r.status_code}): {r.text[:300]}]")
+                except Exception as e:
+                    result = result.replace(m.group(0), f"[HTTP_POST_ERROR: {e}]")
+        if "create_file" in allowed_actions:
+            import os
+            safe_dir = os.path.join(os.path.dirname(__file__), "tool_outputs")
+            os.makedirs(safe_dir, exist_ok=True)
+            for m in re.finditer(r'\[CREATE_FILE:([^\]]+)\](.*?)\[END_FILE\]', result, re.DOTALL):
+                fname, content = os.path.basename(m.group(1).strip()), m.group(2)
+                try:
+                    with open(os.path.join(safe_dir, fname), "w", encoding="utf-8") as f: f.write(content)
+                    result = result.replace(m.group(0), f"[FILE_CREATED: {fname}]")
+                except Exception as e:
+                    result = result.replace(m.group(0), f"[FILE_ERROR: {e}]")
+        if "read_file" in allowed_actions:
+            import os
+            safe_dir = os.path.join(os.path.dirname(__file__), "tool_outputs")
+            for m in re.finditer(r'\[READ_FILE:([^\]]+)\]', result):
+                fname = os.path.basename(m.group(1).strip())
+                full = os.path.join(safe_dir, fname)
+                try:
+                    with open(full, "r", encoding="utf-8") as f: content = f.read(600)
+                    result = result.replace(m.group(0), f"[FILE_CONTENT: {content}]")
+                except Exception as e:
+                    result = result.replace(m.group(0), f"[FILE_NOT_FOUND: {fname}]")
+        return result
+
+    async def execute_custom_tool(self, db, agent, tool: AgentTool, args: list) -> str:
+        """Execute a Founder-built programmatic tool."""
+        import json as _json
+        # 1. Ownership pricing
+        if (tool.price or 0) > 0:
+            owner_id = tool.owner_id or "FOUNDER"
+            if owner_id != agent.id:
+                ok = await self.produce_transaction(db, agent.id, owner_id, tool.price, f"tool_use:{tool.id}")
+                if not ok: return f"TOOL_INSUFFICIENT_FUNDS: {tool.id} costs {tool.price} pts"
+        # 2. Build substitution context
+        args_def = _json.loads(tool.args_definition or "[]")
+        ctx = {
+            "agent_name": agent.name_id, "agent_id": agent.id,
+            "agent_wallet": str(agent.wallet_current),
+            "agent_dept": agent.department.name if agent.department else "None",
+            "agent_memory": agent.memory or "None",
+        }
+        for i, adef in enumerate(args_def):
+            val = args[i] if i < len(args) else ""
+            ctx[f"arg_{i}"] = val
+            if adef.get("name"): ctx[adef["name"]] = val
+        # 3. Build prompt
+        prompt = tool.prompt_template or f"Execute {tool.name} with args: {args}"
+        for k, v in ctx.items(): prompt = prompt.replace("{" + k + "}", str(v))
+        # 4. Optionally inject sub-tool block
+        call_ids = _json.loads(tool.call_tools or "[]")
+        if call_ids:
+            sub = db.query(AgentTool).filter(AgentTool.id.in_(call_ids), AgentTool.enabled == True).all()
+            if sub:
+                prompt += "\n\nCALL THESE TOOLS using [CALL_TOOL]...[END_CALL_TOOL]:\n" + "\n".join(f"- {t.description}" for t in sub)
+        # 5. Call LLM
+        s_url = db.query(Setting).filter(Setting.key == "ollama_server").first()
+        s_mod = db.query(Setting).filter(Setting.key == "ollama_model").first()
+        server = (s_url.value if s_url else "http://localhost:11434").rstrip("/")
+        model  = s_mod.value if s_mod else "gemma3:4b"
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(f"{server}/api/generate", timeout=60.0,
+                    json={"model": model, "system": f"Tool: {tool.name}. {tool.description}", "prompt": prompt, "stream": False})
+                raw = resp.json().get("response", "").strip()
+        except Exception as e:
+            return f"TOOL_LLM_ERROR: {e}"
+        # 6. Sub-tool calls
+        if call_ids and "[CALL_TOOL]" in raw:
+            raw, _ = await self.handle_tools(db, agent, raw)
+        # 7. Allowed actions
+        allowed = _json.loads(tool.allowed_actions or "[]")
+        if allowed: raw = await self._handle_actions(raw, allowed)
+        return f"[{tool.id.upper()}]: {raw[:600]}"
 
     def resolve_placeholders(self, text: str, db: Session, agent, last_quest):
         """
