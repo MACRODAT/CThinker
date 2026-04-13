@@ -8,7 +8,7 @@ import uuid
 from sqlalchemy.orm import Session
 from database import SessionLocal
 from models import (
-    Department, Agent, Thread, LogAction, LogLedger,
+    Agent, Thread, LogAction, LogLedger,
     PromptTemplate, Setting, AgentTool, SystemLog,
     ThreadCollaborator, JoinQuest, Message, Ticket
 )
@@ -934,13 +934,121 @@ class SimEngine:
         for t in tickets:
             exp = f" | Expires: {t.expiry_date}" if getattr(t, "expiry_date", None) else ""
             lines.append(
-                f"-- {t.name}\n"
-                f"-- {t.amount} pts\n"
-                f"-- {t.id}{exp}"
+                f" {t.id} | {t.name} | {t.amount} pts | {exp}"
             )
         return "\n".join(lines)
 
     def resolve_placeholders(self, text: str, db: Session, agent, last_quest):
+        """
+        Resolves complex, nested {{...}} placeholders from the inside out.
+        """
+        import re
+
+        # ── Compute boolean context ──────────────────────────────────────────
+        tkt_exist = db.query(Ticket).filter(Ticket.status == "UNUSED").count() > 0
+        pending_quests_exist = (
+            db.query(JoinQuest)
+            .join(Thread, JoinQuest.thread_id == Thread.id)
+            .filter(
+                JoinQuest.status == "PENDING",
+                JoinQuest.is_invite.is_(True),
+                Thread.owner_agent_id == agent.id,
+            )
+            .count() > 0
+        )
+        inv_exist = (
+            db.query(JoinQuest)
+            .filter(
+                JoinQuest.agent_id == agent.id,
+                JoinQuest.status == "PENDING",
+                JoinQuest.is_invite == True
+            )
+            .count() > 0
+        )
+
+        inv_status_exist = last_quest is not None
+
+        bool_ctx = {
+            "available_tickets_exist":  tkt_exist,
+            "pending_invitation_exist": inv_exist,
+            "pending_quests_exist":     pending_quests_exist,
+            "exist_invitation_status":  inv_status_exist,
+        }
+
+        # ── Simple value map ─────────────────────────────────────────────────
+        simple = {
+            "available_tickets":        self.get_available_tickets_context(db),
+            "pending_quests":           self.get_rich_quests_to_join_context(db, agent),
+            "pending_invitation":       self.get_rich_invitation_context(db, agent),
+            "invitation_status":        last_quest.status if last_quest else "None",
+            "available_tickets_exist":  "Yes" if tkt_exist  else "No",
+            "pending_invitation_exist": "Yes" if inv_exist  else "No",
+            "all_enabled_tools":        self.get_tools(db),
+            "all_quest_tools":        self.get_quest_tools(db),
+            "pending_quests_exist":     "Yes" if pending_quests_exist  else "No",
+            "exist_invitation_status":  "Yes" if inv_status_exist else "No",
+            "agent":                    agent.name_id, 
+        }
+
+        # ── 1. Resolve nested {{ ... }} blocks from the inside out ───────────
+        pattern = r"\{\{((?:(?!\{\{|\}\}).)*)\}\}"
+        
+        def _inner_replacer(m):
+            content = m.group(1)
+            match = re.match(r'^\s*([a-zA-Z0-9_]+)(.*)', content, flags=re.DOTALL)
+            
+            if not match:
+                # Unrecognized format: escape to prevent infinite loops, resolved at the end.
+                return f"\x01LBRACE\x01{content}\x01RBRACE\x01"
+                
+            key = match.group(1)
+            remainder = match.group(2)
+            
+            if key in bool_ctx or "/ELSE/" in remainder or "??" in remainder:
+                condition_val = bool_ctx.get(key, False) 
+                
+                if "??" in remainder:
+                    body = remainder.replace("??", "", 1).strip()
+                    parts = re.split(r'^\s*-\s+', body, flags=re.MULTILINE)
+                    options = [p.strip() for p in parts if p]
+                    true_str  = options[0] if len(options) > 0 else ""
+                    false_str = options[1] if len(options) > 1 else ""
+                    return true_str if condition_val else false_str
+                    
+                else:
+                    # split on first /ELSE/ only
+                    parts = remainder.split('/ELSE/', 1)
+                    true_str = parts[0].strip()
+                    false_str = parts[1].strip() if len(parts) > 1 else ""
+                    return true_str if condition_val else false_str
+
+            elif key in simple and remainder.strip() == "":
+                return str(simple[key])
+                
+            # If valid key pattern but unknown key, escape it.
+            return f"\x01LBRACE\x01{content}\x01RBRACE\x01"
+
+        max_iters = 20
+        for _ in range(max_iters):
+            new_text = re.sub(pattern, _inner_replacer, text, flags=re.DOTALL)
+            if new_text == text:
+                break
+            text = new_text
+
+        # Restore escaped brackets for unresolved variables
+        text = text.replace("\x01LBRACE\x01", "{{").replace("\x01RBRACE\x01", "}}")
+
+        # ── 2. Resolve single {key} replacements ─────────────────────────────
+        def _single_replacer(m):
+            match_key = m.group(1)
+            return str(simple.get(match_key, m.group(0)))
+
+        keys_pattern = "|".join(re.escape(k) for k in simple.keys())
+        single_pattern = r"\{(" + keys_pattern + r")\}"
+        text = re.sub(single_pattern, _single_replacer, text)
+
+        return text
+    def resolve_placeholders_backup(self, text: str, db: Session, agent, last_quest):
         """
         Resolve ALL {{...}} placeholders in a prompt string from the inside out.
 
