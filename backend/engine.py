@@ -764,6 +764,35 @@ class SimEngine:
                 result = "AGENTS_LIST:\n" + "\n".join(lines)
             except Exception as e: result = f"AGENTS_ERROR: {str(e)}"
 
+        # ── get_thread_summary ─────────────────────────────────────────────────
+        elif tool_name == "get_thread_summary":
+            try:
+                tid = args[0].strip().upper() if args else ""
+                t = db.query(Thread).filter(Thread.id == tid).first()
+                if not t: return f"SUMMARY_ERROR: Thread {tid} not found."
+                if t.summary:
+                    result = f"SUMMARY [{tid}]: {t.summary}"
+                else:
+                    result = f"SUMMARY [{tid}]: No summary available yet."
+            except Exception as e: result = f"SUMMARY_ERROR: {str(e)}"
+
+        # ── get_all_summaries ──────────────────────────────────────────────────
+        elif tool_name == "get_all_summaries":
+            try:
+                threads = db.query(Thread).filter(
+                    Thread.status.in_(["OPEN", "ACTIVE"]),
+                    Thread.aim != "Chat",
+                ).order_by(Thread.created.desc()).limit(20).all()
+                if not threads:
+                    result = "ALL_SUMMARIES: No active threads."
+                else:
+                    lines = []
+                    for t in threads:
+                        s = t.summary[:200] if t.summary else "(no summary yet)"
+                        lines.append(f"[{t.id}] {t.topic} ({t.aim}, {t.budget}pt): {s}")
+                    result = "ALL_SUMMARIES:\n" + "\n".join(lines)
+            except Exception as e: result = f"SUMMARIES_ERROR: {str(e)}"
+
         # ── delete_message ─────────────────────────────────────────────────────
         elif tool_name == "delete_message":
             try:
@@ -843,8 +872,8 @@ class SimEngine:
             model  = s_mod.value if s_mod else "gemma3:4b"
 
             system_p = (
-                "You are a thread summarizer for an AI agent simulation. "
-                "Given a conversation, produce a compact 2-3 sentence summary. "
+                "You are a thread summarizer for an AI agent. "
+                "Given a conversation, produce a compact 1-2 sentence summary. "
                 "Cover: main topic, key decisions/actions, current status. "
                 "Be factual and concise. Preserve important IDs and numbers."
             )
@@ -923,6 +952,20 @@ class SimEngine:
                 f" | Expires: {q.expires_at}"
             )
             q.is_read = True # Mark as read when contextualized
+        return "\n".join(lines)
+
+    def get_thread_summaries_context(self, db: Session) -> str:
+        """Compile one-line summaries of all OPEN/ACTIVE threads for {{thread_summary}}."""
+        threads = db.query(Thread).filter(
+            Thread.status.in_(["OPEN", "ACTIVE"]),
+            Thread.aim != "Chat",
+        ).order_by(Thread.created.desc()).limit(30).all()
+        if not threads:
+            return "No active or open threads."
+        lines = []
+        for t in threads:
+            summary_bit = f" — {t.summary[:120]}" if t.summary else " — (no summary yet)"
+            lines.append(f"• [{t.id}] {t.topic} | {t.aim} | {t.budget}pt{summary_bit}")
         return "\n".join(lines)
 
     def get_available_tickets_context(self, db: Session):
@@ -1110,10 +1153,11 @@ class SimEngine:
             "available_tickets_exist":  "Yes" if tkt_exist  else "No",
             "pending_invitation_exist": "Yes" if inv_exist  else "No",
             "all_enabled_tools":        self.get_tools(db),
-            "all_quest_tools":        self.get_quest_tools(db),
+            "all_quest_tools":          self.get_quest_tools(db),
             "pending_quests_exist":     "Yes" if pending_quests_exist  else "No",
             "exist_invitation_status":  "Yes" if inv_status_exist else "No",
-            "agent":                    agent.name_id,  # Added to support {agent} interpolation
+            "agent":                    agent.name_id,
+            "thread_summary":           self.get_thread_summaries_context(db),
         }
 
         # ── 1. Resolve nested {{ ... }} blocks from the inside out ───────────

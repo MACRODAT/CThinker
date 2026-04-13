@@ -1432,35 +1432,375 @@ function Threads({ state, approveThread, rejectThread, deleteThread, updateThrea
   const [newTopic, setNewTopic] = useState("");
   const [msg, setMsg] = useState("");
   const [sending, setSending] = useState(false);
+  const [rightTab, setRightTab] = useState("ledger"); // "ledger" | "properties"
+  const [refreshing, setRefreshing] = useState(false);
   const msgEndRef = useRef(null);
 
-  const tArr = Object.values(state.threads).reverse();
+  const tArr = Object.values(state.threads).filter(t => t.aim !== "Chat").reverse();
   const thread = sel ? state.threads[sel] : null;
 
   useEffect(() => {
-    if (thread) {
-      setNewTopic(thread.topic);
-      setEditMode(false);
-    }
+    if (thread) { setNewTopic(thread.topic); setEditMode(false); }
   }, [sel]);
 
-  // Auto-scroll discussion log to bottom when messages change
   useEffect(() => {
     msgEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [thread?.messages_log?.length]);
 
-  const saveTopic = () => {
-    updateThread(sel, { topic: newTopic });
-    setEditMode(false);
-  };
+  const saveTopic = () => { updateThread(sel, { topic: newTopic }); setEditMode(false); };
 
   const sendMsg = async () => {
     if (!msg.trim() || sending) return;
     setSending(true);
     await postMessage(sel, "FOUNDER", msg.trim());
-    setMsg("");
-    setSending(false);
+    setMsg(""); setSending(false);
   };
+
+  const refreshSummary = async () => {
+    if (!sel || refreshing) return;
+    setRefreshing(true);
+    await fetch(`${API_BASE}/threads/${sel}/summarize`, { method: "POST" });
+    setTimeout(() => setRefreshing(false), 3000);
+  };
+
+  // ── Thread list card status colour helper ────────────────────────────────
+  const statusColor = (s) => ({
+    OPEN: "#34d399", ACTIVE: "#60a5fa", APPROVED: "#a78bfa",
+    REJECTED: "#f87171", FROZEN: "#94a3b8",
+  }[s] || "#6b7280");
+
+  return (
+    <div style={{ display: "flex", gap: 20, height: "100%" }}>
+
+      {/* ── Left: thread list ── */}
+      <div style={{ width: 300, flexShrink: 0, overflowY: "auto" }}>
+        {tArr.map(t => (
+          <div key={t.id} onClick={() => setSel(t.id)} className="card"
+            style={{
+              cursor: "pointer", marginBottom: 10,
+              borderColor: sel === t.id ? "#6366f1" : "#1a1d24",
+              background: sel === t.id ? "#1e1b4b" : "#11141a"
+            }}>
+            <div className="card-body" style={{ padding: "10px 14px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                <span style={{
+                  fontWeight: 600, color: "#e2e8f0", fontSize: 13,
+                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 170
+                }}>
+                  {t.topic}
+                </span>
+                <span style={{
+                  fontSize: 9, padding: "2px 6px", borderRadius: 4, flexShrink: 0,
+                  background: statusColor(t.status) + "22", color: statusColor(t.status),
+                  border: `1px solid ${statusColor(t.status)}44`, fontWeight: 700
+                }}>
+                  {t.status}
+                </span>
+              </div>
+              <div style={{ fontSize: 10, color: "#6b7280", marginBottom: t.summary ? 6 : 0 }}>
+                {t.aim} · {t.point_wallet?.budget || 0}pt
+              </div>
+              {t.summary && (
+                <div style={{
+                  fontSize: 10, color: "#4b5563", lineHeight: 1.4,
+                  overflow: "hidden", display: "-webkit-box",
+                  WebkitLineClamp: 2, WebkitBoxOrient: "vertical"
+                }}>
+                  {t.summary}
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Right: detail ── */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
+        {!thread
+          ? <div style={{ textAlign: "center", color: "#6b7280", marginTop: 100 }}>Select a thread</div>
+          : (<>
+            {/* ── Header card ── */}
+            <div className="card">
+              <div className="card-body">
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <div style={{ flex: 1 }}>
+                    {editMode ? (
+                      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                        <input value={newTopic} onChange={e => setNewTopic(e.target.value)}
+                          style={{ fontSize: 18, fontWeight: 700, width: "100%", background: "#0b0c10" }} />
+                        <button className="btn btn-primary" onClick={saveTopic}>Save</button>
+                        <button className="btn btn-soft" onClick={() => setEditMode(false)}>Cancel</button>
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <h2 style={{ margin: 0, color: "#fff", fontSize: 20 }}>{thread.topic}</h2>
+                        <button onClick={() => setEditMode(true)}
+                          style={{ background: "none", border: "none", color: "#6366f1", cursor: "pointer", fontSize: 15 }}>✎</button>
+                      </div>
+                    )}
+                    <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 6, display: "flex", gap: 14, flexWrap: "wrap" }}>
+                      <span>Owner: <b style={{ color: "#e2e8f0" }}>{state.agents[thread.owner_agent]?.name_id || thread.owner_agent}</b></span>
+                      <span>Dept: <b style={{ color: DEPT_META[thread.owner_department]?.color || "#fff" }}>{thread.owner_department || "—"}</b></span>
+                      <span>Aim: <b style={{ color: "#6366f1" }}>{thread.aim}</b></span>
+                      <span className="mono" style={{ color: "#4b5563" }}>{thread.id}</span>
+                    </div>
+                  </div>
+                  <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 16 }}>
+                    <div className="mono" style={{ fontSize: 22, fontWeight: 700, color: "#10b981" }}>
+                      {thread.point_wallet?.budget || 0} pt
+                    </div>
+                    <div style={{ fontSize: 9, color: "#6b7280", letterSpacing: 1, marginBottom: 8 }}>BUDGET</div>
+                    <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                      {(thread.status === "OPEN" || thread.status === "ACTIVE") && (<>
+                        <button className="btn" style={{ background: "#064e3b", color: "#34d399", fontSize: 10, padding: "4px 10px" }}
+                          onClick={() => approveThread(sel)}>Approve</button>
+                        <button className="btn" style={{ background: "#7f1d1d", color: "#f87171", fontSize: 10, padding: "4px 10px" }}
+                          onClick={() => rejectThread(sel)}>Reject</button>
+                      </>)}
+                      <button className="btn" style={{ background: "#1a1d24", color: "#6b7280", fontSize: 10, padding: "4px 10px" }}
+                        onClick={() => deleteThread(sel)}>Delete</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* ── Two-column body ── */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 14, flex: 1, overflow: "hidden" }}>
+
+              {/* Discussion log */}
+              <div className="card" style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                <div className="card-header" style={{ fontSize: 11, fontWeight: 800, color: "#6366f1", letterSpacing: 1.5 }}>
+                  DISCUSSION LOG
+                </div>
+                <div className="card-body" style={{ flex: 1, overflowY: "auto", background: "#08090c" }}>
+                  {thread.messages_log?.filter(m => !m.what.startsWith("INVESTMENT")).map((m, i) => {
+                    const isFounder = m.who === "FOUNDER" || m.who === "Founder";
+                    const isSystem = m.who === "SYSTEM";
+                    return (
+                      <div key={i} style={{ marginBottom: 14 }}>
+                        <div style={{
+                          display: "flex", alignItems: "center", gap: 8, marginBottom: 3,
+                          justifyContent: isFounder ? "flex-end" : "flex-start"
+                        }}>
+                          {!isFounder && (
+                            <span style={{
+                              fontWeight: 600, fontSize: 11,
+                              color: isSystem ? "#f59e0b" : "#818cf8"
+                            }}>
+                              {isSystem ? "⚙ SYSTEM" : (state.agents[m.who]?.name_id || m.who)}
+                            </span>
+                          )}
+                          <span className="mono" style={{ fontSize: 9, color: "#374151" }}>{hhmm(m.when)}</span>
+                          {isFounder && <span style={{ fontWeight: 700, color: "#6366f1", fontSize: 11 }}>👑 FOUNDER</span>}
+                        </div>
+                        <div style={{
+                          color: "#e2e8f0", padding: "9px 13px", fontSize: 12, lineHeight: 1.55,
+                          backgroundColor: isFounder ? "#1e1b4b" : isSystem ? "#1c1400" : "#11141a",
+                          border: `1px solid ${isFounder ? "#3730a3" : isSystem ? "#78350f" : "#1a1d24"}`,
+                          borderRadius: isFounder ? "10px 2px 10px 10px" : "2px 10px 10px 10px",
+                          marginLeft: isFounder ? "auto" : 0,
+                          marginRight: isFounder ? 0 : "auto",
+                          maxWidth: "88%",
+                        }} dangerouslySetInnerHTML={{ __html: renderMd(m.what) }} />
+                      </div>
+                    );
+                  })}
+                  <div ref={msgEndRef} />
+                </div>
+                <div style={{
+                  padding: "9px 12px", borderTop: "1px solid #1a1d24",
+                  display: "flex", gap: 8, background: "#0a0b0e"
+                }}>
+                  <input placeholder="Post as Founder… (Enter to send)"
+                    value={msg} onChange={e => setMsg(e.target.value)}
+                    onKeyDown={e => e.key === "Enter" && !e.shiftKey && sendMsg()}
+                    style={{ flex: 1, fontSize: 12, padding: "6px 10px" }} disabled={sending} />
+                  <button className="btn btn-primary" onClick={sendMsg}
+                    disabled={sending || !msg.trim()} style={{ fontSize: 12, padding: "0 14px" }}>
+                    {sending ? "…" : "Post"}
+                  </button>
+                </div>
+              </div>
+
+              {/* Right panel: tab switcher */}
+              <div className="card" style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                {/* Tab bar */}
+                <div style={{ display: "flex", borderBottom: "1px solid #1a1d24", background: "#0b0c10" }}>
+                  {[["ledger", "💰 Ledger"], ["properties", "📋 Properties"]].map(([id, lbl]) => (
+                    <button key={id} onClick={() => setRightTab(id)} style={{
+                      flex: 1, padding: "9px 4px", fontSize: 10, cursor: "pointer", fontWeight: 700,
+                      background: rightTab === id ? "#11141a" : "transparent",
+                      border: "none", borderBottom: `2px solid ${rightTab === id ? "#6366f1" : "transparent"}`,
+                      color: rightTab === id ? "#e2e8f0" : "#6b7280", letterSpacing: 0.5,
+                      transition: "all 0.15s",
+                    }}>{lbl}</button>
+                  ))}
+                </div>
+
+                {/* ── Ledger tab ── */}
+                {rightTab === "ledger" && (
+                  <div style={{ flex: 1, overflowY: "auto", background: "#0a0b0e", padding: "0 0 8px" }}>
+                    {thread.messages_log?.filter(m => m.points !== 0).reverse().map((m, i) => (
+                      <div key={i} style={{ padding: "9px 14px", borderBottom: "1px solid #111316" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
+                          <span style={{
+                            fontSize: 11, fontWeight: 600, color: "#e2e8f0",
+                            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 170
+                          }}>
+                            {m.what.replace("INVESTMENT: ", "")}
+                          </span>
+                          <span className="mono" style={{
+                            fontSize: 12, fontWeight: 700, flexShrink: 0,
+                            color: m.points > 0 ? "#10b981" : "#ef4444"
+                          }}>
+                            {m.points > 0 ? "+" : ""}{m.points}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: 10, color: "#4b5563" }}>
+                          {hhmm(m.when)} · {state.agents[m.who]?.name_id || m.who}
+                        </div>
+                      </div>
+                    ))}
+                    {!thread.messages_log?.some(m => m.points !== 0) && (
+                      <div style={{ textAlign: "center", color: "#374151", fontSize: 12, marginTop: 40 }}>
+                        No financial history
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* ── Properties tab ── */}
+                {rightTab === "properties" && (
+                  <div style={{ flex: 1, overflowY: "auto", padding: 14, display: "flex", flexDirection: "column", gap: 14 }}>
+
+                    {/* Summary */}
+                    <div>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                        <div style={{ fontSize: 10, fontWeight: 800, color: "#6366f1", letterSpacing: 1 }}>AI SUMMARY</div>
+                        <button onClick={refreshSummary} disabled={refreshing}
+                          style={{
+                            fontSize: 10, padding: "3px 10px", cursor: "pointer",
+                            background: "#1e1b4b", border: "1px solid #4338ca",
+                            borderRadius: 5, color: refreshing ? "#4b5563" : "#a5b4fc"
+                          }}>
+                          {refreshing ? "⏳ Generating…" : "↻ Refresh"}
+                        </button>
+                      </div>
+                      <div style={{
+                        background: "#08090c", border: "1px solid #1e222d",
+                        borderRadius: 8, padding: 12, fontSize: 12, color: "#d1d5db", lineHeight: 1.6,
+                        minHeight: 60,
+                      }}>
+                        {thread.summary
+                          ? thread.summary
+                          : <span style={{ color: "#374151", fontStyle: "italic" }}>
+                            No summary yet — post a message or click Refresh.
+                          </span>}
+                      </div>
+                    </div>
+
+                    {/* Owner */}
+                    <div>
+                      <div style={{ fontSize: 10, fontWeight: 800, color: "#9ca3af", letterSpacing: 1, marginBottom: 8 }}>OWNER</div>
+                      {(() => {
+                        const owner = state.agents[thread.owner_agent];
+                        if (!owner) return <div style={{ fontSize: 12, color: "#4b5563" }}>Unknown</div>;
+                        const deptMeta = DEPT_META[owner.department];
+                        return (
+                          <div style={{
+                            background: "#11141a", border: "1px solid #1e222d",
+                            borderRadius: 8, padding: "10px 12px", display: "flex", alignItems: "center", gap: 10
+                          }}>
+                            <div style={{
+                              width: 34, height: 34, borderRadius: 8, flexShrink: 0,
+                              background: (deptMeta?.color || "#6366f1") + "22",
+                              border: `1px solid ${deptMeta?.color || "#6366f1"}44`,
+                              display: "flex", alignItems: "center", justifyContent: "center",
+                              fontSize: 16
+                            }}>
+                              {deptMeta?.icon || "🤖"}
+                            </div>
+                            <div>
+                              <div style={{ fontWeight: 700, color: "#e2e8f0", fontSize: 13 }}>
+                                {owner.is_ceo ? "★ " : ""}{owner.name_id}
+                              </div>
+                              <div style={{ fontSize: 10, color: "#6b7280", marginTop: 2 }}>
+                                {owner.department || "No Dept"} · {owner.wallet?.current || 0} pts
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    {/* Collaborators */}
+                    <div>
+                      <div style={{ fontSize: 10, fontWeight: 800, color: "#9ca3af", letterSpacing: 1, marginBottom: 8 }}>
+                        MEMBERS ({thread.collaborators?.length || 0})
+                      </div>
+                      {(!thread.collaborators || thread.collaborators.length === 0) ? (
+                        <div style={{ fontSize: 11, color: "#374151", fontStyle: "italic" }}>No collaborators yet.</div>
+                      ) : (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                          {thread.collaborators.map(aid => {
+                            const ag = state.agents[aid];
+                            const dm = ag ? DEPT_META[ag.department] : null;
+                            return (
+                              <div key={aid} style={{
+                                background: "#11141a", border: "1px solid #1e222d",
+                                borderRadius: 6, padding: "8px 10px", display: "flex", alignItems: "center", gap: 8
+                              }}>
+                                <div style={{
+                                  width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
+                                  background: dm?.color || "#6b7280"
+                                }} />
+                                <div>
+                                  <div style={{ fontSize: 12, fontWeight: 600, color: "#d1d5db" }}>
+                                    {ag?.name_id || aid}
+                                  </div>
+                                  <div style={{ fontSize: 10, color: "#6b7280" }}>
+                                    {ag?.department || "—"} · {ag?.wallet?.current || 0} pts
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Thread metadata */}
+                    <div>
+                      <div style={{ fontSize: 10, fontWeight: 800, color: "#9ca3af", letterSpacing: 1, marginBottom: 8 }}>METADATA</div>
+                      <div style={{ background: "#08090c", border: "1px solid #1e222d", borderRadius: 8, overflow: "hidden" }}>
+                        {[
+                          ["Thread ID", thread.id],
+                          ["Created", thread.created ? new Date(thread.created).toLocaleString() : "—"],
+                          ["Aim", thread.aim],
+                          ["Status", thread.status],
+                          ["Budget", `${thread.point_wallet?.budget || 0} pts`],
+                          ["Messages", thread.messages_log?.length || 0],
+                        ].map(([label, val]) => (
+                          <div key={label} style={{
+                            display: "flex", justifyContent: "space-between",
+                            padding: "7px 12px", borderBottom: "1px solid #111316"
+                          }}>
+                            <span style={{ fontSize: 11, color: "#6b7280" }}>{label}</span>
+                            <span className="mono" style={{ fontSize: 11, color: "#9ca3af" }}>{val}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </>)}
+      </div>
+    </div>
+  );
+
 
   return (
     <div style={{ display: "flex", gap: 24, height: "100%" }}>

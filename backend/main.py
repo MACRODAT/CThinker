@@ -49,16 +49,6 @@ def seed_db(db: Session):
             "RECENT ACTIONS:\n{actions}\n\n"
             "{directives}\n\n"
             "{tools}\n\n"
-            "TASK: Describe 1 definitive action you take. You can speak before and after tool calls.\n\n"
-            "TOOL CALLING FORMAT:\n"
-            "[CALL_TOOL]\n"
-            "- tool_name\n"
-            "- arg1\n"
-            "- arg2\n"
-            "[END_CALL_TOOL]\n\n"
-            "MANDATORY FORMAT FOR STATE UPDATES AT THE END:\n"
-            "[MEMORY]\nupdated_memory_content\n[END MEMORY]\n\n"
-            "[MODE]\nnext_mode_id\n[END MODE]"
         )
         templates = [
         models.PromptTemplate(
@@ -210,6 +200,16 @@ def seed_db(db: Session):
             name="Decline Invite",
             description="[CALL_TOOL]\n- decline_invite\n- thread_id\n[END_CALL_TOOL]\nDecline an invitation. Points are refunded to thread budget.",
             enabled=True),
+        models.AgentTool(
+            id="get_thread_summary",
+            name="Get Thread Summary",
+            description="[CALL_TOOL]\n- get_thread_summary\n- thread_id\n[END_CALL_TOOL]\nReturn the AI-generated summary for a specific thread.",
+            enabled=True),
+        models.AgentTool(
+            id="get_all_summaries",
+            name="Get All Thread Summaries",
+            description="[CALL_TOOL]\n- get_all_summaries\n[END_CALL_TOOL]\nReturn summaries of all OPEN and ACTIVE threads.",
+            enabled=True),
     ]
     for tool in tool_defs:
         if db.query(models.AgentTool).filter(models.AgentTool.id == tool.id).first() is None:
@@ -303,6 +303,7 @@ def get_state(db: Session = Depends(database.get_db)):
         }
 
     state_threads = {}
+    collabs_all = db.query(models.ThreadCollaborator).all()
     for t in threads:
         msgs = []
         for m in thread_msgs:
@@ -332,6 +333,7 @@ def get_state(db: Session = Depends(database.get_db)):
             "id": t.id, "owner_department": t.owner_department_id, "owner_agent": t.owner_agent_id,
             "topic": t.topic, "aim": t.aim, "status": t.status, "created": t.created,
             "summary": t.summary or None,
+            "collaborators": [c.agent_id for c in collabs_all if c.thread_id == t.id],
             "point_wallet": {"budget": t.budget, "log": []}, "messages_log": msgs
         }
 
