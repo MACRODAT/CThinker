@@ -1035,50 +1035,50 @@ class SimEngine:
         db.add(Transaction(from_id=from_id, to_id=to_id or "FOUNDER", amount=amount, reason=reason))
         return True
 
-    async def _handle_actions(self, text: str, allowed_actions: list) -> str:
-        """Parse and execute action blocks embedded in an LLM response."""
-        result = text
-        if "http_get" in allowed_actions:
-            for m in re.finditer(r'\[HTTP_GET:([^\]]+)\]', result):
-                url = m.group(1).strip()
-                try:
-                    async with httpx.AsyncClient() as client:
-                        r = await client.get(url, timeout=10.0, follow_redirects=True)
-                    result = result.replace(m.group(0), f"[HTTP({r.status_code}): {r.text[:400]}]")
-                except Exception as e:
-                    result = result.replace(m.group(0), f"[HTTP_ERROR: {e}]")
-        if "http_post" in allowed_actions:
-            for m in re.finditer(r'\[HTTP_POST:([^\]]+)\](.*?)\[END_HTTP\]', result, re.DOTALL):
-                url, body = m.group(1).strip(), m.group(2).strip()
-                try:
-                    async with httpx.AsyncClient() as client:
-                        r = await client.post(url, content=body, timeout=10.0)
-                    result = result.replace(m.group(0), f"[HTTP_POST({r.status_code}): {r.text[:300]}]")
-                except Exception as e:
-                    result = result.replace(m.group(0), f"[HTTP_POST_ERROR: {e}]")
-        if "create_file" in allowed_actions:
-            import os
-            safe_dir = os.path.join(os.path.dirname(__file__), "tool_outputs")
-            os.makedirs(safe_dir, exist_ok=True)
-            for m in re.finditer(r'\[CREATE_FILE:([^\]]+)\](.*?)\[END_FILE\]', result, re.DOTALL):
-                fname, content = os.path.basename(m.group(1).strip()), m.group(2)
-                try:
-                    with open(os.path.join(safe_dir, fname), "w", encoding="utf-8") as f: f.write(content)
-                    result = result.replace(m.group(0), f"[FILE_CREATED: {fname}]")
-                except Exception as e:
-                    result = result.replace(m.group(0), f"[FILE_ERROR: {e}]")
-        if "read_file" in allowed_actions:
-            import os
-            safe_dir = os.path.join(os.path.dirname(__file__), "tool_outputs")
-            for m in re.finditer(r'\[READ_FILE:([^\]]+)\]', result):
-                fname = os.path.basename(m.group(1).strip())
-                full = os.path.join(safe_dir, fname)
-                try:
-                    with open(full, "r", encoding="utf-8") as f: content = f.read(600)
-                    result = result.replace(m.group(0), f"[FILE_CONTENT: {content}]")
-                except Exception as e:
-                    result = result.replace(m.group(0), f"[FILE_NOT_FOUND: {fname}]")
-        return result
+    # async def _handle_actions(self, text: str, allowed_actions: list) -> str:
+    #     """Parse and execute action blocks embedded in an LLM response."""
+    #     result = text
+    #     if "http_get" in allowed_actions:
+    #         for m in re.finditer(r'\[HTTP_GET:([^\]]+)\]', result):
+    #             url = m.group(1).strip()
+    #             try:
+    #                 async with httpx.AsyncClient() as client:
+    #                     r = await client.get(url, timeout=10.0, follow_redirects=True)
+    #                 result = result.replace(m.group(0), f"[HTTP({r.status_code}): {r.text[:400]}]")
+    #             except Exception as e:
+    #                 result = result.replace(m.group(0), f"[HTTP_ERROR: {e}]")
+    #     if "http_post" in allowed_actions:
+    #         for m in re.finditer(r'\[HTTP_POST:([^\]]+)\](.*?)\[END_HTTP\]', result, re.DOTALL):
+    #             url, body = m.group(1).strip(), m.group(2).strip()
+    #             try:
+    #                 async with httpx.AsyncClient() as client:
+    #                     r = await client.post(url, content=body, timeout=10.0)
+    #                 result = result.replace(m.group(0), f"[HTTP_POST({r.status_code}): {r.text[:300]}]")
+    #             except Exception as e:
+    #                 result = result.replace(m.group(0), f"[HTTP_POST_ERROR: {e}]")
+    #     if "create_file" in allowed_actions:
+    #         import os
+    #         safe_dir = os.path.join(os.path.dirname(__file__), "tool_outputs")
+    #         os.makedirs(safe_dir, exist_ok=True)
+    #         for m in re.finditer(r'\[CREATE_FILE:([^\]]+)\](.*?)\[END_FILE\]', result, re.DOTALL):
+    #             fname, content = os.path.basename(m.group(1).strip()), m.group(2)
+    #             try:
+    #                 with open(os.path.join(safe_dir, fname), "w", encoding="utf-8") as f: f.write(content)
+    #                 result = result.replace(m.group(0), f"[FILE_CREATED: {fname}]")
+    #             except Exception as e:
+    #                 result = result.replace(m.group(0), f"[FILE_ERROR: {e}]")
+    #     if "read_file" in allowed_actions:
+    #         import os
+    #         safe_dir = os.path.join(os.path.dirname(__file__), "tool_outputs")
+    #         for m in re.finditer(r'\[READ_FILE:([^\]]+)\]', result):
+    #             fname = os.path.basename(m.group(1).strip())
+    #             full = os.path.join(safe_dir, fname)
+    #             try:
+    #                 with open(full, "r", encoding="utf-8") as f: content = f.read(600)
+    #                 result = result.replace(m.group(0), f"[FILE_CONTENT: {content}]")
+    #             except Exception as e:
+    #                 result = result.replace(m.group(0), f"[FILE_NOT_FOUND: {fname}]")
+    #     return result
 
     async def execute_custom_tool(self, db, agent, tool: AgentTool, args: list) -> str:
         """Deterministic custom tool execution. No LLM required."""
@@ -1296,9 +1296,10 @@ class SimEngine:
         import os as _os
         safe_dir = _os.path.join(_os.path.dirname(__file__), "tool_outputs")
         _os.makedirs(safe_dir, exist_ok=True)
+        cmd_=cmd.strip().upper()
 
         # ── 1. Pure built-in file / network commands ──────────────────────────
-        if cmd == "CREATE_FILE":
+        if cmd_ == "CREATE_FILE":
             fname   = _os.path.basename(args[0].strip()) if args else "out.txt"
             content = args[1] if len(args) > 1 else ""
             try:
@@ -1308,7 +1309,7 @@ class SimEngine:
             except Exception as e:
                 return f"[FILE_ERROR:{e}]"
 
-        elif cmd == "READ_FILE":
+        elif cmd_ == "READ_FILE":
             fname = _os.path.basename(args[0].strip()) if args else ""
             try:
                 with open(_os.path.join(safe_dir, fname), "r", encoding="utf-8") as f:
@@ -1316,7 +1317,7 @@ class SimEngine:
             except Exception:
                 return f"[FILE_NOT_FOUND:{fname}]"
 
-        elif cmd == "HTTP_GET":
+        elif cmd_ == "HTTP_GET":
             url = args[0].strip() if args else ""
             try:
                 async with httpx.AsyncClient() as client:
@@ -1325,7 +1326,7 @@ class SimEngine:
             except Exception as e:
                 return f"[HTTP_ERROR:{e}]"
 
-        elif cmd == "HTTP_POST":
+        elif cmd_ == "HTTP_POST":
             url  = args[0].strip() if len(args) > 0 else ""
             body = args[1].strip() if len(args) > 1 else ""
             try:
@@ -1334,6 +1335,13 @@ class SimEngine:
                 return f"[POST({r.status_code}):{r.text[:300]}]"
             except Exception as e:
                 return f"[POST_ERROR:{e}]"
+        
+        elif cmd_ == "GET_TIME":
+            import time
+            hour_string = int(time.strftime("%H"))
+            labels = {3: "Deep Night", 7: "Very Early Morning", 12: "Morning", 17: "Afternoon", 21:"Evening"}
+            res = next((v for k, v in labels.items() if hour_string < k), "Night")
+            return res
 
         # ── 2. DB-registered tools (custom or system) ──────────────────────────
         tool_obj = db.query(AgentTool).filter(
