@@ -1,4 +1,6 @@
-I have an API with execute_custom_tool in engine.py line 1091.
+I have an app in d:\ai\Cthinker.
+I have implemented a tools workshop system which didn't go well.
+
 It's not really what I want. 
 I want a complete function prompt executor.
 So I've got this parser: async def resolve_placeholders(self, text: str, db: Session, agent, last_quest) -> str at line 1168 in engine.py

@@ -1271,7 +1271,7 @@ class SimEngine:
             original = text
             
             # Resolve Simple Variables {agent}
-            for k, v in simple_vars.items():
+            for k, v in simple.items():
                 text = text.replace(f"{{{k}}}", v)
 
             # Resolve Innermost Conditionals: {{ key ... }}
