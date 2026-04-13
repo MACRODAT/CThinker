@@ -738,9 +738,8 @@ async def invoke_tool(tool_id: str, req: schemas.ToolInvokeRequest, db: Session 
     agent = db.query(models.Agent).filter(models.Agent.id == req.agent_id).first()
     if not agent: return {"error": "Agent not found"}
     
-    # Simulate a tool call string for the engine
-    import io
-    import csv
+    # Safely parse the CSV-style arguments provided in the API request
+    import io, csv
     f = io.StringIO(req.args)
     reader = csv.reader(f, skipinitialspace=True, delimiter=',', quotechar='"')
     try:
@@ -748,12 +747,9 @@ async def invoke_tool(tool_id: str, req: schemas.ToolInvokeRequest, db: Session 
     except:
         args_list = [req.args] if req.args.strip() else []
     
-    arg_lines = "\n".join([f"- {a.strip()}" for a in args_list])
-    action_text = f"[CALL_TOOL]\n- {tool_id}\n{arg_lines}\n[END_CALL_TOOL]"
-    
-    # We use handle_tools from the engine
-    result = await sim_engine.handle_tools(db, agent, action_text)
-    db.commit() # Save any changes (budget deductions, thread creation, etc)
+    # Directly hit the core command router! No string-faking required.
+    result = await sim_engine._execute_inline_command(tool_id, args_list, db, agent)
+    db.commit() 
     
     return {"status": "success", "result": result}
 

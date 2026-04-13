@@ -25,13 +25,27 @@ You know what? See this prompt, it has all the features I want:
         When you get in here, it should call an external tool. Current time: *\/get_time\/*
         I could also call another external paid tool with arguments like so. Result: *\/external_paid_tool|arg1|arg2\/*
         I may also produce complex stuff like:
-        *\/get_news|*\/READ_FILE:my_city.txt\/*
+        [CALL_TOOL]
+        READ_FILE
+        file.txt
+        [END_CALL_TOOL]
         OR even:
-        *\/HTTP_POST|*\/READ_FILE|url.txt\/*|This is a new post!\/*
+        [CALL_TOOL]
+        HTTP_POST
+        [CALL_TOOL]
+        READ_FILE
+        url.txt
+        [END_CALL_TOOL]
+        [END_CALL_TOOL]
         Basically, the parser needs to be perfect to handle every single prompt!
         {{
             pending_invitations_exist
                 Returns this sentence with the name of the agent which is {agent}
+                Now we'll send it to server
+                [CALL_TOOL]
+                HTTP_POST
+                http://localhost:98327/seen/{agent}
+                [END_CALL_TOOL]
             /ELSE/
                 Returns another sentence with the name of the agent which is {agent}
         }}
