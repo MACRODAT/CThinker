@@ -181,11 +181,13 @@ class SimEngine:
 
             
             s_prefix = db.query(Setting).filter(Setting.key == "tools_instruction_prefix").first()
-            pr="\n# Using tools format\n[CALL_TOOL]\n- tool_name\n- argument 1\n- argument 2\n[END_CALL_TOOL]\n\n# AVAILABLE TOOLS\n"
-            # tools_block = s_prefix.value + "\n" + tools_block if s_prefix else f"AVAILABLE TOOLS: {self.get_tools(db)}\n{tools_block}"
-            tools_block = s_prefix.value + "\n" + pr 
-            tools_block += await self.resolve_placeholders(self.get_tools(db), db, agent, "")
-            print(tools_block)
+            
+            
+
+            tools_block = s_prefix.value + "\n" + tools_block if s_prefix else f"AVAILABLE TOOLS: {self.get_tools(db)}\n{tools_block}"
+            # tools_block = await self.resolve_placeholders(tools_block, db, agent, "")
+            
+            # print(tools_block)
 
             # 2. Context
             # Find last quest for status placeholder
@@ -260,9 +262,14 @@ class SimEngine:
                 directives=directives,
                 message=""
             )
+            
             # Second pass: resolve all {{...}} that survived .format()
             user_prompt = await self.resolve_placeholders(user_prompt, db, agent, last_q)
             system_prompt = await self.resolve_placeholders(system_prompt, db, agent, last_q)
+
+            pr="\n# TOOLS USAGE FORMAT (IMPORTANT)\n[CALL_TOOL]\nNAME OF TOOL\nargument 1\nargument 2\n[END_CALL_TOOL]\n"
+            pr+="\n# EXAMPLE \n[CALL_TOOL]\nget_news\nCasablanca\n[END_CALL_TOOL]\n"
+            user_prompt += pr
 
 
             # debugging
