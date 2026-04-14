@@ -276,8 +276,8 @@ class SimEngine:
 
 
             # debugging
-            print(system_prompt)
-            print(user_prompt)
+            # print(system_prompt)
+            # print(user_prompt)
 
             
             add_step("thought", "Thinking...", {"system_prompt": system_prompt, "user_prompt": user_prompt})
@@ -346,7 +346,7 @@ class SimEngine:
                         
                         prompt_continuation = (
                             f"\n\nAssistant:\n{raw}\n\nSystem (Tool Results):\n{iter_tool_results}\n\n"
-                            f"You must now continue your turn based on these tool results. (Tax of 1 point was deducted from your department to continue). "
+                            f"You can either continue your turn based on these tool results or you can stop. (Tax of 1 point was deducted from your department to continue). "
                             f"Your department has {dept.ledger_current} points remaining.\n"
                             "Call another tool if needed, otherwise provide your final reply."
                         )
@@ -820,6 +820,27 @@ class SimEngine:
             db.add(Message(thread_id=tid, who=agent.id, what=f"❌ {agent.name_id} declined the invitation. Status: {{invitation_status}}", points=quest.offer_points))
             result = "INVITE_DECLINED"
 
+        # ── stealth_mode_thread ────────────────────────────────────────────────
+        elif tool_name == "stealth_mode_thread":
+            try:
+                tid = args[0].strip().upper() if args else ""
+                t = db.query(Thread).filter(Thread.id == tid).first()
+                if not t: return f"STEALTH_ERROR: Thread {tid} not found."
+                if t.owner_agent_id != agent.id: return "AUTH_ERROR: Only the owner can activate Stealth Mode."
+                
+                cost = 10
+                if agent.wallet_current < cost: return "INSUFFICIENT_FUNDS"
+                
+                agent.wallet_current -= cost
+                t.is_stealth = True
+                
+                if add_step_cb:
+                    add_step_cb("wallet", f"Stealth Mode Activated: -{cost} pts", {"amount": -cost, "reason": "stealth_mode", "thread_id": tid})
+                await self.log(db, "POINT", "AGENT", "THREAD_STEALTH", {"agent": agent.name_id, "thread_id": tid, "cost": -cost}, agent_id=agent.id)
+                db.add(Message(thread_id=tid, who="SYSTEM", what="🕵️ Thread moved to Stealth Mode.", points=-cost))
+                result = "STEALTH_MODE_ACTIVATED"
+            except Exception as e: result = f"STEALTH_ERROR: {str(e)}"
+
         # ── refill_thread ──────────────────────────────────────────────────────
 
         # ── get_news ──────────────────────────────────────────────────────────
@@ -865,7 +886,7 @@ class SimEngine:
                 
                 q = db.query(Thread)
                 # if f_status: q = q.filter(Thread.status == f_status)
-                q = q.filter(Thread.status == "ACTIVE" or Thread.status == "OPEN")
+                q = q.filter(Thread.status.in_(["ACTIVE", "OPEN"]))
                 if f_dept:   q = q.filter(Thread.owner_department_id == f_dept)
                 if f_owner:  q = q.filter(Thread.owner_agent_id == f_owner)
 
@@ -889,7 +910,8 @@ class SimEngine:
                         elif db.query(Agent).filter(Agent.department_id == t.owner_department_id, Agent.is_ceo == True).first().id == agent.id:
                             ceo_lines.append(line)
                         else:
-                            need_join.append(line)
+                            if not t.is_stealth:
+                                need_join.append(line)
                     if owner_lines:
                         lines.append("Threads you own:\n" + "\n".join(owner_lines))
                     if collab_lines:
@@ -933,6 +955,7 @@ class SimEngine:
                 threads = db.query(Thread).filter(
                     Thread.status.in_(["OPEN", "ACTIVE"]),
                     Thread.aim != "Chat",
+                    Thread.is_stealth == False
                 ).order_by(Thread.created.desc()).limit(20).all()
                 if not threads:
                     result = "ALL_SUMMARIES: No active threads."
@@ -1150,7 +1173,8 @@ class SimEngine:
         threads = db.query(Thread).filter(
             Thread.status.in_(["OPEN", "ACTIVE"]),
             Thread.aim != "Chat",
-        ).order_by(Thread.created.desc()).limit(30).all()
+            Thread.is_stealth == False
+        ).order_by(Thread.created.desc()).limit(15).all()
         if not threads:
             return "No active or open threads."
         lines = []

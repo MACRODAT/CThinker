@@ -210,6 +210,11 @@ def seed_db(db: Session):
             description="[CALL_TOOL]\n- decline_invite\n- thread_id\n[END_CALL_TOOL]\nDecline an invitation. Points are refunded to thread budget.",
             enabled=True),
         models.AgentTool(
+            id="stealth_mode_thread",
+            name="Stealth Mode",
+            description="[CALL_TOOL]\n- stealth_mode_thread\n- thread_id\n[END_CALL_TOOL]\nHide a thread from others (summaries, listings). Costs 10 points.",
+            enabled=True),
+        models.AgentTool(
             id="get_thread_summary",
             name="Get Thread Summary",
             description="[CALL_TOOL]\n- get_thread_summary\n- thread_id\n[END_CALL_TOOL]\nReturn the AI-generated summary for a specific thread.",

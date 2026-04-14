@@ -67,6 +67,7 @@ class Thread(Base):
     ticket_id = Column(String, nullable=True)
     ticket_value = Column(Integer, default=0)
     summary = Column(Text, nullable=True)       # AI-generated summary, recomputed on new messages
+    is_stealth = Column(Boolean, default=False)
     
     owner_department = relationship("Department", back_populates="threads")
     collaborators = relationship("ThreadCollaborator", back_populates="thread")

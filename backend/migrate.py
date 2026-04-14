@@ -4,7 +4,7 @@ import os
 def run():
     db_path = os.path.join(os.path.dirname(__file__), 'cthinker.db')
     print("Connecting to", db_path)
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=30)
     c = conn.cursor()
 
     # Add custom_directives to prompt_templates
@@ -172,6 +172,11 @@ def run():
         ''')
         print("Created transactions table")
     except Exception as e: print("transactions table:", e)
+
+    try:
+        c.execute('ALTER TABLE threads ADD COLUMN is_stealth BOOLEAN DEFAULT 0')
+        print("Added is_stealth to threads")
+    except Exception as e: print("is_stealth:", e)
 
     conn.commit()
     conn.close()
