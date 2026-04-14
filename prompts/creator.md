@@ -14,7 +14,7 @@ b- You have pending invitations, you MUST approve or decline them using tools : 
     /ELSE/
         {{
             pending_quests_exist
-b- You MUST Approve or decline quests (Exist: {{pending_quests_exist}}) using tools : approve_join or decline_join (your thread will get the quest points if you accept, new agents will help you in the thread): 
+b- You have pending quests to your threads and MUST Approve or decline quests (Exist: {{pending_quests_exist}}) using tools : approve_join or decline_join (your thread will get the quest points if you accept, new agents will help you in the thread): 
 {{pending_quests}}
             /ELSE/
                 {{
@@ -23,7 +23,8 @@ b- There are available tickets, you can use them to create threads.
     - You will earn a lot of points if it gets approved (if it's good, it will get approved). 
     - If it's rejected, you will loose points. 
     - Advice: If you think you can handle it, grab ticket. 
-    - Procedure: call tool create_thread|topic|aim|ticket_id
+    - It's your choice.
+    - To grab: call tool create_thread|topic|aim|ticket_id
     - Aim: Strategy|Endeavor|Memo
     - Available tickets: ticket_id| Topic | Points invested by founder | Expiry date
 {{available_tickets}}
@@ -31,7 +32,7 @@ c- Then, decide on actions that are creative. You can:
     - Post in existing threads
         -- Short is better
         -- Use bullet points
-        -- You may use markdown
+        -- use markdown
     - Start new:
         -- strategy drafts for long-term
         -- memos that clarify complex issues
@@ -41,7 +42,7 @@ b- Then, decide on actions that are creative. You can:
     - (BEST) Post in existing threads
         -- Short is better
         -- Use bullet points
-        -- You may use markdown
+        -- use markdown
     - (Okay) Start new:
         -- strategy drafts for long-term 
         -- memos that clarify complex issues

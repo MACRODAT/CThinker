@@ -4,6 +4,9 @@ from typing import List, Optional
 class ThreadBase(BaseModel):
     topic: str
     aim: str
+    favourite_color: Optional[str] = None
+    color_theme: Optional[str] = None
+    css_pattern: Optional[str] = None
 
 class PromptTemplateBase(BaseModel):
     name: Optional[str] = None
@@ -30,6 +33,9 @@ class ThreadCreate(ThreadBase):
 class ThreadUpdate(BaseModel):
     topic: Optional[str] = None
     status: Optional[str] = None
+    favourite_color: Optional[str] = None
+    color_theme: Optional[str] = None
+    css_pattern: Optional[str] = None
 
 class ThreadResponse(ThreadBase):
     id: str
@@ -38,6 +44,9 @@ class ThreadResponse(ThreadBase):
     status: str
     created: str
     budget: int
+    favourite_color: Optional[str] = None
+    color_theme: Optional[str] = None
+    css_pattern: Optional[str] = None
     class Config:
         from_attributes = True
 

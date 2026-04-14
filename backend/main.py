@@ -224,6 +224,11 @@ def seed_db(db: Session):
             name="Get All Thread Summaries",
             description="[CALL_TOOL]\n- get_all_summaries\n[END_CALL_TOOL]\nReturn summaries of all OPEN and ACTIVE threads.",
             enabled=True),
+        models.AgentTool(
+            id="set_thread_vibe",
+            name="Set Thread Vibe",
+            description="[CALL_TOOL]\n- set_thread_vibe\n- thread_id\n- color_theme (hex or name)\n- css_pattern (grid, cross, none)\n[END_CALL_TOOL]\nOwner/Collab: Style the thread background and accent.",
+            enabled=True),
     ]
     for tool in tool_defs:
         if db.query(models.AgentTool).filter(models.AgentTool.id == tool.id).first() is None:
@@ -347,6 +352,9 @@ def get_state(db: Session = Depends(database.get_db)):
             "id": t.id, "owner_department": t.owner_department_id, "owner_agent": t.owner_agent_id,
             "topic": t.topic, "aim": t.aim, "status": t.status, "created": t.created,
             "summary": t.summary or None,
+            "favourite_color": t.favourite_color,
+            "color_theme": t.color_theme,
+            "css_pattern": t.css_pattern,
             "collaborators": [c.agent_id for c in collabs_all if c.thread_id == t.id],
             "point_wallet": {"budget": t.budget, "log": []}, "messages_log": msgs
         }
@@ -457,6 +465,9 @@ def update_thread(thread_id: str, req: schemas.ThreadUpdate, db: Session = Depen
     if not t: raise HTTPException(status_code=404, detail="Thread not found")
     if req.topic is not None: t.topic = req.topic
     if req.status is not None: t.status = req.status
+    if req.favourite_color is not None: t.favourite_color = req.favourite_color
+    if req.color_theme is not None: t.color_theme = req.color_theme
+    if req.css_pattern is not None: t.css_pattern = req.css_pattern
     db.commit()
     return t
 

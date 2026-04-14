@@ -137,10 +137,16 @@ function RunItem({ run, isExp, onToggle, setFullScreenRunId }) {
               <div style={{ fontSize: 11, color: "#e2e8f0" }}>
                 {s.type === 'thought' && (
                   <div>
-                    <div style={{ fontStyle: "italic", color: "#6b7280", marginBottom: 6 }}>Intelligence check...</div>
+                    <div style={{ fontStyle: "italic", color: "#6b7280", marginBottom: 6 }}>System prompt:</div>
+                    {s.metadata?.system_prompt && (
+                      <div style={{ fontSize: 9, color: "#4b5563", background: "#0b0c10", padding: 6, height: '300px', overflowY: 'scroll', borderRadius: 4, marginBottom: 6, border: "1px dashed #1a1d24" }}>
+                        Prompt context: {s.metadata.system_prompt.slice(0, 3000)}...
+                      </div>
+                    )}
+                    <div style={{ fontStyle: "italic", color: "#6b7280", marginBottom: 6 }}>User prompt:</div>
                     {s.metadata?.user_prompt && (
-                      <div style={{ fontSize: 9, color: "#4b5563", background: "#0b0c10", padding: 6, borderRadius: 4, marginBottom: 6, border: "1px dashed #1a1d24" }}>
-                        Prompt context: {s.metadata.user_prompt.slice(0, 100)}...
+                      <div style={{ fontSize: 9, color: "#4b5563", background: "#0b0c10", padding: 6, height: '300px', overflowY: 'scroll', borderRadius: 4, marginBottom: 6, border: "1px dashed #1a1d24" }}>
+                        Prompt context: {s.metadata.user_prompt.slice(0, 3000)}...
                       </div>
                     )}
                   </div>
@@ -1702,9 +1708,22 @@ function Threads({ state, approveThread, rejectThread, deleteThread, updateThrea
   const [sending, setSending] = useState(false);
   const [rightTab, setRightTab] = useState("ledger"); // "ledger" | "properties"
   const [refreshing, setRefreshing] = useState(false);
+  const [q, setQ] = useState("");
+  const [fStatus, setFStatus] = useState("");
+  const [fAim, setFAim] = useState("");
+  const [favOnly, setFavOnly] = useState(false);
   const msgEndRef = useRef(null);
 
-  const tArr = Object.values(state.threads).filter(t => t.aim !== "Chat").reverse();
+  const tArr = Object.values(state.threads)
+    .filter(t => t.aim !== "Chat")
+    .filter(t => {
+      if (q && !t.topic.toLowerCase().includes(q.toLowerCase())) return false;
+      if (fStatus && t.status !== fStatus) return false;
+      if (fAim && t.aim !== fAim) return false;
+      if (favOnly && !t.favourite_color) return false;
+      return true;
+    })
+    .reverse();
   const thread = sel ? state.threads[sel] : null;
 
   useEffect(() => {
@@ -1737,49 +1756,104 @@ function Threads({ state, approveThread, rejectThread, deleteThread, updateThrea
     REJECTED: "#f87171", FROZEN: "#94a3b8",
   }[s] || "#6b7280");
 
+  const getVibeStyle = (t) => {
+    let style = {};
+    if (t.css_pattern === "grid") {
+      style.backgroundImage = `radial-gradient(circle, ${t.color_theme || '#ffffff'}11 1px, transparent 1px)`;
+      style.backgroundSize = "20px 20px";
+    } else if (t.css_pattern === "cross") {
+      style.backgroundImage = `linear-gradient(to right, ${t.color_theme || '#ffffff'}11 1px, transparent 1px), linear-gradient(to bottom, ${t.color_theme || '#ffffff'}11 1px, transparent 1px)`;
+      style.backgroundSize = "20px 20px";
+    }
+    return style;
+  };
+
   return (
     <div style={{ display: "flex", gap: 20, height: "100%" }}>
 
       {/* ── Left: thread list ── */}
-      <div style={{ width: 300, flexShrink: 0, overflowY: "auto" }}>
-        {tArr.map(t => (
-          <div key={t.id} onClick={() => setSel(t.id)} className="card"
-            style={{
-              cursor: "pointer", marginBottom: 10,
-              borderColor: sel === t.id ? "#6366f1" : "#1a1d24",
-              background: sel === t.id ? "#1e1b4b" : "#11141a"
-            }}>
-            <div className="card-body" style={{ padding: "10px 14px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                <span style={{
-                  fontWeight: 600, color: "#e2e8f0", fontSize: 13,
-                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 170
-                }}>
-                  {t.topic}
-                </span>
-                <span style={{
-                  fontSize: 9, padding: "2px 6px", borderRadius: 4, flexShrink: 0,
-                  background: statusColor(t.status) + "22", color: statusColor(t.status),
-                  border: `1px solid ${statusColor(t.status)}44`, fontWeight: 700
-                }}>
-                  {t.status}
-                </span>
-              </div>
-              <div style={{ fontSize: 10, color: "#6b7280", marginBottom: t.summary ? 6 : 0 }}>
-                {t.aim} · {t.point_wallet?.budget || 0}pt
-              </div>
-              {t.summary && (
-                <div style={{
-                  fontSize: 10, color: "#4b5563", lineHeight: 1.4,
-                  overflow: "hidden", display: "-webkit-box",
-                  WebkitLineClamp: 2, WebkitBoxOrient: "vertical"
-                }}>
-                  {t.summary}
-                </div>
-              )}
+      <div style={{ width: 300, flexShrink: 0, display: "flex", flexDirection: "column", gap: 10 }}>
+
+        {/* Filter Bar */}
+        <div className="card" style={{ padding: 10 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <input
+              placeholder="Search topic..."
+              value={q}
+              onChange={e => setQ(e.target.value)}
+              style={{ fontSize: 11, padding: "6px 10px", background: "#0b0c10" }}
+            />
+            <div style={{ display: "flex", gap: 4 }}>
+              <select value={fStatus} onChange={e => setFStatus(e.target.value)} style={{ flex: 1, fontSize: 10, padding: 4 }}>
+                <option value="">All Status</option>
+                <option value="OPEN">OPEN</option>
+                <option value="ACTIVE">ACTIVE</option>
+                <option value="APPROVED">APPROVED</option>
+                <option value="REJECTED">REJECTED</option>
+                <option value="FROZEN">FROZEN</option>
+              </select>
+              <select value={fAim} onChange={e => setFAim(e.target.value)} style={{ flex: 1, fontSize: 10, padding: 4 }}>
+                <option value="">All Aims</option>
+                <option value="Memo">Memo</option>
+                <option value="Strategy">Strategy</option>
+                <option value="Endeavor">Endeavor</option>
+              </select>
             </div>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10, cursor: "pointer", color: "#9ca3af" }}>
+              <input type="checkbox" checked={favOnly} onChange={e => setFavOnly(e.target.checked)} />
+              Favourites only
+            </label>
           </div>
-        ))}
+        </div>
+
+        <div style={{ flex: 1, overflowY: "auto" }}>
+          {tArr.map(t => (
+            <div key={t.id} onClick={() => setSel(t.id)} className="card"
+              style={{
+                cursor: "pointer", marginBottom: 10,
+                borderColor: sel === t.id ? (t.color_theme || "#6366f1") : (t.favourite_color || "#1a1d24"),
+                background: sel === t.id ? (t.color_theme ? t.color_theme + "22" : "#1e1b4b") : "#11141a",
+                boxShadow: t.favourite_color ? `0 0 10px ${t.favourite_color}33` : "none",
+                position: "relative",
+                overflow: "hidden",
+                ...getVibeStyle(t)
+              }}>
+              <div className="card-body" style={{ padding: "10px 14px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                  <span style={{
+                    fontWeight: 600, color: "#e2e8f0", fontSize: 13,
+                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 170
+                  }}>
+                    {t.topic}
+                  </span>
+                  <span style={{
+                    fontSize: 9, padding: "2px 6px", borderRadius: 4, flexShrink: 0,
+                    background: statusColor(t.status) + "22", color: statusColor(t.status),
+                    border: `1px solid ${statusColor(t.status)}44`, fontWeight: 700
+                  }}>
+                    {t.status}
+                  </span>
+                </div>
+                <div style={{ fontSize: 10, color: "#6b7280", marginBottom: t.summary ? 6 : 0 }}>
+                  {t.aim} · {t.point_wallet?.budget || 0}pt
+                </div>
+                {t.summary && (
+                  <div style={{
+                    fontSize: 10, color: "#4b5563", lineHeight: 1.4,
+                    overflow: "hidden", display: "-webkit-box",
+                    WebkitLineClamp: 2, WebkitBoxOrient: "vertical"
+                  }}>
+                    {t.summary}
+                  </div>
+                )}
+                {/* Favorite Indicator */}
+                {t.favourite_color && (
+                  <div style={{ position: "absolute", bottom: 0, right: 0, width: 0, height: 0, borderStyle: "solid", borderWidth: "0 0 16px 16px", borderColor: `transparent transparent ${t.favourite_color} transparent`, opacity: 0.6 }} />
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* ── Right: detail ── */}
@@ -1801,9 +1875,27 @@ function Threads({ state, approveThread, rejectThread, deleteThread, updateThrea
                       </div>
                     ) : (
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <h2 style={{ margin: 0, color: "#fff", fontSize: 20 }}>{thread.topic}</h2>
+                        <h2 style={{ margin: 0, color: thread?.color_theme || "#fff", fontSize: 20 }}>
+                          {thread?.topic}
+                        </h2>
                         <button onClick={() => setEditMode(true)}
-                          style={{ background: "none", border: "none", color: "#6366f1", cursor: "pointer", fontSize: 15 }}>✎</button>
+                          style={{ background: "none", border: "none", color: "#6366f1", cursor: "pointer", fontSize: 13 }}>✎</button>
+
+                        {/* Favorite Star */}
+                        <div style={{ position: "relative", display: "inline-block" }}>
+                          <button
+                            style={{ background: "none", border: "none", color: thread.favourite_color || "#374151", cursor: "pointer", fontSize: 18 }}
+                            onClick={() => {
+                              const colors = [null, "#fbbf24", "#3b82f6", "#10b981", "#ef4444", "#a855f7"];
+                              const idx = colors.indexOf(thread.favourite_color);
+                              const next = colors[(idx + 1) % colors.length];
+                              updateThread(sel, { favourite_color: next });
+                            }}
+                            title="Cycle Favorite Color"
+                          >
+                            ★
+                          </button>
+                        </div>
                       </div>
                     )}
                     <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 6, display: "flex", gap: 14, flexWrap: "wrap" }}>
@@ -1811,6 +1903,17 @@ function Threads({ state, approveThread, rejectThread, deleteThread, updateThrea
                       <span>Dept: <b style={{ color: DEPT_META[thread.owner_department]?.color || "#fff" }}>{thread.owner_department || "—"}</b></span>
                       <span>Aim: <b style={{ color: "#6366f1" }}>{thread.aim}</b></span>
                       <span className="mono" style={{ color: "#4b5563" }}>{thread.id}</span>
+                    </div>
+
+                    {/* Vibe & Pattern Controls */}
+                    <div style={{ marginTop: 12, display: "flex", gap: 10, alignItems: "center" }}>
+                      <div style={{ fontSize: 9, color: "#4b5563", fontWeight: 700, letterSpacing: 1 }}>THREAD VIBE</div>
+                      <input type="color" value={thread.color_theme || "#6366f1"} onChange={e => updateThread(sel, { color_theme: e.target.value })} style={{ width: 24, height: 24, padding: 0, border: "none", background: "none", cursor: "pointer" }} />
+                      <select value={thread.css_pattern || "none"} onChange={e => updateThread(sel, { css_pattern: e.target.value })} style={{ fontSize: 9, padding: "2px 6px", background: "#0b0c10" }}>
+                        <option value="none">Pattern: None</option>
+                        <option value="grid">Grid Pattern</option>
+                        <option value="cross">Cross Pattern</option>
+                      </select>
                     </div>
                   </div>
                   <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 16 }}>

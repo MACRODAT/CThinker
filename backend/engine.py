@@ -278,10 +278,13 @@ class SimEngine:
             # debugging
             # print(system_prompt)
             # print(user_prompt)
-
             
+            
+            # add_step("thought", "LLM SYSTEM PROMPT", {"system_prompt": system_prompt})
+            # add_step("thought", "LLM USER PROMPT", {"system_prompt": system_prompt})
             add_step("thought", "Thinking...", {"system_prompt": system_prompt, "user_prompt": user_prompt})
             
+            # add_step("thought", "Thinking...", {"system_prompt": system_prompt, "user_prompt": user_prompt})
             MAX_ITERATIONS = 10
             current_user_prompt = user_prompt
             final_processed_raw = ""
@@ -662,6 +665,16 @@ class SimEngine:
             tid, joiner_id = args[0].upper(), args[1].upper()
             t = db.query(Thread).filter(Thread.id == tid).first()
             if not t or t.owner_agent_id != agent.id: return "AUTH_ERROR"
+            # Check if ALREADY approved
+            already = db.query(JoinQuest).filter(
+                JoinQuest.thread_id == tid, 
+                JoinQuest.agent_id == joiner_id, 
+                JoinQuest.status=="APPROVED"
+            ).first()
+            if already:
+                tools_now = self.get_tools(db)
+                return f"Join quest already approved ! Available tools now: {tools_now}"
+
             quest = db.query(JoinQuest).filter(JoinQuest.thread_id == tid, JoinQuest.agent_id == joiner_id, JoinQuest.status=="PENDING").first()
             if not quest: return "QUEST_NOT_FOUND"
             quest.status = "APPROVED"
@@ -713,7 +726,7 @@ class SimEngine:
 
             if is_owner: cost = 0
             elif is_collab or is_superior: cost = 1
-            else: return "AUTH_ERROR: Join first."
+            else: return "AUTH_ERROR: Join first. Use join_thread tool: join_thread|thread_id|offer_points"
 
             if t.budget < cost: return "INSUFFICIENT_FUNDS"
             t.budget -= cost
@@ -996,6 +1009,39 @@ class SimEngine:
                         lines.append(f"[{t.id}] {t.topic} ({t.aim}, {t.budget}pt): {s}")
                     result = "ALL_SUMMARIES:\n" + "\n".join(lines)
             except Exception as e: result = f"SUMMARIES_ERROR: {str(e)}"
+
+        # ── set_thread_vibe ────────────────────────────────────────────────────
+        elif tool_name == "set_thread_vibe":
+            try:
+                tid = args[0].strip().upper() if args else ""
+                color = args[1].strip() if len(args) > 1 else None
+                pattern = args[2].strip().lower() if len(args) > 2 else "none"
+                
+                t = db.query(Thread).filter(Thread.id == tid).first()
+                if not t: return f"VIBE_ERROR: Thread {tid} not found."
+                
+                # Auth Check: Owner or collaborator
+                is_owner = t.owner_agent_id == agent.id
+                is_collab = db.query(ThreadCollaborator).filter(
+                    ThreadCollaborator.thread_id == tid, ThreadCollaborator.agent_id == agent.id).first() is not None
+                
+                if not (is_owner or is_collab):
+                    return "AUTH_ERROR: Only the owner or a collaborator can set the vibe."
+                
+                # Points cost: 5 pts to styling
+                cost = 5
+                if agent.wallet_current < cost: return "INSUFFICIENT_FUNDS"
+                agent.wallet_current -= cost
+                
+                if color: t.color_theme = color
+                if pattern: t.css_pattern = pattern
+                
+                if add_step_cb:
+                    add_step_cb("wallet", f"Thread Vibe Update: -{cost} pts", {"amount": -cost, "reason": "thread_vibe", "thread_id": tid})
+                await self.log(db, "POINT", "AGENT", "THREAD_VIBE", {"agent": agent.name_id, "thread_id": tid, "cost": -cost}, agent_id=agent.id)
+                db.add(Message(thread_id=tid, who=agent.id, what=f"🎨 Vibe updated: color={color}, pattern={pattern}", points=-cost))
+                result = "VIBE_UPDATED"
+            except Exception as e: result = f"VIBE_ERROR: {str(e)}"
 
         # ── delete_message ─────────────────────────────────────────────────────
         elif tool_name == "delete_message":

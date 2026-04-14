@@ -178,6 +178,21 @@ def run():
         print("Added is_stealth to threads")
     except Exception as e: print("is_stealth:", e)
 
+    try:
+        c.execute('ALTER TABLE threads ADD COLUMN favourite_color TEXT')
+        print("Added favourite_color to threads")
+    except Exception as e: print("favourite_color:", e)
+    
+    try:
+        c.execute('ALTER TABLE threads ADD COLUMN color_theme TEXT')
+        print("Added color_theme to threads")
+    except Exception as e: print("color_theme:", e)
+    
+    try:
+        c.execute('ALTER TABLE threads ADD COLUMN css_pattern TEXT')
+        print("Added css_pattern to threads")
+    except Exception as e: print("css_pattern:", e)
+
     conn.commit()
     conn.close()
     print("Migration complete.")
