@@ -11,6 +11,7 @@ import models, schemas, database
 from engine import engine as sim_engine
 
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db = database.SessionLocal()
@@ -18,6 +19,8 @@ async def lifespan(app: FastAPI):
     db.close()
     engine_task = asyncio.create_task(sim_engine.start())
     print("[CThinker] Simulation engine started.")
+    for route in app.routes:
+        print(f"DEBUG_ROUTE: {route.path}")
     yield
     sim_engine.stop()
     engine_task.cancel()
@@ -34,8 +37,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+
 models.Base.metadata.create_all(bind=database.engine)
 
+
+# @app.get("/api/debug/routes")
+# def debug_routes():
+#     return [{"path": r.path, "name": getattr(r, 'name', None), "type": str(type(r))} for r in app.routes]
 
 # ── Seeder ───────────────────────────────────────────────────────────────────
 
@@ -502,7 +511,6 @@ def reject_thread(thread_id: str, db: Session = Depends(database.get_db)):
 @app.get("/api/threads/{thread_id}/messages")
 def get_messages(thread_id: str, db: Session = Depends(database.get_db)):
     return db.query(models.Message).filter(models.Message.thread_id == thread_id).all()
-
 
 # ── Departments ───────────────────────────────────────────────────────────────
 

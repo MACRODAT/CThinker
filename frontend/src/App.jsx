@@ -60,6 +60,114 @@ function renderMd(raw) {
   return s;
 }
 
+// ── Run Item (Timeline) ──────────────────────────────────────────────────────
+function RunItem({ run, isExp, onToggle }) {
+  const dept = DEPT_META[run.dept] || { color: "#818cf8" };
+
+  const getStepColor = (type) => {
+    switch (type) {
+      case 'thought': return '#818cf8';
+      case 'tool_call': return '#c084fc';
+      case 'tool_result': return '#34d399';
+      case 'error': return '#ef4444';
+      case 'complete': return '#10b981';
+      default: return '#374151';
+    }
+  };
+
+  return (
+    <div style={{
+      background: isExp ? "#0d0f14" : "#11141a",
+      border: `1px solid ${isExp ? "#4f46e5" : "#1a1d24"}`,
+      boxShadow: isExp ? "0 4px 20px -5px rgba(0,0,0,0.5)" : "none",
+      borderRadius: 10, padding: 12, marginBottom: 10,
+      cursor: "pointer", transition: "all 0.2s"
+    }} onClick={onToggle}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, alignItems: "center" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: dept.color }}>{run.agent}</span>
+          <span style={{ fontSize: 9, padding: "2px 6px", background: dept.dim || "#1a1d24", color: dept.color, borderRadius: 4, fontWeight: 600 }}>{run.dept || "SYS"}</span>
+        </div>
+        <span className="mono" style={{ fontSize: 10, color: "#4b5563" }}>{hhmm(run.time)}</span>
+      </div>
+
+      <div style={{ fontSize: 11, color: isExp ? "#d1d5db" : "#9ca3af", lineHeight: 1.5, overflow: "hidden", textOverflow: "ellipsis", display: isExp ? "block" : "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+        {run.msg}
+      </div>
+
+      {isExp && (
+        <div style={{ marginTop: 15, paddingTop: 15, borderTop: "1px solid #1a1d24" }}>
+          <div style={{ fontSize: 9, fontWeight: 800, color: "#4b5563", letterSpacing: 1, textTransform: "uppercase", marginBottom: 12 }}>Run Activity Timeline</div>
+          
+          {run.steps?.map((s, idx) => (
+            <div key={idx} style={{ position: "relative", paddingLeft: 24, paddingBottom: 16 }}>
+              {/* Timeline Line */}
+              {idx < run.steps.length - 1 && <div style={{ position: "absolute", left: 6, top: 12, bottom: 0, width: 2, background: "#1a1d24", borderRadius: 1 }} />}
+              
+              {/* Timeline Dot */}
+              <div style={{ 
+                position: "absolute", left: 0, top: 2, width: 14, height: 14, 
+                borderRadius: "50%", background: getStepColor(s.type),
+                border: "3px solid #0d0f14", zIndex: 2
+              }} />
+
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, alignItems: "center" }}>
+                <span style={{ fontSize: 9, fontWeight: 700, color: getStepColor(s.type), textTransform: "uppercase", letterSpacing: 0.5 }}>{s.type.replace('_', ' ')}</span>
+                <span className="mono" style={{ fontSize: 9, color: "#374151" }}>{hhmm(s.time)}</span>
+              </div>
+              
+              <div style={{ fontSize: 11, color: "#e2e8f0" }}>
+                {s.type === 'thought' && (
+                   <div>
+                      <div style={{ fontStyle: "italic", color: "#6b7280", marginBottom: 6 }}>Intelligence check...</div>
+                      {s.metadata?.user_prompt && (
+                        <div style={{ fontSize: 9, color: "#4b5563", background: "#0b0c10", padding: 6, borderRadius: 4, marginBottom: 6, border: "1px dashed #1a1d24" }}>
+                           Prompt context: {s.metadata.user_prompt.slice(0, 100)}...
+                        </div>
+                      )}
+                   </div>
+                )}
+                
+                {s.type === 'tool_call' && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#c084fc", fontWeight: 600 }}>
+                    <span style={{ fontSize: 12 }}>🛠️</span> {s.metadata?.tool}
+                    <span style={{ fontWeight: 400, color: "#6b7280", fontSize: 10 }}>({s.metadata?.args?.join(', ')})</span>
+                  </div>
+                )}
+                
+                {s.type === 'tool_result' && (
+                  <div style={{ marginTop: 4 }}>
+                    <div style={{ fontSize: 9, color: "#4b5563", marginBottom: 2 }}>Output for {s.metadata?.tool}:</div>
+                    <pre style={{ 
+                      background: "#070809", padding: "8px 10px", borderRadius: 6, 
+                      border: "1px solid #1e222d", overflowX: "auto", margin: 0,
+                      boxShadow: "inset 0 2px 4px rgba(0,0,0,0.3)"
+                    }}>
+                      <code className="mono" style={{ fontSize: 10, color: "#34d399", lineHeight: 1.4 }}>
+                        {s.metadata?.result || "No output returned."}
+                      </code>
+                    </pre>
+                  </div>
+                )}
+
+                {s.type === 'response' && (
+                  <div style={{ marginTop: 4, padding: 8, background: "#0b0c10", borderRadius: 6, border: "1px solid #1a1d24", color: "#9ca3af", maxHeight: 150, overflowY: "auto", fontSize: 10, lineHeight: 1.4, whiteSpace: "pre-wrap" }}>
+                     {s.metadata?.raw}
+                  </div>
+                )}
+
+                {s.type !== 'thought' && s.type !== 'tool_call' && s.type !== 'tool_result' && s.type !== 'response' && (
+                  <div style={{ color: s.type === 'complete' ? '#10b981' : '#9ca3af' }}>{s.content}</div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Markdown Editor / Split-view component ───────────────────────────────────
 function MarkdownEditor({ value, onChange, rows = 7, placeholder = "Write markdown here…", label = null }) {
   const [mode, setMode] = useState("split"); // edit | split | preview
@@ -375,7 +483,7 @@ function Logger({ liveLogs, state }) {
 // ── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
   const [state, setState] = useState({ heartbeat: 0, departments: {}, agents: {}, threads: {}, prompts: {}, settings: {}, tools: {}, tickets: [] });
-  const [feed, setFeed] = useState([]);
+  const [runs, setRuns] = useState([]);
   const [logs, setLogs] = useState([]);   // live log stream from WebSocket
   const [expandedFeedId, setExpandedFeedId] = useState(null);
   const [view, setView] = useState("dashboard");
@@ -400,9 +508,9 @@ export default function App() {
       if (data.type === "heartbeat") {
         setState(s => ({ ...s, heartbeat: data.counter }));
         if (data.counter % 5 === 0) fetchState();
-      } else if (data.type === "feed") {
-        const item = data.feed_item;
-        setFeed(f => [{ id: mkId(), time: hhmm(new Date().toISOString()), agent: item.agent, dept: item.dept, msg: item.msg, full: item.full_msg }, ...f].slice(0, 60));
+      } else if (data.type === "run") {
+        const item = data.run;
+        setRuns(r => [item, ...r].slice(0, 60));
         fetchState();
       } else if (data.type === "log") {
         setLogs(l => [data.log, ...l].slice(0, 600));
@@ -565,36 +673,25 @@ export default function App() {
 
       {/* RIGHT ACTIVITY PANEL */}
       <div className="right-panel">
-        <div style={{ padding: 16, borderBottom: "1px solid #1a1d24", background: "#0b0c10" }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: "#9ca3af", letterSpacing: 1, textTransform: "uppercase" }}>Activity Feed</div>
+        <div style={{ padding: 16, borderBottom: "1px solid #1a1d24", background: "#0b0c10", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "#9ca3af", letterSpacing: 1.5, textTransform: "uppercase" }}>Agent Runs</div>
+          <div style={{ fontSize: 9, background: "#1a1d24", color: "#6b7280", padding: "2px 6px", borderRadius: 4 }}>Live</div>
         </div>
         <div style={{ flex: 1, overflowY: "auto", padding: 12 }}>
-          {feed.length === 0 && <div style={{ fontSize: 12, color: "#4b5563", textAlign: "center", marginTop: 40 }}>Waiting for ticks…</div>}
-          {feed.map(f => {
-            const isExp = expandedFeedId === f.id;
-            return (
-              <div key={f.id}
-                onClick={() => setExpandedFeedId(isExp ? null : f.id)}
-                style={{
-                  background: isExp ? "#0d0f14" : "#11141a",
-                  border: `1px solid ${isExp ? "#6366f1" : "#1a1d24"}`,
-                  borderRadius: 8, padding: 10, marginBottom: 8,
-                  cursor: "pointer", transition: "all 0.2s"
-                }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: f.dept ? DEPT_META[f.dept]?.color : "#818cf8" }}>{f.agent}</span>
-                  <span className="mono" style={{ fontSize: 10, color: "#4b5563" }}>{f.time}</span>
-                </div>
-                <div style={{ fontSize: 11, color: isExp ? "#d1d5db" : "#9ca3af", lineHeight: 1.5 }}>
-                  {isExp ? (
-                    <div style={{ wordBreak: "break-word" }} dangerouslySetInnerHTML={{ __html: renderMd(f.full || f.msg) }} />
-                  ) : (
-                    f.msg
-                  )}
-                </div>
-              </div>
-            );
-          })}
+          {runs.length === 0 && (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", opacity: 0.5 }}>
+               <div style={{ fontSize: 24, marginBottom: 10 }}>📡</div>
+               <div style={{ fontSize: 11, color: "#4b5563", textAlign: "center", letterSpacing: 0.5 }}>Listening for simulation events...</div>
+            </div>
+          )}
+          {runs.map(r => (
+            <RunItem 
+              key={r.id} 
+              run={r} 
+              isExp={expandedFeedId === r.id} 
+              onToggle={() => setExpandedFeedId(expandedFeedId === r.id ? null : r.id)} 
+            />
+          ))}
         </div>
       </div>
     </div>
@@ -2374,6 +2471,8 @@ function ToolWorkshop({ tools, agents, state, fetchState }) {
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const [propsOpen, setPropsOpen] = useState(false);
   const promptRef = useRef(null);
   const customTools = tools.filter(t => t.is_custom);
   const inputSt = {
@@ -2454,6 +2553,11 @@ function ToolWorkshop({ tools, agents, state, fetchState }) {
     borderRadius: 4, fontFamily: "monospace", background: active ? (col + "33") : "#11141a",
     border: `1px solid ${active ? col : "#1e222d"}`, color: active ? col : "#6b7280", transition: "all 0.1s"
   });
+  const menuBtnSt = {
+    fontSize: 11, padding: "5px 12px", cursor: "pointer", borderRadius: 6,
+    border: "1px solid #1e222d", color: "#c4c9d4", background: "#11141a",
+    display: "flex", alignItems: "center", gap: 5, whiteSpace: "nowrap", height: 30
+  };
   const secLbl = lbl => <div style={{
     fontSize: 9, fontWeight: 800, color: "#6b7280", letterSpacing: 1,
     textTransform: "uppercase", marginBottom: 8, marginTop: 14
@@ -2474,7 +2578,7 @@ function ToolWorkshop({ tools, agents, state, fetchState }) {
               borderColor: form.id === t.id ? "#6366f1" : "#1a1d24",
               background: form.id === t.id ? "#1e1b4b" : "#11141a"
             }}>
-            <div style={{ fontWeight: 600, color: "#e2e8f0", fontSize: 12 }}>⚗️ {t.name}</div>
+            <div style={{ fontWeight: 600, color: "#e2e8f0", fontSize: 12 }}>🛠️ {t.name}</div>
             <div className="mono" style={{ fontSize: 9, color: "#6366f1", marginTop: 2 }}>{t.id}</div>
             {t.price > 0 && <div style={{ fontSize: 9, color: "#34d399", marginTop: 3 }}>💰 {t.price}pts/use</div>}
           </div>
