@@ -172,6 +172,9 @@ class SimEngine:
             agent = db.query(Agent).filter(Agent.id == agent_id).first()
             if not agent: return
 
+            # Initial Point Deduction (occurred in tick() before this call)
+            add_step("wallet", "Tick starting (1 pt cost)", {"amount": -1, "reason": "tick"})
+
             # 1. Get Prompts
             p_template = db.query(PromptTemplate).filter(PromptTemplate.id == agent.mode).first()
             if not p_template:
@@ -248,7 +251,7 @@ class SimEngine:
             
             # Injection logic for placeholders (pre-format pass on directives)
             directives = await self.resolve_placeholders(
-                p_template.custom_directives or "", db, agent, last_q
+                p_template.custom_directives or "", db, agent, last_q, add_step
             )
 
             user_prompt = p_template.user_prompt_template.format(
@@ -264,8 +267,8 @@ class SimEngine:
             )
             
             # Second pass: resolve all {{...}} that survived .format()
-            user_prompt = await self.resolve_placeholders(user_prompt, db, agent, last_q)
-            system_prompt = await self.resolve_placeholders(system_prompt, db, agent, last_q)
+            user_prompt = await self.resolve_placeholders(user_prompt, db, agent, last_q, add_step)
+            system_prompt = await self.resolve_placeholders(system_prompt, db, agent, last_q, add_step)
 
             pr="\n# TOOLS USAGE FORMAT (IMPORTANT)\n[CALL_TOOL]\nNAME OF TOOL\nargument 1\nargument 2\n[END_CALL_TOOL]\n"
             pr+="\n# EXAMPLE \n[CALL_TOOL]\nget_news\nCasablanca\n[END_CALL_TOOL]\n"
@@ -278,60 +281,98 @@ class SimEngine:
 
             
             add_step("thought", "Thinking...", {"system_prompt": system_prompt, "user_prompt": user_prompt})
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(
-                    f"{server}/api/generate",
-                    json={
-                        "model": model,
-                        "system": system_prompt,
-                        "prompt": user_prompt,
-                        "stream": False,
-                        "options": {
-                            "temperature": 0.7,   # Adjust for creativity vs. logic
-                            "num_predict": 4096,  # Ensure it doesn't cut off mid-thought
-                            "top_p": 0.9,
-                        }
-                    },
-                    timeout=180.0
-                )
-                raw = resp.json().get("response", "")
             
-            print(raw)
-            add_step("response", "Response received", {"raw": raw})
+            MAX_ITERATIONS = 10
+            current_user_prompt = user_prompt
+            final_processed_raw = ""
+            full_tool_results = None
             
-            # 4. Handle State [MEMORY]...[END MEMORY] and [MODE]...[END MODE]
-            mem_match = re.search(r"\[MEMORY\](.*?)\s*\[END MEMORY\]", raw, re.DOTALL | re.IGNORECASE)
-            if mem_match:
-                agent.memory = mem_match.group(1).strip()[:200]
-                raw = raw.replace(mem_match.group(0), "").strip()
-                add_step("system", "Memory updated")
+            for iter_count in range(MAX_ITERATIONS):
+                add_step("iteration", f"Iteration {iter_count + 1} / {MAX_ITERATIONS}")
+                async with httpx.AsyncClient() as client:
+                    resp = await client.post(
+                        f"{server}/api/generate",
+                        json={
+                            "model": model,
+                            "system": system_prompt,
+                            "prompt": current_user_prompt,
+                            "stream": False,
+                            "options": {
+                                "temperature": 0.7,   # Adjust for creativity vs. logic
+                                "num_predict": 4096,  # Ensure it doesn't cut off mid-thought
+                                "top_p": 0.9,
+                            }
+                        },
+                        timeout=180.0
+                    )
+                    raw = resp.json().get("response", "")
+                
+                print(f"Agent {agent.id} (Iter {iter_count+1}) raw response:\n", raw)
+                add_step("response", f"Response received (Iter {iter_count+1})", {"raw": raw})
+                
+                # 4. Handle State [MEMORY]...[END MEMORY] and [MODE]...[END MODE]
+                mem_match = re.search(r"\[MEMORY\](.*?)\s*\[END MEMORY\]", raw, re.DOTALL | re.IGNORECASE)
+                if mem_match:
+                    agent.memory = mem_match.group(1).strip()[:200]
+                    raw = raw.replace(mem_match.group(0), "").strip()
+                    add_step("memory", f"Memory Updated", {"content": agent.memory})
 
-            mode_match = re.search(r"\[MODE\](.*?)\s*\[END MODE\]", raw, re.DOTALL | re.IGNORECASE)
-            if mode_match:
-                next_val = mode_match.group(1).strip()
-                exists = db.query(PromptTemplate).filter(PromptTemplate.id == next_val).first()
-                if exists:
-                    agent.next_mode = next_val
-                    add_step("system", f"Mode change queued: {next_val}")
-                raw = raw.replace(mode_match.group(0), "").strip()
+                mode_match = re.search(r"\[MODE\](.*?)\s*\[END MODE\]", raw, re.DOTALL | re.IGNORECASE)
+                if mode_match:
+                    next_val = mode_match.group(1).strip()
+                    exists = db.query(PromptTemplate).filter(PromptTemplate.id == next_val).first()
+                    if exists:
+                        agent.next_mode = next_val
+                        add_step("system", f"Mode change queued: {next_val}")
+                    raw = raw.replace(mode_match.group(0), "").strip()
 
-            # 5. Handle Tools
-            processed_raw, tool_results = await self.handle_tools(db, agent, raw, add_step)
+                # 5. Handle Tools
+                processed_raw, iter_tool_results = await self.handle_tools(db, agent, raw, add_step)
+                
+                final_processed_raw += processed_raw + "\n"
+                
+                if iter_tool_results:
+                    if full_tool_results is None:
+                        full_tool_results = ""
+                    full_tool_results += iter_tool_results + "\n"
+                    
+                    # Check if agent's department has enough points to continue
+                    dept = agent.department
+                    if dept and dept.ledger_current >= 1 and iter_count < MAX_ITERATIONS - 1:
+                        # Tax 1 pt from agent's department
+                        dept.ledger_current -= 1
+                        db.add(LogLedger(department_id=dept.id, who=agent.id, why="thinking_iteration_tax", amount=-1))
+                        add_step("wallet", "Thinking Iteration Tax: -1 pt", {"amount": -1, "reason": "thinking_iteration_tax"})
+                        
+                        prompt_continuation = (
+                            f"\n\nAssistant:\n{raw}\n\nSystem (Tool Results):\n{iter_tool_results}\n\n"
+                            f"You must now continue your turn based on these tool results. (Tax of 1 point was deducted from your department to continue). "
+                            f"Your department has {dept.ledger_current} points remaining.\n"
+                            "Call another tool if needed, otherwise provide your final reply."
+                        )
+                        current_user_prompt += prompt_continuation
+                        add_step("system", "Continuing to next iteration")
+                    else:
+                        if iter_count < MAX_ITERATIONS - 1:
+                            add_step("system", "Iteration stopped due to insufficient department points or no dept.")
+                        break
+                else:
+                    break
             
             # 6. Final Logic: Log Action
-            action_snippet = processed_raw[:250] + ("..." if len(processed_raw) > 250 else "")
+            action_snippet = final_processed_raw[:250] + ("..." if len(final_processed_raw) > 250 else "")
             db.add(LogAction(agent_id=agent.id, what=action_snippet, points=0))
             
             # Prepare rich details for System Logger
             prompt_preview = f"SYSTEM:\n{system_prompt[:200]}...\n\nUSER:\n{user_prompt[:200]}..."
-            response_preview = processed_raw
+            response_preview = final_processed_raw
 
             await self.log(db, "INFO", "AGENT", "TICK_COMPLETE", {
                 "agent": agent.name_id,
                 "prompt_preview": prompt_preview,
                 "response_preview": response_preview,
                 "action": action_snippet,
-                "tool_results": tool_results
+                "tool_results": full_tool_results
             }, agent_id=agent.id, dept_id=agent.department_id)
 
             add_step("complete", "Tick complete")
@@ -399,23 +440,28 @@ class SimEngine:
             except Exception:
                 pass
 
-    async def deduct_points(self, db, agent, amount: int, reason: str):
+    async def deduct_points(self, db, agent, amount: int, reason: str, add_step_cb=None):
         """Helper to deduct points from department or agent wallet. Priority: Dept > Wallet."""
         dept = agent.department
+        success = False
         if dept and dept.ledger_current >= amount:
             dept.ledger_current -= amount
             db.add(LogLedger(department_id=dept.id, who=agent.id, why=reason, amount=-amount))
-            await self.log(db, "POINT", "AGENT", "TOOL_COST_DEPT", {
-                "agent": agent.name_id, "amount": -amount, "dept": dept.name, "balance_after": dept.ledger_current
+            await self.log(db, "POINT", "AGENT", f"DEDUCT_{reason.upper()}_DEPT", {
+                "agent": agent.name_id, "amount": -amount, "dept": dept.name, "balance_after": dept.ledger_current, "reason": reason
             }, agent_id=agent.id, dept_id=dept.id)
-            return True
+            if add_step_cb:
+                add_step_cb("wallet", f"Deducted {amount} pt from Department ({reason})", {"amount": -amount, "reason": reason, "source": "dept"})
+            success = True
         elif agent.wallet_current >= amount:
             agent.wallet_current -= amount
-            await self.log(db, "POINT", "AGENT", "TOOL_COST_WALLET", {
-                "agent": agent.name_id, "amount": -amount, "wallet_after": agent.wallet_current
+            await self.log(db, "POINT", "AGENT", f"DEDUCT_{reason.upper()}_WALLET", {
+                "agent": agent.name_id, "amount": -amount, "wallet_after": agent.wallet_current, "reason": reason
             }, agent_id=agent.id)
-            return True
-        return False
+            if add_step_cb:
+                add_step_cb("wallet", f"Deducted {amount} pt from Wallet ({reason})", {"amount": -amount, "reason": reason, "source": "wallet"})
+            success = True
+        return success
 
     # ── Tool handler ─────────────────────────────────────────────────────────
 
@@ -449,7 +495,7 @@ class SimEngine:
             if add_step_cb:
                 add_step_cb("tool_call", f"Calling {tool_name}", {"tool": tool_name, "args": args})
             
-            result = await self._execute_inline_command(tool_name, args, db, agent)
+            result = await self._execute_inline_command(tool_name, args, db, agent, add_step_cb)
             
             if add_step_cb:
                 add_step_cb("tool_result", f"Result for {tool_name}", {"tool": tool_name, "result": result})
@@ -465,7 +511,7 @@ class SimEngine:
             
         return processed_text, summary
 
-    async def execute_tool_logic(self, db, agent, tool_name, args):
+    async def execute_tool_logic(self, db, agent, tool_name, args, add_step_cb=None):
         result = "UNKNOWN_TOOL"
         
         # ── modify_own_tick ────────────────────────────────────────────────────
@@ -510,6 +556,9 @@ class SimEngine:
                 ticket_value=ticket_points
             )
             agent.wallet_current -= cost
+            if add_step_cb:
+                add_step_cb("wallet", f"Thread Creation Cost: -{cost} pts", {"amount": -cost, "reason": "create_thread", "topic": topic})
+            await self.log(db, "POINT", "AGENT", "THREAD_CREATE", {"agent": agent.name_id, "thread_id": tid, "cost": -cost}, agent_id=agent.id)
             db.add(t)
             
             start_msg = f"🚀 {agent.name_id} started this thread with an initial investment of {cost} points."
@@ -534,6 +583,9 @@ class SimEngine:
             agent.wallet_current -= amount
             t.budget += amount
             t.total_invested += amount
+            if add_step_cb:
+                add_step_cb("wallet", f"Thread Investment: -{amount} pts", {"amount": -amount, "reason": "invest_thread", "thread_id": tid})
+            await self.log(db, "POINT", "AGENT", "THREAD_INVEST", {"agent": agent.name_id, "thread_id": tid, "amount": -amount}, agent_id=agent.id)
             db.add(Message(thread_id=tid, who=agent.id, what=f"💰 {agent.name_id} invested {amount} points.", points=amount))
             result = "INVEST_SUCCESS"
 
@@ -542,11 +594,58 @@ class SimEngine:
             tid, offer = args[0].upper(), int(args[1])
             t = db.query(Thread).filter(Thread.id == tid).first()
             if not t: return "JOIN_ERROR"
+
+            # Ensure thread is OPEN or ACTIVE
+            if t.status not in ["OPEN", "ACTIVE"]:
+                return f"JOIN_ERROR: Thread {tid} is {t.status} and cannot be joined."
+
+            # VERIFY HE'S NOT THE OWNER OF THE THREAD
+            if t.owner_agent_id == agent.id:
+                return "JOIN_ERROR: You are the owner of this thread. You can post for free, send invites to others to join, or invest in it."
+
+            # Check for existing pending join request (agent-initiated)
+            existing_quest = db.query(JoinQuest).filter(
+                JoinQuest.thread_id == tid,
+                JoinQuest.agent_id == agent.id,
+                JoinQuest.status == "PENDING",
+                JoinQuest.is_invite.is_(False)
+            ).first()
+
+            if existing_quest:
+                if offer > existing_quest.offer_points:
+                    # Upgrade offer
+                    if agent.wallet_current < offer:
+                        return f"JOIN_ERROR: Insufficient funds to raise offer to {offer} P."
+                    
+                    refund = existing_quest.offer_points
+                    agent.wallet_current += refund
+                    agent.wallet_current -= offer
+                    existing_quest.offer_points = offer
+                    
+                    if add_step_cb:
+                        add_step_cb("wallet", f"Join Offer Raised: +{refund} P (refund), -{offer} P (new)", 
+                                    {"refund": refund, "new_offer": offer, "reason": "join_thread_upgrade", "thread_id": tid})
+                    
+                    await self.log(db, "POINT", "AGENT", "THREAD_JOIN_UPGRADE", 
+                                   {"agent": agent.name_id, "thread_id": tid, "old_offer": refund, "new_offer": offer}, 
+                                   agent_id=agent.id)
+                    
+                    db.add(Message(thread_id=tid, who=agent.id, what=f"🤝 {agent.name_id} raised their Join Quest offer to {offer} points."))
+                    result = f"THREAD JOIN OFFER NOW RAISED TO {offer} P, WAIT UNTIL REQUEST APPROVAL BEFORE POSTING"
+                    # Add info about refund to the result for the agent
+                    result += f". {refund} points from previous offer returned."
+                    return result
+                else:
+                    return "YOU ALREADY REQUESTED WITH HIGHER OFFER. WAIT UNTIL REQUEST APPROVAL BEFORE POSTING"
+
             if agent.wallet_current < offer: return "JOIN_ERROR: Insufficient funds."
             agent.wallet_current -= offer
+            if add_step_cb:
+                add_step_cb("wallet", f"Join Offer: -{offer} pts", {"amount": -offer, "reason": "join_thread", "thread_id": tid})
+            await self.log(db, "POINT", "AGENT", "THREAD_JOIN_REQUEST", {"agent": agent.name_id, "thread_id": tid, "offer": -offer}, agent_id=agent.id)
             db.add(JoinQuest(thread_id=tid, agent_id=agent.id, offer_points=offer))
             db.add(Message(thread_id=tid, who=agent.id, what=f"🤝 {agent.name_id} requested to join with {offer} points offer."))
-            result = "JOIN_REQUESTED"
+            result = "JOIN_REQUESTED. WAIT FOR THREAD OWNER TO APPROVE YOUR JOIN QUEST. NO POSTING UNTIL APPROVED."
 
         # ── approve_join ───────────────────────────────────────────────────────
         elif tool_name == "approve_join":
@@ -559,6 +658,9 @@ class SimEngine:
             db.add(ThreadCollaborator(thread_id=tid, agent_id=joiner_id))
             t.budget += quest.offer_points
             t.total_invested += quest.offer_points
+            if add_step_cb:
+                add_step_cb("wallet", f"Join Approved (Thread Budget): +{quest.offer_points} pts", {"amount": quest.offer_points, "reason": "approve_join", "joiner": joiner_id})
+            await self.log(db, "POINT", "AGENT", "THREAD_JOIN_APPROVE", {"agent": agent.name_id, "thread_id": tid, "joiner": joiner_id, "budget_add": quest.offer_points}, agent_id=agent.id)
             db.add(Message(thread_id=tid, who=agent.id, what=f"✅ {agent.name_id} approved {joiner_id}'s join quest.", points=quest.offer_points))
             result = "JOIN_APPROVED"
 
@@ -573,6 +675,9 @@ class SimEngine:
             # points should be returned to the joiner (only half)
             joiner = db.query(Agent).filter(Agent.id == joiner_id).first()
             joiner.wallet_current += quest.offer_points // 2
+            if add_step_cb:
+                add_step_cb("wallet", f"Join Declined (Refund Half): {quest.offer_points // 2} pts returned to {joiner_id}", {"amount": quest.offer_points // 2, "reason": "decline_join", "joiner": joiner_id})
+            await self.log(db, "POINT", "AGENT", "THREAD_JOIN_DECLINE", {"agent": agent.name_id, "thread_id": tid, "joiner": joiner_id, "refund": quest.offer_points // 2}, agent_id=agent.id)
             db.add(Message(thread_id=tid, who=agent.id, what=f"✅ {agent.name_id} declined {joiner_id}'s join quest.", points=quest.offer_points))
             result = "JOIN_DECLINED"
 
@@ -593,6 +698,10 @@ class SimEngine:
 
             if t.budget < cost: return "INSUFFICIENT_FUNDS"
             t.budget -= cost
+            if add_step_cb and cost > 0:
+                add_step_cb("wallet", f"Post Fee: -{cost} pts from thread", {"amount": -cost, "reason": "post_in_thread", "thread_id": tid})
+            if cost > 0:
+                await self.log(db, "POINT", "AGENT", "THREAD_POST_FEE", {"agent": agent.name_id, "thread_id": tid, "cost": -cost}, agent_id=agent.id)
             db.add(Message(thread_id=tid, who=agent.id, what=content, points=-cost if cost > 0 else 0))
             asyncio.create_task(self.compute_thread_summary(tid))
             result = "POST_SUCCESS"
@@ -607,6 +716,9 @@ class SimEngine:
             if status == "OPEN":
                 if agent.wallet_current < 2: return "INSUFFICIENT_FUNDS"
                 agent.wallet_current -= 2
+                if add_step_cb:
+                    add_step_cb("wallet", "Thread Reactivation Fee: -2 pts", {"amount": -2, "reason": "reactivate_thread", "thread_id": tid})
+                await self.log(db, "POINT", "AGENT", "THREAD_OPEN_FEE", {"agent": agent.name_id, "thread_id": tid, "cost": -2}, agent_id=agent.id)
                 t.status = "OPEN"
             elif status == "REJECT":
                 t.status = "REJECTED"
@@ -616,6 +728,8 @@ class SimEngine:
                     dept = t.owner_department
                     if dept:
                         dept.ledger_current -= penalty
+                        if add_step_cb:
+                            add_step_cb("wallet", f"Department Penalty: -{penalty} pts", {"amount": -penalty, "reason": "ticket_rejection", "dept": dept.id})
                         db.add(LogLedger(department_id=dept.id, who=agent.id, why=f"Ticket Rejection Penalty ({t.ticket_id})", amount=-penalty))
                         penalty_msg = f"\n⚠️ **PENALTY**: Ticket thread rejected. {penalty} points deducted from {dept.id} ledger."
             else: t.status = status
@@ -642,6 +756,9 @@ class SimEngine:
 
             # Deduct from thread budget immediately
             t.budget -= offer
+            if add_step_cb:
+                add_step_cb("wallet", f"Invite Offer: -{offer} pts from thread", {"amount": -offer, "reason": "invite_to_thread", "invitee": invitee_name})
+            await self.log(db, "POINT", "AGENT", "THREAD_INVITE_OFFER", {"agent": agent.name_id, "thread_id": tid, "invitee": invitee_name, "offer": -offer}, agent_id=agent.id)
             
             # Expiry: +24h
             expiry = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=24)
@@ -671,6 +788,9 @@ class SimEngine:
             quest.status = "ACCEPTED"
             # Award points to agent
             agent.wallet_current += quest.offer_points
+            if add_step_cb:
+                add_step_cb("wallet", f"Invite Accepted: +{quest.offer_points} pts received", {"amount": quest.offer_points, "reason": "accept_invite", "thread_id": tid})
+            await self.log(db, "POINT", "AGENT", "THREAD_INVITE_ACCEPT", {"agent": agent.name_id, "thread_id": tid, "reward": quest.offer_points}, agent_id=agent.id)
             # Join as collaborator
             db.add(ThreadCollaborator(thread_id=tid, agent_id=agent.id))
             
@@ -691,7 +811,11 @@ class SimEngine:
             quest.status = "DECLINED"
             # Refund to thread
             t = db.query(Thread).filter(Thread.id == tid).first()
-            if t: t.budget += quest.offer_points
+            if t: 
+                t.budget += quest.offer_points
+                if add_step_cb:
+                    add_step_cb("wallet", f"Invite Declined: +{quest.offer_points} pts refunded to thread", {"amount": quest.offer_points, "reason": "decline_invite", "thread_id": tid})
+                await self.log(db, "POINT", "AGENT", "THREAD_INVITE_DECLINE", {"agent": agent.name_id, "thread_id": tid, "refund": quest.offer_points}, agent_id=agent.id)
             
             db.add(Message(thread_id=tid, who=agent.id, what=f"❌ {agent.name_id} declined the invitation. Status: {{invitation_status}}", points=quest.offer_points))
             result = "INVITE_DECLINED"
@@ -736,8 +860,8 @@ class SimEngine:
         elif tool_name == "get_threads":
             try:
                 # f_status = args[0].strip().upper() if len(args) > 0 and args[0].strip().lower() != "none" else None
-                f_dept   = args[1].strip().upper() if len(args) > 1 and args[1].strip() else None
-                f_owner  = args[2].strip().upper() if len(args) > 2 and args[2].strip() else None
+                f_dept   = args[0].strip().upper() if len(args) > 0 and args[0].strip() else None
+                f_owner  = args[1].strip().upper() if len(args) > 1 and args[1].strip() else None
                 
                 q = db.query(Thread)
                 # if f_status: q = q.filter(Thread.status == f_status)
@@ -886,17 +1010,6 @@ class SimEngine:
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
-    async def deduct_points(self, db: Session, agent: Agent, amount: int, why: str):
-        """Standard point deduction from Dept or Wallet."""
-        dept = agent.department
-        if dept and dept.ledger_current >= amount:
-            dept.ledger_current -= amount
-            db.add(LogLedger(department_id=dept.id, who=agent.id, why=why, amount=-amount))
-            return True
-        if agent.wallet_current >= amount:
-            agent.wallet_current -= amount
-            return True
-        return False
 
     async def handle_quest_expirations(self, db: Session):
         """Find pending invites that passed 24h and refund thread budget."""
@@ -982,10 +1095,11 @@ class SimEngine:
 
     def get_rich_invitation_context(self, db: Session, agent: Agent):
         """Builds a formatted list of invitations with full metadata."""
-        invites = db.query(JoinQuest).filter(
+        invites = db.query(JoinQuest).join(Thread, JoinQuest.thread_id == Thread.id).filter(
             JoinQuest.agent_id == agent.id,
             JoinQuest.status == "PENDING",
-            JoinQuest.is_invite == True
+            JoinQuest.is_invite == True,
+            Thread.status.in_(["ACTIVE", "OPEN"])
         ).all()
      
         if not invites: return "No pending invitations."
@@ -1011,6 +1125,7 @@ class SimEngine:
                 JoinQuest.status == "PENDING",
                 JoinQuest.is_invite.is_(False),
                 Thread.owner_agent_id == agent.id,
+                Thread.status.in_(["ACTIVE", "OPEN"])
             )
             .all()
         )
@@ -1057,20 +1172,7 @@ class SimEngine:
             )
         return "\n".join(lines)
 
-    async def produce_transaction(self, db, from_id: str, to_id: str, amount: int, reason: str) -> bool:
-        """Transfer points between agents (or FOUNDER). Returns True on success."""
-        if amount <= 0: return True
-        if from_id != "FOUNDER":
-            ag = db.query(Agent).filter(Agent.id == from_id).first()
-            if not ag or ag.wallet_current < amount: return False
-            ag.wallet_current -= amount
-        if to_id not in (None, "FOUNDER"):
-            ag = db.query(Agent).filter(Agent.id == to_id).first()
-            if ag: ag.wallet_current += amount
-        db.add(Transaction(from_id=from_id, to_id=to_id or "FOUNDER", amount=amount, reason=reason))
-        return True
-
-    async def execute_custom_tool(self, db, agent, tool: AgentTool, args: list) -> str:
+    async def execute_custom_tool(self, db, agent, tool: AgentTool, args: list, add_step_cb=None) -> str:
         """Deterministic custom tool execution. No LLM required."""
         import json as _json
 
@@ -1078,7 +1180,7 @@ class SimEngine:
         if (tool.price or 0) > 0:
             owner_id = tool.owner_id or "FOUNDER"
             if owner_id != agent.id:
-                ok = await self.produce_transaction(db, agent.id, owner_id, tool.price, f"tool_use:{tool.id}")
+                ok = await self.produce_transaction(db, agent.id, owner_id, tool.price, f"tool_use:{tool.id}", add_step_cb)
                 if not ok: 
                     return f"[INSUFFICIENT_FUNDS: {tool.id} requires {tool.price} pts]"
 
@@ -1134,10 +1236,10 @@ class SimEngine:
             except:
                 return f"[FILE_NOT_FOUND:{fname}]"
         return re.sub(r'\[READ_FILE:([^\]]+)\]', _rf, arg)
-    async def _execute_inline_command(self, cmd: str, args: list, db: Session, agent: Agent) -> str:
+    async def _execute_inline_command(self, cmd: str, args: list, db: Session, agent: Agent, add_step_cb=None) -> str:
         """Thin shim kept for backward-compat (invoke_tool API endpoint).
         All real logic lives in run_tool_logic."""
-        return await self.run_tool_logic(db, agent, cmd, args)
+        return await self.run_tool_logic(db, agent, cmd, args, add_step_cb)
 
     def _evaluate_conditional(self, inner: str, bool_ctx: dict) -> str:
         """
@@ -1160,7 +1262,7 @@ class SimEngine:
         
         return remainder.strip() if cond_val else ""
 
-    async def resolve_placeholders(self, text: str, db: Session, agent, last_quest) -> str:
+    async def resolve_placeholders(self, text: str, db: Session, agent, last_quest, add_step_cb=None) -> str:
         """
         Robust, async-safe, inside-out recursive parser.
         Supports infinite nesting of functions, conditionals, and variables.
@@ -1169,12 +1271,12 @@ class SimEngine:
         tkt_exist = db.query(Ticket).filter(Ticket.status == "UNUSED").count() > 0
         pending_quests_exist = (
             db.query(JoinQuest).join(Thread, JoinQuest.thread_id == Thread.id)
-            .filter(JoinQuest.status == "PENDING", JoinQuest.is_invite.is_(True),
-                    Thread.owner_agent_id == agent.id).count() > 0
+            .filter(JoinQuest.status == "PENDING", JoinQuest.is_invite.is_(False),
+                    Thread.owner_agent_id == agent.id, Thread.status.in_(["ACTIVE", "OPEN"])).count() > 0
         )
         inv_exist = (
-            db.query(JoinQuest).filter(JoinQuest.agent_id == agent.id,
-                JoinQuest.status == "PENDING", JoinQuest.is_invite == True).count() > 0
+            db.query(JoinQuest).join(Thread, JoinQuest.thread_id == Thread.id).filter(JoinQuest.agent_id == agent.id,
+                JoinQuest.status == "PENDING", JoinQuest.is_invite == True, Thread.status.in_(["ACTIVE", "OPEN"])).count() > 0
         )
         inv_status_exist = last_quest is not None
 
@@ -1218,13 +1320,13 @@ class SimEngine:
             # Resolve Innermost Block Tools: [CALL_TOOL] ... [END_CALL_TOOL]
             text = await self._process_innermost_regex(
                 text, r"\[CALL_TOOL\](?:(?!\[CALL_TOOL\]|\[END_CALL_TOOL\]).)*?\[END_CALL_TOOL\]", 
-                lambda m: self._eval_block_tool(m, db, agent)
+                lambda m: self._eval_block_tool(m, db, agent, add_step_cb)
             )
 
             # Resolve Innermost Inline Functions: */func|args/*
             text = await self._process_innermost_regex(
                 text, r"\*\/(?:(?!\*\/|\/\*).)*?\/\*", 
-                lambda m: self._eval_inline_func(m, db, agent)
+                lambda m: self._eval_inline_func(m, db, agent, add_step_cb)
             )
 
             if text == original:
@@ -1243,18 +1345,18 @@ class SimEngine:
             return parts[0].strip() if cond else parts[1].strip()
         return body.strip() if cond else ""
 
-    async def _eval_block_tool(self, raw: str, db, agent) -> str:
+    async def _eval_block_tool(self, raw: str, db, agent, add_step_cb=None) -> str:
         # Strips [CALL_TOOL] and [END_CALL_TOOL]
         content = raw[11:-15].strip()
         lines = [l.strip() for l in content.split("\n") if l.strip()]
         if not lines: return ""
-        return await self.run_tool_logic(db, agent, lines[0], lines[1:])
+        return await self.run_tool_logic(db, agent, lines[0], lines[1:], add_step_cb)
 
-    async def _eval_inline_func(self, raw: str, db, agent) -> str:
+    async def _eval_inline_func(self, raw: str, db, agent, add_step_cb=None) -> str:
         # Strips */ and /*
         content = raw[2:-2].strip()
         parts = content.split("|")
-        return await self.run_tool_logic(db, agent, parts[0], parts[1:])
+        return await self.run_tool_logic(db, agent, parts[0], parts[1:], add_step_cb)
         
     async def _process_innermost_regex(self, text, pattern, func):
         matches = list(re.finditer(pattern, text, re.DOTALL))
@@ -1268,7 +1370,7 @@ class SimEngine:
             text = text[:m.start()] + str(res) + text[m.end():]
         return text
 
-    async def run_tool_logic(self, db, agent, cmd: str, args: list) -> str:
+    async def run_tool_logic(self, db, agent, cmd: str, args: list, add_step_cb=None) -> str:
         """
         Single, authoritative hub for ALL tool execution — called from:
           • resolve_placeholders  (via _eval_block_tool / _eval_inline_func)
@@ -1361,7 +1463,7 @@ class SimEngine:
                 if owner_id != agent.id:
                     ok = await self.produce_transaction(
                         db, agent.id, owner_id, tool_obj.price,
-                        f"tool_use:{cmd}"
+                        f"tool_use:{cmd}", add_step_cb
                     )
                     if not ok:
                         return f"[TOOL_NO_FUNDS:{cmd} costs {tool_obj.price}pts]"
@@ -1370,11 +1472,11 @@ class SimEngine:
                 # Returns the substituted template string.
                 # Any */func/* or [CALL_TOOL] blocks inside will be resolved
                 # by resolve_placeholders on the next loop iteration.
-                return await self.execute_custom_tool(db, agent, tool_obj, args)
+                return await self.execute_custom_tool(db, agent, tool_obj, args, add_step_cb)
 
             # Built-in system tool (create_thread, get_time, invest_thread …)
             try:
-                return await self.execute_tool_logic(db, agent, cmd, args)
+                return await self.execute_tool_logic(db, agent, cmd, args, add_step_cb)
             except Exception as e:
                 return f"[TOOL_ERR:{cmd}:{e}]"
 
