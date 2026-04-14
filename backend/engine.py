@@ -8,7 +8,7 @@ import uuid
 from sqlalchemy.orm import Session
 from database import SessionLocal
 from models import (
-    Agent, Thread, LogAction, LogLedger,
+    Agent, Thread, LogAction, LogLedger, Department,
     PromptTemplate, Setting, AgentTool, SystemLog,
     ThreadCollaborator, JoinQuest, Message, Ticket, Transaction
 )
@@ -173,7 +173,9 @@ class SimEngine:
             if not agent: return
 
             # Initial Point Deduction (occurred in tick() before this call)
-            add_step("wallet", "Tick starting (1 pt cost)", {"amount": -1, "reason": "tick"})
+            s_halt = db.query(Setting).filter(Setting.key == "llm_halt").first()
+            if not s_halt or s_halt.value != "true":
+                add_step("wallet", "Tick starting (1 pt cost)", {"amount": -1, "reason": "tick"})
 
             # 1. Get Prompts
             p_template = db.query(PromptTemplate).filter(PromptTemplate.id == agent.mode).first()
@@ -221,147 +223,159 @@ class SimEngine:
             # 3. Call LLM
             s_url = db.query(Setting).filter(Setting.key == "ollama_server").first()
             s_mod = db.query(Setting).filter(Setting.key == "ollama_model").first()
+            s_timeout = db.query(Setting).filter(Setting.key == "llm_timeout").first()
             server = s_url.value if s_url else "http://localhost:11434"
             model  = s_mod.value if s_mod else "gemma4:e4b"
-
-            add_step("system", "Generating memory summary")
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(
-                    f"{server}/api/generate",
-                    json={
-                        "model": "gemma4:e4b",
-                        "system": SYSTEM_PROMPT_SUMMER,
-                        "prompt": USER_PROMPT_SUMMER,
-                        "stream": False
-                    },
-                    timeout=120.0
-                )
-                raw = resp.json().get("response", "")
-
-
-
-            actions_str = raw
-            # print(actions_str)  
+            timeout_val = float(s_timeout.value) if s_timeout else 300.0
 
             # CONTINUE
-            
-            dept_info = f"Department: {agent.department.name} (Balance: {agent.department.ledger_current} pts)" if agent.department else "No Department"
-            
-            system_prompt = p_template.system_prompt
-            
-            # Injection logic for placeholders (pre-format pass on directives)
-            directives = await self.resolve_placeholders(
-                p_template.custom_directives or "", db, agent, last_q, add_step
-            )
-
-            user_prompt = p_template.user_prompt_template.format(
-                name=agent.name_id,
-                id=agent.id,
-                wallet=agent.wallet_current,
-                dept=dept_info,
-                memory=agent.memory or "None",
-                actions=actions_str,
-                tools=tools_block,
-                directives=directives,
-                message=""
-            )
-            
-            # Second pass: resolve all {{...}} that survived .format()
-            user_prompt = await self.resolve_placeholders(user_prompt, db, agent, last_q, add_step)
-            system_prompt = await self.resolve_placeholders(system_prompt, db, agent, last_q, add_step)
-
-            pr="\n# TOOLS USAGE FORMAT (IMPORTANT)\n[CALL_TOOL]\nNAME OF TOOL\nargument 1\nargument 2\n[END_CALL_TOOL]\n"
-            pr+="\n# EXAMPLE \n[CALL_TOOL]\nget_news\nCasablanca\n[END_CALL_TOOL]\n"
-            user_prompt += pr
-
-
-            # debugging
-            # print(system_prompt)
-            # print(user_prompt)
-            
-            
-            # add_step("thought", "LLM SYSTEM PROMPT", {"system_prompt": system_prompt})
-            # add_step("thought", "LLM USER PROMPT", {"system_prompt": system_prompt})
-            add_step("thought", "Thinking...", {"system_prompt": system_prompt, "user_prompt": user_prompt})
-            
-            # add_step("thought", "Thinking...", {"system_prompt": system_prompt, "user_prompt": user_prompt})
-            MAX_ITERATIONS = 10
-            current_user_prompt = user_prompt
             final_processed_raw = ""
-            full_tool_results = None
-            
-            for iter_count in range(MAX_ITERATIONS):
-                add_step("iteration", f"Iteration {iter_count + 1} / {MAX_ITERATIONS}")
+            dept_info = f"Department: {agent.department.name} (Balance: {agent.department.ledger_current} pts)" if agent.department else "No Department"
+            system_prompt = p_template.system_prompt
+            user_prompt = ""
+            full_tool_results=""
+            if s_halt and s_halt.value == "true":
+                import uuid
+                final_processed_raw = "LLM CALLS HALTED IN SETTINGS."
+                add_step("system", "LLM calls are halted via settings.")
+                await self.log(db, "INFO", "AGENT", "LLM_HALTED", {"agent": agent.name_id}, agent_id=agent.id, dept_id=agent.department_id)
+                action_snippet = "Agent loop skipped. LLM halted."
+                db.add(LogAction(agent_id=agent.id, what=action_snippet, points=0))
+                run_id = str(uuid.uuid4())[:8].upper()
+                await self.broadcast({
+                    "type": "run",
+                    "run": {
+                        "id": run_id,
+                        "agent": agent.name_id,
+                        "agent_id": agent.id,
+                        "dept": agent.department_id,
+                        "time": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                        "msg": action_snippet,
+                        "steps": run_steps
+                    }
+                })
+                db.commit()
+            else:
+                add_step("system", f"AI session starting (Timeout: {int(timeout_val)}s)")
                 async with httpx.AsyncClient() as client:
+                    # 3a. Generate memory summary
+                    add_step("system", "Generating memory summary")
                     resp = await client.post(
                         f"{server}/api/generate",
                         json={
-                            "model": model,
-                            "system": system_prompt,
-                            "prompt": current_user_prompt,
-                            "stream": False,
-                            "options": {
-                                "temperature": 0.7,   # Adjust for creativity vs. logic
-                                "num_predict": 4096,  # Ensure it doesn't cut off mid-thought
-                                "top_p": 0.9,
-                            }
+                            "model": "gemma4:e4b",
+                            "system": SYSTEM_PROMPT_SUMMER,
+                            "prompt": USER_PROMPT_SUMMER,
+                            "stream": False
                         },
-                        timeout=180.0
+                        timeout=160.0
                     )
-                    raw = resp.json().get("response", "")
-                
-                print(f"Agent {agent.id} (Iter {iter_count+1}) raw response:\n", raw)
-                add_step("response", f"Response received (Iter {iter_count+1})", {"raw": raw})
-                
-                # 4. Handle State [MEMORY]...[END MEMORY] and [MODE]...[END MODE]
-                mem_match = re.search(r"\[MEMORY\](.*?)\s*\[END MEMORY\]", raw, re.DOTALL | re.IGNORECASE)
-                if mem_match:
-                    agent.memory = mem_match.group(1).strip()[:200]
-                    raw = raw.replace(mem_match.group(0), "").strip()
-                    add_step("memory", f"Memory Updated", {"content": agent.memory})
-
-                mode_match = re.search(r"\[MODE\](.*?)\s*\[END MODE\]", raw, re.DOTALL | re.IGNORECASE)
-                if mode_match:
-                    next_val = mode_match.group(1).strip()
-                    exists = db.query(PromptTemplate).filter(PromptTemplate.id == next_val).first()
-                    if exists:
-                        agent.next_mode = next_val
-                        add_step("system", f"Mode change queued: {next_val}")
-                    raw = raw.replace(mode_match.group(0), "").strip()
-
-                # 5. Handle Tools
-                processed_raw, iter_tool_results = await self.handle_tools(db, agent, raw, add_step)
-                
-                final_processed_raw += processed_raw + "\n"
-                
-                if iter_tool_results:
-                    if full_tool_results is None:
-                        full_tool_results = ""
-                    full_tool_results += iter_tool_results + "\n"
+                    raw_summary = resp.json().get("response", "")
+                    actions_str = raw_summary
                     
-                    # Check if agent's department has enough points to continue
-                    dept = agent.department
-                    if dept and dept.ledger_current >= 1 and iter_count < MAX_ITERATIONS - 1:
-                        # Tax 1 pt from agent's department
-                        dept.ledger_current -= 1
-                        db.add(LogLedger(department_id=dept.id, who=agent.id, why="thinking_iteration_tax", amount=-1))
-                        add_step("wallet", "Thinking Iteration Tax: -1 pt", {"amount": -1, "reason": "thinking_iteration_tax"})
-                        
-                        prompt_continuation = (
-                            f"\n\nAssistant:\n{processed_raw}\n\nSystem (Tool Results):\n{iter_tool_results}\n\n"
-                            f"You can either continue your turn based on these tool results or you can stop. (Tax of 1 point was deducted from your department to continue). "
-                            f"Your department has {dept.ledger_current} points remaining.\n"
-                            "Call another tool if needed, otherwise provide your final reply."
+                    # Injection logic for placeholders (pre-format pass on directives)
+                    directives = await self.resolve_placeholders(
+                        p_template.custom_directives or "", db, agent, last_q, add_step
+                    )
+
+                    user_prompt = p_template.user_prompt_template.format(
+                        name=agent.name_id,
+                        id=agent.id,
+                        wallet=agent.wallet_current,
+                        dept=dept_info,
+                        memory=agent.memory or "None",
+                        actions=actions_str,
+                        tools=tools_block,
+                        directives=directives,
+                        message=""
+                    )
+                    
+                    # Second pass: resolve all {{...}} that survived .format()
+                    user_prompt = await self.resolve_placeholders(user_prompt, db, agent, last_q, add_step)
+                    system_prompt = await self.resolve_placeholders(system_prompt, db, agent, last_q, add_step)
+
+                    pr="\n# TOOLS USAGE FORMAT (IMPORTANT)\n[CALL_TOOL]\nNAME OF TOOL\nargument 1\nargument 2\n[END_CALL_TOOL]\n"
+                    pr+="\n# EXAMPLE \n[CALL_TOOL]\nget_news\nCasablanca\n[END_CALL_TOOL]\n"
+                    user_prompt += pr
+
+                    add_step("thought", "Thinking...", {"system_prompt": system_prompt, "user_prompt": user_prompt})
+                    
+                    MAX_ITERATIONS = 10
+                    current_user_prompt = user_prompt
+                    final_processed_raw = ""
+                    full_tool_results = None
+                    
+                    for iter_count in range(MAX_ITERATIONS):
+                        add_step("iteration", f"Iteration {iter_count + 1} / {MAX_ITERATIONS}")
+                        resp = await client.post(
+                            f"{server}/api/generate",
+                            json={
+                                "model": model,
+                                "system": system_prompt,
+                                "prompt": current_user_prompt,
+                                "stream": False,
+                                "options": {
+                                    "temperature": 0.7,   # Adjust for creativity vs. logic
+                                    "num_predict": 4096,  # Ensure it doesn't cut off mid-thought
+                                    "top_p": 0.9,
+                                }
+                            },
+                            timeout=timeout_val
                         )
-                        current_user_prompt += prompt_continuation
-                        add_step("system", "Continuing to next iteration")
-                    else:
-                        if iter_count < MAX_ITERATIONS - 1:
-                            add_step("system", "Iteration stopped due to insufficient department points or no dept.")
-                        break
-                else:
-                    break
-            
+                        raw = resp.json().get("response", "")
+                    
+                        print(f"Agent {agent.id} (Iter {iter_count+1}) raw response:\n", raw)
+                        add_step("response", f"Response received (Iter {iter_count+1})", {"raw": raw})
+                        
+                        # 4. Handle State [MEMORY]...[END MEMORY] and [MODE]...[END MODE]
+                        mem_match = re.search(r"\[MEMORY\](.*?)\s*\[END MEMORY\]", raw, re.DOTALL | re.IGNORECASE)
+                        if mem_match:
+                            agent.memory = mem_match.group(1).strip()[:200]
+                            raw = raw.replace(mem_match.group(0), "").strip()
+                            add_step("memory", f"Memory Updated", {"content": agent.memory})
+
+                        mode_match = re.search(r"\[MODE\](.*?)\s*\[END MODE\]", raw, re.DOTALL | re.IGNORECASE)
+                        if mode_match:
+                            next_val = mode_match.group(1).strip()
+                            exists = db.query(PromptTemplate).filter(PromptTemplate.id == next_val).first()
+                            if exists:
+                                agent.next_mode = next_val
+                                add_step("system", f"Mode change queued: {next_val}")
+                            raw = raw.replace(mode_match.group(0), "").strip()
+
+                        # 5. Handle Tools
+                        processed_raw, iter_tool_results = await self.handle_tools(db, agent, raw, add_step)
+                        
+                        final_processed_raw += processed_raw + "\n"
+                        
+                        if iter_tool_results:
+                            if full_tool_results is None:
+                                full_tool_results = ""
+                            full_tool_results += iter_tool_results + "\n"
+                            
+                            # Check if agent's department has enough points to continue
+                            dept = agent.department
+                            if dept and dept.ledger_current >= 1 and iter_count < MAX_ITERATIONS - 1:
+                                # Tax 1 pt from agent's department
+                                dept.ledger_current -= 1
+                                db.add(LogLedger(department_id=dept.id, who=agent.id, why="thinking_iteration_tax", amount=-1))
+                                add_step("wallet", "Thinking Iteration Tax: -1 pt", {"amount": -1, "reason": "thinking_iteration_tax"})
+                                
+                                prompt_continuation = (
+                                    f"\n\nAssistant:\n{processed_raw}\n\nSystem (Tool Results):\n{iter_tool_results}\n\n"
+                                    f"You can either continue your turn based on these tool results or you can stop. (Tax of 1 point was deducted from your department to continue). "
+                                    f"Your department has {dept.ledger_current} points remaining.\n"
+                                    "Call another tool if needed, otherwise provide your final reply."
+                                )
+                                current_user_prompt += prompt_continuation
+                                add_step("system", "Continuing to next iteration")
+                            else:
+                                if iter_count < MAX_ITERATIONS - 1:
+                                    add_step("system", "Iteration stopped due to insufficient department points or no dept.")
+                                break
+                        else:
+                            break
+                
             # 6. Final Logic: Log Action
             action_snippet = final_processed_raw[:250] + ("..." if len(final_processed_raw) > 250 else "")
             db.add(LogAction(agent_id=agent.id, what=action_snippet, points=0))
@@ -873,8 +887,6 @@ class SimEngine:
                 result = "STEALTH_MODE_ACTIVATED"
             except Exception as e: result = f"STEALTH_ERROR: {str(e)}"
 
-        # ── refill_thread ──────────────────────────────────────────────────────
-
         # ── get_news ──────────────────────────────────────────────────────────
         elif tool_name == "get_news":
             try:
@@ -961,6 +973,28 @@ class SimEngine:
                         lines.append("Threads you NEED to JOIN to post in:\n" + "\n".join(need_join))
 
                     result = "THREADS_LIST:\n" + "\n".join(lines)
+            except Exception as e: result = f"THREADS_ERROR: {str(e)}"
+        # ── get_threads which agent joined ────────────────────────────────────────────────────────
+        elif tool_name == "get_threads_joined":
+            try:
+                f_dept   = args[0].strip().upper() if len(args) > 0 and args[0].strip() else None
+                f_owner  = args[1].strip().upper() if len(args) > 1 and args[1].strip() else None
+                
+                q = db.query(Thread).join(ThreadCollaborator, Thread.id == ThreadCollaborator.thread_id)\
+                .filter(ThreadCollaborator.agent_id == agent.id, Thread.status.in_(["ACTIVE", "OPEN", "FROZEN"]))
+                if f_dept:   q = q.filter(Thread.owner_department_id == f_dept)
+                if f_owner:  q = q.filter(Thread.owner_agent_id == f_owner)
+
+                threads = q.order_by(Thread.created.desc()).limit(20).all()
+                lines = []
+                if not threads:
+                    result = "THREADS_LIST: No threads matching filters."
+                else:
+                    for t in threads:
+                        summary_snippet = f"Summary: {t.summary[:500]}" if getattr(t, "summary", None) else ""
+                        lines.append(f"{t.id} | {t.topic} | {t.aim} | {t.budget}pt | {summary_snippet}\n")
+                    result = "THREADS_LIST:\n" + "\n".join(lines)
+                    return result
             except Exception as e: result = f"THREADS_ERROR: {str(e)}"
 
         # ── get_agents ────────────────────────────────────────────────────────
@@ -1138,8 +1172,8 @@ class SimEngine:
 
             msgs = (db.query(Message)
                       .filter(Message.thread_id == thread_id)
-                      .order_by(Message.id.desc())
-                      .limit(40).all())
+                      .order_by(Message.when.asc())
+                      .limit(80).all())
             if not msgs: return
 
             # Build agent name cache
@@ -1157,12 +1191,14 @@ class SimEngine:
             s_url = db.query(Setting).filter(Setting.key == "ollama_server").first()
             s_mod = db.query(Setting).filter(Setting.key == "ollama_model").first()
             server = (s_url.value if s_url else "http://localhost:11434").rstrip("/")
-            model  = s_mod.value if s_mod else "gemma3:4b"
+            model  = s_mod.value if s_mod else "gemma4:e4b"
 
             system_p = (
                 "You are a thread summarizer for an AI agent. "
-                "Given a conversation, produce a compact 1-2 sentence summary. "
-                "Cover: main topic, key decisions/actions, current status. "
+                "Given a conversation, produce a compact summary. "
+                "Cover: main topic, key decisions, current status."
+                "Then cover brief discussion of key interventions by agents."
+                "Produce 3-4 complete continuous sentences, with simple words."
                 "Be factual and concise. Preserve important IDs and numbers."
             )
             user_p = (
@@ -1175,17 +1211,17 @@ class SimEngine:
                 resp = await client.post(
                     f"{server}/api/generate",
                     json={"model": model, "system": system_p, "prompt": user_p, "stream": False},
-                    timeout=60.0
+                    timeout=120.0
                 )
                 summary_text = resp.json().get("response", "").strip()
 
             if summary_text:
-                t.summary = summary_text[:800]
+                t.summary = summary_text[:10800]
                 db.commit()
                 await self.broadcast({
                     "type": "thread_summary",
                     "thread_id": thread_id,
-                    "summary": summary_text[:800]
+                    "summary": summary_text[:10800]
                 })
         except Exception as e:
             print(f"Thread summary error ({thread_id}): {e}")
@@ -1380,6 +1416,9 @@ class SimEngine:
         )
         inv_status_exist = last_quest is not None
 
+        # Get agent's department
+        agent_dept = db.query(Department).join(Agent, Agent.department_id == Department.id).filter(Agent.id == agent.id).first()
+
         bool_ctx = {
             "available_tickets_exist":  tkt_exist,
             "pending_invitation_exist": inv_exist,
@@ -1395,6 +1434,9 @@ class SimEngine:
             "all_enabled_tools":        self.get_tools(db),
             "all_quest_tools":          self.get_quest_tools(db),
             "agent":                    agent.name_id,
+            "wallet":                   str(agent.wallet_current),
+            "is_ceo":                   "true" if agent.is_ceo else "false",
+            "departmentPoints":         agent_dept.ledger_current,
             "thread_summary":           self.get_thread_summaries_context(db),
         }
 
@@ -1408,7 +1450,7 @@ class SimEngine:
             
             # Resolve Simple Variables {agent}
             for k, v in simple.items():
-                text = text.replace(f"{{{k}}}", v)
+                text = text.replace(f"{{{str(k)}}}", str(v))
 
             # Resolve Innermost Conditionals: {{ key ... }}
             # Match: {{ followed by NOT {{ or }} and ending in }}

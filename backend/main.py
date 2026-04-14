@@ -19,8 +19,8 @@ async def lifespan(app: FastAPI):
     db.close()
     engine_task = asyncio.create_task(sim_engine.start())
     print("[CThinker] Simulation engine started.")
-    for route in app.routes:
-        print(f"DEBUG_ROUTE: {route.path}")
+    # for route in app.routes:
+    #     print(f"DEBUG_ROUTE: {route.path}")
     yield
     sim_engine.stop()
     engine_task.cancel()
@@ -133,6 +133,7 @@ def seed_db(db: Session):
     ensure_setting("app_name", "CThinker")
     ensure_setting("ollama_server", "http://localhost:11434")
     ensure_setting("ollama_model",  "gemma3:4b")
+    ensure_setting("llm_timeout", "300")
     ensure_setting("tools_instruction_prefix",
                    "# Using tools format\n[CALL_TOOL]\n- tool_name\n- argument 1\n- argument 2\n[END_CALL_TOOL]\n\n# AVAILABLE TOOLS")
     db.commit()
@@ -647,12 +648,16 @@ async def agent_chat(agent_id: str, req: schemas.ChatRequest, db: Session = Depe
     try:
         s_model  = db.query(models.Setting).filter(models.Setting.key == "ollama_model").first()
         s_server = db.query(models.Setting).filter(models.Setting.key == "ollama_server").first()
+        s_timeout = db.query(models.Setting).filter(models.Setting.key == "llm_timeout").first()
+        
         used_model  = s_model.value  if s_model  else "gemma3:4b"
         server_url  = (s_server.value if s_server else "http://localhost:11434").rstrip("/") + "/api/generate"
+        timeout_val = float(s_timeout.value) if s_timeout else 300.0
+        
         async with httpx.AsyncClient() as client:
             resp = await client.post(server_url, json={
                 "model": used_model, "prompt": chat_prompt, "stream": False
-            }, timeout=180.0)
+            }, timeout=timeout_val)
             text = resp.json().get("response", "")
     except Exception as e:
         text = f"I am unable to connect to my logic core. (Error: {str(e)})"

@@ -2065,7 +2065,7 @@ function Threads({ state, approveThread, rejectThread, deleteThread, updateThrea
                       }}>
                         {thread.summary
                           ? thread.summary
-                          : <span style={{ color: "#374151", fontStyle: "italic" }}>
+                          : <span style={{ color: "#374151", fontStyle: "italic", height: '300px', overflowY: "auto" }}>
                             No summary yet — post a message or click Refresh.
                           </span>}
                       </div>
@@ -3150,6 +3150,7 @@ function ToolEconomy({ state }) {
 function Settings({ state, updateSetting }) {
   const [ollamaModel, setOllamaModel] = useState("");
   const [ollamaServer, setOllamaServer] = useState("");
+  const [llmHalt, setLlmHalt] = useState(false);
   const [availableModels, setAvailableModels] = useState([]);
   const [loadingModels, setLoadingModels] = useState(false);
   const [testResult, setTestResult] = useState(null);
@@ -3161,6 +3162,7 @@ function Settings({ state, updateSetting }) {
     if (state.settings) {
       if (state.settings.ollama_model !== undefined) setOllamaModel(state.settings.ollama_model);
       if (state.settings.ollama_server !== undefined) setOllamaServer(state.settings.ollama_server);
+      if (state.settings.llm_halt !== undefined) setLlmHalt(state.settings.llm_halt === "true");
     }
   }, [state.settings]);
 
@@ -3178,6 +3180,7 @@ function Settings({ state, updateSetting }) {
   const saveSettings = async () => {
     await updateSetting("ollama_model", ollamaModel);
     await updateSetting("ollama_server", ollamaServer);
+    await updateSetting("llm_halt", llmHalt ? "true" : "false");
     setSaved(true); setTimeout(() => setSaved(false), 2000);
   };
 
@@ -3228,6 +3231,13 @@ function Settings({ state, updateSetting }) {
               <input value={ollamaModel} onChange={e => setOllamaModel(e.target.value)} placeholder="e.g. gemma3:4b" style={{ width: "100%" }} />
             )}
             <div style={{ fontSize: 11, color: "#4b5563", marginTop: 6 }}>Model used for all agent reasoning loops. Default: gemma3:4b</div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <input type="checkbox" id="llmHaltCheckbox" checked={llmHalt} onChange={e => setLlmHalt(e.target.checked)} style={{ width: 16, height: 16, cursor: "pointer" }} />
+            <label htmlFor="llmHaltCheckbox" style={{ fontSize: 13, color: "#e2e8f0", cursor: "pointer", fontWeight: 500 }}>
+              Halt LLM Calls
+              <span style={{ display: "block", fontSize: 11, color: "#9ca3af", fontWeight: 400, marginTop: 2 }}>Pauses all agents' LLM API requests while keeping the engine running</span>
+            </label>
           </div>
           <button className="btn btn-primary" onClick={saveSettings} style={{ minWidth: 120 }}>
             {saved ? "✓ Saved!" : "Save Settings"}
