@@ -60,20 +60,20 @@ function renderMd(raw) {
   return s;
 }
 
-// ── Run Item (Timeline) ──────────────────────────────────────────────────────
-function RunItem({ run, isExp, onToggle }) {
-  const dept = DEPT_META[run.dept] || { color: "#818cf8" };
+const getStepColor = (type) => {
+  switch (type) {
+    case 'thought': return '#818cf8';
+    case 'tool_call': return '#c084fc';
+    case 'tool_result': return '#34d399';
+    case 'error': return '#ef4444';
+    case 'complete': return '#10b981';
+    default: return '#374151';
+  }
+};
 
-  const getStepColor = (type) => {
-    switch (type) {
-      case 'thought': return '#818cf8';
-      case 'tool_call': return '#c084fc';
-      case 'tool_result': return '#34d399';
-      case 'error': return '#ef4444';
-      case 'complete': return '#10b981';
-      default: return '#374151';
-    }
-  };
+// ── Run Item (Timeline) ──────────────────────────────────────────────────────
+function RunItem({ run, isExp, onToggle, setFullScreenRunId }) {
+  const dept = DEPT_META[run.dept] || { color: "#818cf8" };
 
   return (
     <div style={{
@@ -88,7 +88,22 @@ function RunItem({ run, isExp, onToggle }) {
           <span style={{ fontSize: 13, fontWeight: 700, color: dept.color }}>{run.agent}</span>
           <span style={{ fontSize: 9, padding: "2px 6px", background: dept.dim || "#1a1d24", color: dept.color, borderRadius: 4, fontWeight: 600 }}>{run.dept || "SYS"}</span>
         </div>
-        <span className="mono" style={{ fontSize: 10, color: "#4b5563" }}>{hhmm(run.time)}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {isExp && (
+            <button 
+              className="btn-ghost"
+              onClick={(e) => {
+                e.stopPropagation();
+                setFullScreenRunId(run.id);
+              }}
+              style={{ padding: "2px 6px", borderRadius: 4, fontSize: 13, background: "#1a1d24" }}
+              title="Full Screen View"
+            >
+              ⛶
+            </button>
+          )}
+          <span className="mono" style={{ fontSize: 10, color: "#4b5563" }}>{hhmm(run.time)}</span>
+        </div>
       </div>
 
       <div style={{ fontSize: 11, color: isExp ? "#d1d5db" : "#9ca3af", lineHeight: 1.5, overflow: "hidden", textOverflow: "ellipsis", display: isExp ? "block" : "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
@@ -164,6 +179,150 @@ function RunItem({ run, isExp, onToggle }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Full-screen Run Details Modal ───────────────────────────────────────────
+function RunDetailsModal({ run, onClose }) {
+  useEffect(() => {
+    const handleEsc = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handleEsc);
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", handleEsc);
+      document.body.style.overflow = "auto";
+    };
+  }, [onClose]);
+
+  if (!run) return null;
+  const dept = DEPT_META[run.dept] || { color: "#818cf8" };
+
+  return (
+    <div style={{
+      position: "fixed", top: 0, left: 0, width: "100vw", height: "100vh",
+      background: "rgba(7, 8, 9, 0.95)", backdropFilter: "blur(12px)",
+      zIndex: 10000, display: "flex", alignItems: "center", justifyContent: "center",
+      padding: "40px", animation: "popin 0.3s cubic-bezier(0.16, 1, 0.3, 1)"
+    }} onClick={onClose}>
+      <div style={{
+        width: "100%", maxWidth: 1000, height: "100%",
+        background: "#0d0f14", border: "1px solid #1e222d",
+        borderRadius: 16, overflow: "hidden", display: "flex", flexDirection: "column",
+        boxShadow: "0 20px 50px rgba(0,0,0,0.5)",
+      }} onClick={e => e.stopPropagation()}>
+        
+        {/* Modal Header */}
+        <div style={{
+           padding: "20px 24px", borderBottom: "1px solid #1a1d24",
+           display: "flex", justifyContent: "space-between", alignItems: "center",
+           background: "#0b0c10"
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ 
+              width: 40, height: 40, borderRadius: 10, background: dept.dim || "#1a1d24",
+              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20
+            }}>
+              {dept.icon || "📡"}
+            </div>
+            <div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: "#fff" }}>{run.agent} <span style={{ color: "#4b5563", fontWeight: 400, marginLeft: 8 }}>· {run.id}</span></div>
+              <div style={{ fontSize: 11, color: dept.color, fontWeight: 600, letterSpacing: 0.5 }}>{DEPT_META[run.dept]?.name || "SYSTEM ENGINE"}</div>
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+             <span className="mono" style={{ fontSize: 12, color: "#4b5563" }}>{run.time ? new Date(run.time).toLocaleString() : ""}</span>
+             <button className="btn-ghost" onClick={onClose} style={{ fontSize: 20, width: 36, height: 36, borderRadius: "50%" }}>✕</button>
+          </div>
+        </div>
+
+        {/* Modal Content */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "30px 40px" }}>
+          <div style={{ marginBottom: 30 }}>
+            <div style={{ fontSize: 18, color: "#e2e8f0", lineHeight: 1.6, fontWeight: 500 }}>{run.msg}</div>
+          </div>
+
+          <div style={{ fontSize: 10, fontWeight: 800, color: "#4b5563", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 24, paddingBottom: 8, borderBottom: "1px solid #1a1d24" }}>Full Activity Timeline</div>
+
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            {run.steps?.map((s, idx) => (
+              <div key={idx} style={{ position: "relative", paddingLeft: 32, paddingBottom: 24 }}>
+                {idx < run.steps.length - 1 && <div style={{ position: "absolute", left: 9, top: 16, bottom: 0, width: 2, background: "#1a1d24", borderRadius: 1 }} />}
+                <div style={{ 
+                  position: "absolute", left: 0, top: 4, width: 20, height: 20, 
+                  borderRadius: "50%", background: getStepColor(s.type),
+                  border: "4px solid #0d0f14", zIndex: 2
+                }} />
+
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, alignItems: "center" }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: getStepColor(s.type), textTransform: "uppercase", letterSpacing: 1 }}>{s.type.replace('_', ' ')}</span>
+                  <span className="mono" style={{ fontSize: 11, color: "#4b5563" }}>{hhmm(s.time)}</span>
+                </div>
+
+                <div style={{ fontSize: 13, color: "#9ca3af" }}>
+                  {s.type === 'thought' && (
+                    <div style={{ background: "#0b0c10", padding: 16, borderRadius: 10, border: "1px solid #1a1d24" }}>
+                       <div style={{ fontStyle: "italic", color: "#6b7280", marginBottom: 10 }}>Intelligence validation & internal thought cycle...</div>
+                       {s.metadata?.user_prompt && (
+                         <div>
+                            <div style={{ fontSize: 10, color: "#4b5563", marginBottom: 6, fontWeight: 600 }}>PROMPT CONTEXT</div>
+                            <div style={{ fontSize: 12, color: "#4b5563", background: "#070809", padding: 12, borderRadius: 6, border: "1px dashed #1a1d24", lineHeight: 1.5 }}>
+                              {s.metadata.user_prompt}
+                            </div>
+                         </div>
+                       )}
+                    </div>
+                  )}
+
+                  {s.type === 'tool_call' && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, color: "#c084fc", fontWeight: 600, fontSize: 14 }}>
+                      <span style={{ fontSize: 18 }}>🛠️</span> Executing tool: <span style={{ color: "#fff" }}>{s.metadata?.tool}</span>
+                      <span style={{ fontWeight: 400, color: "#6b7280", fontSize: 11 }}>(args: {s.metadata?.args?.join(', ') || "none"})</span>
+                    </div>
+                  )}
+
+                  {s.type === 'tool_result' && (
+                    <div style={{ marginTop: 8 }}>
+                      <div style={{ fontSize: 10, color: "#4b5563", marginBottom: 6, fontWeight: 600 }}>OUTPUT FOR {s.metadata?.tool?.toUpperCase()}</div>
+                      <pre style={{ 
+                        background: "#070809", padding: "16px 20px", borderRadius: 10, 
+                        border: "1px solid #1e222d", overflowX: "auto", margin: 0,
+                        boxShadow: "inset 0 4px 12px rgba(0,0,0,0.5)"
+                      }}>
+                        <code className="mono" style={{ fontSize: 12, color: "#34d399", lineHeight: 1.6 }}>
+                          {s.metadata?.result || "No output returned."}
+                        </code>
+                      </pre>
+                    </div>
+                  )}
+
+                  {s.type === 'response' && (
+                    <div style={{ marginTop: 8 }}>
+                      <div style={{ fontSize: 10, color: "#4b5563", marginBottom: 6, fontWeight: 600 }}>FINAL LLM RESPONSE</div>
+                      <div style={{ 
+                        padding: 20, background: "#0b0c10", borderRadius: 10, 
+                        border: "1px solid #1a1d24", color: "#e2e8f0", 
+                        fontSize: 13, lineHeight: 1.6, whiteSpace: "pre-wrap" 
+                      }}>
+                        {s.metadata?.raw}
+                      </div>
+                    </div>
+                  )}
+
+                  {s.type !== 'thought' && s.type !== 'tool_call' && s.type !== 'tool_result' && s.type !== 'response' && (
+                    <div style={{ 
+                      fontSize: 14, color: s.type === 'complete' ? '#10b981' : '#9ca3af',
+                      fontWeight: s.type === 'complete' ? 600 : 400
+                    }}>
+                      {s.content}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -486,6 +645,7 @@ export default function App() {
   const [runs, setRuns] = useState([]);
   const [logs, setLogs] = useState([]);   // live log stream from WebSocket
   const [expandedFeedId, setExpandedFeedId] = useState(null);
+  const [fullScreenRunId, setFullScreenRunId] = useState(null);
   const [view, setView] = useState("dashboard");
 
   const fetchState = useCallback(async () => {
@@ -690,10 +850,18 @@ export default function App() {
               run={r} 
               isExp={expandedFeedId === r.id} 
               onToggle={() => setExpandedFeedId(expandedFeedId === r.id ? null : r.id)} 
+              setFullScreenRunId={setFullScreenRunId}
             />
           ))}
         </div>
       </div>
+
+      {fullScreenRunId && (
+        <RunDetailsModal 
+          run={runs.find(r => r.id === fullScreenRunId)} 
+          onClose={() => setFullScreenRunId(null)} 
+        />
+      )}
     </div>
   );
 }

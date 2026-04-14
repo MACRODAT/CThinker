@@ -181,8 +181,10 @@ class SimEngine:
 
             
             s_prefix = db.query(Setting).filter(Setting.key == "tools_instruction_prefix").first()
-            tools_block = s_prefix.value + "\n" + tools_block if s_prefix else f"AVAILABLE TOOLS: {self.get_tools(db)}\n{tools_block}"
-            tools_block = await self.resolve_placeholders(tools_block, db, agent, "")
+            pr="\n# Using tools format\n[CALL_TOOL]\n- tool_name\n- argument 1\n- argument 2\n[END_CALL_TOOL]\n\n# AVAILABLE TOOLS\n"
+            # tools_block = s_prefix.value + "\n" + tools_block if s_prefix else f"AVAILABLE TOOLS: {self.get_tools(db)}\n{tools_block}"
+            tools_block = s_prefix.value + "\n" + pr 
+            tools_block += await self.resolve_placeholders(self.get_tools(db), db, agent, "")
             print(tools_block)
 
             # 2. Context
