@@ -345,7 +345,7 @@ class SimEngine:
                         add_step("wallet", "Thinking Iteration Tax: -1 pt", {"amount": -1, "reason": "thinking_iteration_tax"})
                         
                         prompt_continuation = (
-                            f"\n\nAssistant:\n{raw}\n\nSystem (Tool Results):\n{iter_tool_results}\n\n"
+                            f"\n\nAssistant:\n{processed_raw}\n\nSystem (Tool Results):\n{iter_tool_results}\n\n"
                             f"You can either continue your turn based on these tool results or you can stop. (Tax of 1 point was deducted from your department to continue). "
                             f"Your department has {dept.ledger_current} points remaining.\n"
                             "Call another tool if needed, otherwise provide your final reply."
@@ -532,7 +532,7 @@ class SimEngine:
             topic, aim = args[0], args[1]
             ticket_id = args[2].upper() if len(args) > 2 else None
             
-            cost = 100 if aim.lower() != "memo" else 25
+            base_cost = 100 if aim.lower() != "memo" else 25
             ticket_points = 0
             
             if ticket_id:
@@ -541,31 +541,41 @@ class SimEngine:
                 ticket_points = ticket.amount
                 ticket.status = "USED"
                 ticket.used_by = agent.id
+                actual_wallet_cost = 0 # No mandatory cost if ticket is used
+            else:
+                if agent.wallet_current < base_cost: return "THREAD_ERROR: Insufficient funds."
+                actual_wallet_cost = base_cost
 
-            if agent.wallet_current < cost: return "THREAD_ERROR: Insufficient funds."
-            
             tid = str(uuid.uuid4())[:8].upper()
             t = Thread(
                 id=tid, topic=topic, aim=aim, owner_agent_id=agent.id,
                 owner_department_id=agent.department_id, 
-                budget=cost + ticket_points, 
-                total_invested=cost + ticket_points, 
+                budget=actual_wallet_cost + ticket_points, 
+                total_invested=actual_wallet_cost + ticket_points, 
                 status="OPEN",
                 last_tax_check=datetime.datetime.now(datetime.timezone.utc).isoformat(),
                 ticket_id=ticket_id,
                 ticket_value=ticket_points
             )
-            agent.wallet_current -= cost
-            if add_step_cb:
-                add_step_cb("wallet", f"Thread Creation Cost: -{cost} pts", {"amount": -cost, "reason": "create_thread", "topic": topic})
-            await self.log(db, "POINT", "AGENT", "THREAD_CREATE", {"agent": agent.name_id, "thread_id": tid, "cost": -cost}, agent_id=agent.id)
+            
+            if actual_wallet_cost > 0:
+                agent.wallet_current -= actual_wallet_cost
+                if add_step_cb:
+                    add_step_cb("wallet", f"Thread Creation Cost: -{actual_wallet_cost} pts", {"amount": -actual_wallet_cost, "reason": "create_thread", "topic": topic})
+                await self.log(db, "POINT", "AGENT", "THREAD_CREATE", {"agent": agent.name_id, "thread_id": tid, "cost": -actual_wallet_cost}, agent_id=agent.id)
+            
             db.add(t)
             
-            start_msg = f"🚀 {agent.name_id} started this thread with an initial investment of {cost} points."
+            start_msg = f"🚀 {agent.name_id} started this thread"
+            if actual_wallet_cost > 0:
+                start_msg += f" with an initial investment of {actual_wallet_cost} points."
+            else:
+                start_msg += "."
+                
             if ticket_id:
                 start_msg += f"\n🎟️ This thread was opened with ticket {ticket_id} worth {ticket_points} points."
             
-            db.add(Message(thread_id=tid, who=agent.id, what=start_msg, points=cost + ticket_points))
+            db.add(Message(thread_id=tid, who=agent.id, what=start_msg, points=actual_wallet_cost + ticket_points))
             result = f"THREAD_CREATED: {tid}"
 
         # ── invest_thread ──────────────────────────────────────────────────────
@@ -685,7 +695,16 @@ class SimEngine:
         elif tool_name == "post_in_thread":
             tid, content = args[0].upper(), "\n".join(args[1:])
             t = db.query(Thread).filter(Thread.id == tid).first()
-            if not t or t.status == "FROZEN": return "THREAD_UNAVAILABLE"
+            if not t: return "THREAD_ERROR: Not found."
+            
+            if t.status == "FROZEN":
+                if t.owner_agent_id == agent.id:
+                    return f"THREAD_FROZEN: This thread is frozen due to tax debts. You must reactivate it first using `set_thread_status('{tid}', 'OPEN')` (costs 2 pts)."
+                else:
+                    return "THREAD_UNAVAILABLE: This thread is currently frozen."
+            
+            if t.status not in ["OPEN", "ACTIVE"]:
+                return f"THREAD_UNAVAILABLE: This thread is {t.status} and no longer accepting posts."
             
             is_owner = t.owner_agent_id == agent.id
             is_collab = db.query(ThreadCollaborator).filter(ThreadCollaborator.thread_id == tid, ThreadCollaborator.agent_id == agent.id).first() is not None
@@ -886,7 +905,7 @@ class SimEngine:
                 
                 q = db.query(Thread)
                 # if f_status: q = q.filter(Thread.status == f_status)
-                q = q.filter(Thread.status.in_(["ACTIVE", "OPEN"]))
+                q = q.filter(Thread.status.in_(["ACTIVE", "OPEN", "FROZEN"]))
                 if f_dept:   q = q.filter(Thread.owner_department_id == f_dept)
                 if f_owner:  q = q.filter(Thread.owner_agent_id == f_owner)
 
@@ -903,14 +922,19 @@ class SimEngine:
                     for t in threads:
                         summary_snippet = f"\n   Summary: {t.summary[:120]}" if getattr(t, "summary", None) else ""
                         line = f"{t.id} | {t.topic} | {t.aim} | {t.budget}pt{summary_snippet}"
+                        if t.status == "FROZEN":
+                            line = f"[FROZEN] {line}"
+
                         if t.owner_agent_id == agent.id:
                             owner_lines.append(line)
                         elif db.query(ThreadCollaborator).filter(ThreadCollaborator.thread_id == t.id, ThreadCollaborator.agent_id == agent.id).first() is not None:
-                            collab_lines.append(line)
+                            if t.status != "FROZEN":
+                                collab_lines.append(line)
                         elif db.query(Agent).filter(Agent.department_id == t.owner_department_id, Agent.is_ceo == True).first().id == agent.id:
-                            ceo_lines.append(line)
+                            if t.status != "FROZEN":
+                                ceo_lines.append(line)
                         else:
-                            if not t.is_stealth:
+                            if not t.is_stealth and t.status != "FROZEN":
                                 need_join.append(line)
                     if owner_lines:
                         lines.append("Threads you own:\n" + "\n".join(owner_lines))
@@ -943,6 +967,12 @@ class SimEngine:
                 tid = args[0].strip().upper() if args else ""
                 t = db.query(Thread).filter(Thread.id == tid).first()
                 if not t: return f"SUMMARY_ERROR: Thread {tid} not found."
+                if t.status not in ["OPEN", "ACTIVE"]:
+                    if t.status == "FROZEN" and t.owner_agent_id == agent.id:
+                        pass # Owner can still see summary of frozen thread
+                    else:
+                        return f"SUMMARY_ERROR: Thread {tid} is {t.status} and its summary is unavailable."
+                
                 if t.summary:
                     result = f"SUMMARY [{tid}]: {t.summary}"
                 else:
@@ -1339,12 +1369,6 @@ class SimEngine:
             text = await self._process_innermost_regex(
                 text, r"\{\{(?:(?!\{\{|\}\}).)*?\}\}", 
                 lambda m: self._eval_conditional(m, bool_ctx)
-            )
-
-            # Resolve Innermost Block Tools: [CALL_TOOL] ... [END_CALL_TOOL]
-            text = await self._process_innermost_regex(
-                text, r"\[CALL_TOOL\](?:(?!\[CALL_TOOL\]|\[END_CALL_TOOL\]).)*?\[END_CALL_TOOL\]", 
-                lambda m: self._eval_block_tool(m, db, agent, add_step_cb)
             )
 
             # Resolve Innermost Inline Functions: */func|args/*
