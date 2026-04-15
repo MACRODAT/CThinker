@@ -2,11 +2,11 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import './index.css';
 
 const DEPT_META = {
-  HF: { name: "Health & Wellness", color: "#4ade80", dim: "#052e16", icon: "🌱" },
-  ING: { name: "Engineering", color: "#22d3ee", dim: "#0c2030", icon: "⚙️" },
-  STP: { name: "Strategic Planning", color: "#fb923c", dim: "#2d1500", icon: "📊" },
-  UIT: { name: "Useful Intelligence", color: "#c084fc", dim: "#1e0a30", icon: "🧠" },
-  FIN: { name: "Financing", color: "#fbbf24", dim: "#1c1600", icon: "💰" },
+  HF: { name: "Health & Wellness", color: "#4ade80", dim: "#052e16", icon: "🌱", id: "HF" },
+  ING: { name: "Engineering", color: "#22d3ee", dim: "#0c2030", icon: "⚙️", id: "ING" },
+  STP: { name: "Strategic Planning", color: "#fb923c", dim: "#2d1500", icon: "📊", id: "STP" },
+  UIT: { name: "Useful Intelligence", color: "#c084fc", dim: "#1e0a30", icon: "🧠", id: "UIT" },
+  FIN: { name: "Financing", color: "#fbbf24", dim: "#1c1600", icon: "💰", id: "FIN" },
 };
 
 const THREAD_COSTS = { Memo: 25, Strategy: 100, Endeavor: 100 };
@@ -736,6 +736,10 @@ export default function App() {
     await fetch(`${API_BASE}/departments/${deptId}/points`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ amount }) });
     fetchState();
   }, [fetchState]);
+  const addAgentPoints = useCallback(async (agentId, amount) => {
+    await fetch(`${API_BASE}/agents/${agentId}/points`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ amount }) });
+    fetchState();
+  }, [fetchState]);
   const updateSetting = useCallback(async (key, value) => {
     await fetch(`${API_BASE}/settings/${key}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ value }) });
     fetchState();
@@ -832,7 +836,7 @@ export default function App() {
           {view === "chats" && <Chats state={state} fetchState={fetchState} />}
           {view === "threads" && <Threads state={state} approveThread={approveThread} rejectThread={rejectThread} deleteThread={deleteThread} updateThread={updateThread} postMessage={postMessage} />}
           {view === "tools" && <Tools state={state} fetchState={fetchState} />}
-          {view === "founder" && <Founder state={state} addDeptPoints={addDeptPoints} />}
+          {view === "founder" && <Founder state={state} addDeptPoints={addDeptPoints} addAgentPoints={addAgentPoints} />}
           {view === "tickets" && <Tickets state={state} fetchState={fetchState} />}
           {view === "prompts" && <Prompts state={state} updatePrompt={updatePrompt} />}
           {view === "logger" && <Logger liveLogs={logs} state={state} />}
@@ -2399,7 +2403,8 @@ function Departments({ state }) {
 }
 
 // ── Founder / Economy ─────────────────────────────────────────────────────────
-function Founder({ state, addDeptPoints }) {
+function Founder({ state, addDeptPoints, addAgentPoints }) {
+  // console.log(state.agents)
   return (
     <div className="card">
       <div className="card-header" style={{ fontSize: 14, fontWeight: 600, color: "#fff" }}>Department Treasuries</div>
@@ -2414,6 +2419,26 @@ function Founder({ state, addDeptPoints }) {
                 <div style={{ display: "flex", gap: 8 }}>
                   <button className="btn btn-soft" style={{ flex: 1 }} onClick={() => addDeptPoints(id, 100)}>+100</button>
                   <button className="btn btn-soft" style={{ flex: 1 }} onClick={() => addDeptPoints(id, 500)}>+500</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      <div className="card-header" style={{ fontSize: 14, fontWeight: 600, color: "#fff" }}>Agent Wallets</div>
+      <div className="card-body">
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 16 }}>
+          {Object.entries(state.agents).map(([_, agent]) => {
+            const current = agent.wallet?.current || 0;
+            // department for the agent
+            const dept = Object.values(DEPT_META).find(d => d.id === agent.department);
+            return (
+              <div key={agent.id} style={{ background: "#0a0b0e", border: "1px solid #1a1d24", borderRadius: 8, padding: 16 }}>
+                <div style={{ color: dept?.color, fontWeight: 600, marginBottom: 12 }}>{agent.name_id}</div>
+                <div className="mono" style={{ fontSize: 24, color: "#fff", marginBottom: 16 }}>{current} pts</div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button className="btn btn-soft" style={{ flex: 1 }} onClick={() => addAgentPoints(agent.id, 10)}>+10</button>
+                  <button className="btn btn-soft" style={{ flex: 1 }} onClick={() => addAgentPoints(agent.id, 50)}>+50</button>
                 </div>
               </div>
             );
