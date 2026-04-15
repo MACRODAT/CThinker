@@ -5,6 +5,7 @@ import json
 import re
 import traceback
 import uuid
+import random
 from sqlalchemy.orm import Session
 from database import SessionLocal
 from models import (
@@ -935,6 +936,18 @@ class SimEngine:
 
         # ── web_search ─────────────────────────────────────────────────────────
         elif tool_name == "web_search":
+            def contains_any_keyword(text: str, keywords: list[str]) -> bool:
+                if not text or not keywords:
+                    return False
+                
+                # What should we do here to handle multi-word phrases safely?
+                text_lower = text.lower()
+                
+                for kw in keywords:
+                    if kw.lower() in text_lower:   # Simple but effective for phrases
+                        return True
+                return False
+
             try:
                 if len(args) < 2:
                     return "WEB_SEARCH_ERROR: Usage: web_search | thread_id | search query"
@@ -979,47 +992,36 @@ class SimEngine:
                                {"agent": agent.name_id, "thread_id": tid, "cost": -cost, "query": query},
                                agent_id=agent.id)
 
-                # ── Step 1: Crawl DuckDuckGo HTML search ─────────────────────
-                import urllib.parse
-                encoded_q = urllib.parse.quote_plus(query)
-                search_url = f"https://html.duckduckgo.com/html/?q={encoded_q}"
+                # ── Step 1: Tavily Search Integration ────────────────────────
+                s_tavily = db.query(Setting).filter(Setting.key == "tavily_api_keys").first()
+                tavily_keys = [k.strip() for k in re.split(r'[,\n\s]+', s_tavily.value) if k.strip()] if s_tavily else []
+                
+                if not tavily_keys:
+                    return "WEB_SEARCH_ERROR: No Tavily API keys configured in settings."
+                
+                tavily_key = random.choice(tavily_keys)
+                if add_step_cb:
+                    add_step_cb("system", f"Using Tavily API Key: {tavily_key[:6]}...{tavily_key[-4:]}")
+
+                final_urls = []
                 headers = {
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
                 }
-
+                
                 async with httpx.AsyncClient() as client:
-                    search_resp = await client.post(
-                        "https://html.duckduckgo.com/html/",
-                        data={"q": query},
-                        headers=headers,
-                        timeout=15.0,
-                        follow_redirects=True
+                    tav_resp = await client.post(
+                        "https://api.tavily.com/search",
+                        json={
+                            "api_key": tavily_key,
+                            "query": query,
+                            "search_depth": "basic",
+                            "max_results": 10
+                        },
+                        timeout=20.0
                     )
-
-                search_html = search_resp.text
-
-                # ── Step 2: Extract result URLs ──────────────────────────────
-                # DuckDuckGo HTML results have links in <a class="result__a" href="...">
-                url_pattern = r'class="result__a"[^>]*href="([^"]+)"'
-                raw_urls = re.findall(url_pattern, search_html)
-
-                # DuckDuckGo wraps URLs in redirects: //duckduckgo.com/l/?uddg=ENCODED_URL
-                clean_urls = []
-                for raw in raw_urls:
-                    if "uddg=" in raw:
-                        uddg_match = re.search(r'uddg=([^&]+)', raw)
-                        if uddg_match:
-                            clean_urls.append(urllib.parse.unquote(uddg_match.group(1)))
-                    elif raw.startswith("http"):
-                        clean_urls.append(raw)
-
-                # Take max 3 unique URLs
-                seen = set()
-                final_urls = []
-                for u in clean_urls:
-                    if u not in seen and len(final_urls) < 3:
-                        seen.add(u)
-                        final_urls.append(u)
+                    tav_data = tav_resp.json()
+                    results = tav_data.get("results", [])
+                    final_urls = [r["url"] for r in results if "url" in r]
 
                 if not final_urls:
                     db.add(Message(thread_id=tid, who=agent.id,
@@ -1037,9 +1039,10 @@ class SimEngine:
                         for i, page_url in enumerate(final_urls):
                             try:
                                 if add_step_cb:
-                                    add_step_cb("tool_call", f"Fetching page {i+1}/3: {page_url[:80]}",
+                                    add_step_cb("tool_call", f"Fetching page {i+1}/10: {page_url[:80]}",
                                                 {"url": page_url})
-
+                                if contains_any_keyword(page_url, ["tiktok", "facebook", "instagram", "twitter", "linkedin"]):
+                                    continue
                                 page_resp = await client.get(
                                     page_url, headers=headers, timeout=12.0,
                                     follow_redirects=True
@@ -1067,25 +1070,26 @@ class SimEngine:
                                 summary_system = (
                                     "You are a web page summarizer. Given raw text from a web page, "
                                     "produce a concise, factual summary in 3-5 sentences. "
-                                    "Focus on key information, facts, and insights. "
-                                    "Do NOT add opinions or hallucinate details not in the text."
+                                    "FOCUS on key information related to topic query: " + query +
+                                    "\nDo NOT add opinions or hallucinate details not in the text."
                                 )
                                 summary_user = f"URL: {page_url}\n\nPage content:\n{text}\n\nSummary:"
-
+                                if contains_any_keyword(text, ["content too short", "Cloudflare"]):
+                                    continue
                                 llm_resp = await client.post(
                                     f"{server}/api/generate",
                                     json={
-                                        "model": model,
+                                        "model": "gemma4:e4b",
                                         "system": summary_system,
                                         "prompt": summary_user,
                                         "stream": False,
                                         "options": {"num_predict": 512, "temperature": 0.3}
                                     },
-                                    timeout=60.0
+                                    timeout=120.0
                                 )
                                 page_summary = llm_resp.json().get("response", "").strip()
                                 if not page_summary:
-                                    page_summary = text[:300] + "..."
+                                    page_summary = text[:800] + "..."
 
                                 summaries.append(f"**[{i+1}] {page_url}**\n> {page_summary}")
 

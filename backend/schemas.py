@@ -29,6 +29,7 @@ class SettingResponse(SettingBase):
 
 class ThreadCreate(ThreadBase):
     owner_agent_id: str
+    ticket_id: Optional[str] = None
 
 class ThreadUpdate(BaseModel):
     topic: Optional[str] = None

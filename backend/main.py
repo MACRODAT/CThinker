@@ -135,6 +135,7 @@ def seed_db(db: Session):
     ensure_setting("ollama_server", "http://localhost:11434")
     ensure_setting("ollama_model",  "gemma3:4b")
     ensure_setting("llm_timeout", "300")
+    ensure_setting("tavily_api_keys", "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")
     ensure_setting("tools_instruction_prefix",
                    "# Using tools format\n[CALL_TOOL]\n- tool_name\n- argument 1\n- argument 2\n[END_CALL_TOOL]\n\n# AVAILABLE TOOLS")
     db.commit()
@@ -423,22 +424,60 @@ def create_thread(thread: schemas.ThreadCreate, db: Session = Depends(database.g
     cost  = costs.get(thread.aim, 25)
     agent = db.query(models.Agent).filter(models.Agent.id == thread.owner_agent_id).first()
     if not agent: return {"error": "Agent not found"}
-    dept = agent.department
-    if dept and dept.ledger_current < cost:
-        return {"error": f"Not enough department points (need {cost})"}
-    elif not dept and agent.wallet_current < cost:
-        return {"error": f"Not enough agent points (need {cost})"}
-    if dept:  dept.ledger_current  -= cost
-    else:     agent.wallet_current -= cost
+    
+    ticket_points = 0
+    actual_wallet_cost = cost
+    
+    if thread.ticket_id:
+        # Prevent duplicate thread for same ticket
+        dup = db.query(models.Thread).filter(models.Thread.ticket_id == thread.ticket_id).first()
+        if dup:
+            return {"error": f"Thread already exists for ticket {thread.ticket_id} (ID: {dup.id})"}
+            
+        ticket = db.query(models.Ticket).filter(models.Ticket.id == thread.ticket_id, models.Ticket.status == "UNUSED").first()
+        if not ticket:
+            return {"error": f"Ticket {thread.ticket_id} not found or already used."}
+        
+        ticket_points = ticket.amount
+        ticket.status = "USED"
+        ticket.used_by = agent.id
+        actual_wallet_cost = 0 # Ticket covers the cost
+    else:
+        dept = agent.department
+        if dept and dept.ledger_current < cost:
+            return {"error": f"Not enough department points (need {cost})"}
+        elif not dept and agent.wallet_current < cost:
+            return {"error": f"Not enough agent points (need {cost})"}
+        if dept:  dept.ledger_current  -= cost
+        else:     agent.wallet_current -= cost
+        
     import uuid
     tid = str(uuid.uuid4())[:8].upper()
     db_thread = models.Thread(id=tid, topic=thread.topic, aim=thread.aim,
                                owner_agent_id=agent.id,
-                               owner_department_id=dept.id if dept else None,
-                               budget=cost)
+                               owner_department_id=agent.department_id if agent.department_id else None,
+                               budget=actual_wallet_cost + ticket_points,
+                               total_invested=actual_wallet_cost + ticket_points,
+                               ticket_id=thread.ticket_id,
+                               ticket_value=ticket_points)
     db.add(db_thread)
+    
+    # Add start message
+    start_msg = f"🚀 {agent.name_id} started this thread"
+    total_start = actual_wallet_cost + ticket_points
+    if total_start > 0:
+        start_msg += f" with an initial investment of {total_start} points."
+    else:
+        start_msg += "."
+    
+    if thread.ticket_id:
+        start_msg += f"\n🎟️ This thread was opened with ticket {thread.ticket_id} worth {ticket_points} points."
+        
+    db.add(models.Message(thread_id=tid, who=agent.id, what=start_msg, points=total_start))
+    
     db.commit()
     db.refresh(db_thread)
+    return db_thread
     return db_thread
 
 @app.post("/api/threads/{thread_id}/messages")

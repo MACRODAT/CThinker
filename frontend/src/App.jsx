@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { CT_VARS, CT_CONDS, CT_BUILTINS, CT_ACTIONS, Chip, CollapseSection, CThinkingToolbar, ToolWorkshop } from './WorkshopPanel.jsx';
 import Marketplace from './Marketplace.jsx';
 import './index.css';
@@ -2979,12 +2979,14 @@ function Settings({ state, updateSetting }) {
   const [testing, setTesting] = useState(false);
   const [saved, setSaved] = useState(false);
   const [settingsTab, setSettingsTab] = useState("general");
+  const [tavilyApiKeys, setTavilyApiKeys] = useState("");
 
   useEffect(() => {
     if (state.settings) {
       if (state.settings.ollama_model !== undefined) setOllamaModel(state.settings.ollama_model);
       if (state.settings.ollama_server !== undefined) setOllamaServer(state.settings.ollama_server);
       if (state.settings.llm_halt !== undefined) setLlmHalt(state.settings.llm_halt === "true");
+      if (state.settings.tavily_api_keys !== undefined) setTavilyApiKeys(state.settings.tavily_api_keys);
     }
   }, [state.settings]);
 
@@ -3003,6 +3005,7 @@ function Settings({ state, updateSetting }) {
     await updateSetting("ollama_model", ollamaModel);
     await updateSetting("ollama_server", ollamaServer);
     await updateSetting("llm_halt", llmHalt ? "true" : "false");
+    await updateSetting("tavily_api_keys", tavilyApiKeys);
     setSaved(true); setTimeout(() => setSaved(false), 2000);
   };
 
@@ -3060,6 +3063,16 @@ function Settings({ state, updateSetting }) {
               Halt LLM Calls
               <span style={{ display: "block", fontSize: 11, color: "#9ca3af", fontWeight: 400, marginTop: 2 }}>Pauses all agents' LLM API requests while keeping the engine running</span>
             </label>
+          </div>
+          <div>
+            <label style={{ display: "block", fontSize: 12, marginBottom: 6, color: "#9ca3af", fontWeight: 500 }}>Tavily API Keys (Comma or space separated)</label>
+            <textarea
+              value={tavilyApiKeys}
+              onChange={e => setTavilyApiKeys(e.target.value)}
+              placeholder="tvly-xxx, tvly-yyy"
+              style={{ width: "100%", height: 80, background: "#0b0c10", border: "1px solid #1e222d", color: "#e2e8f0", borderRadius: 8, padding: 12, fontSize: 12 }}
+            />
+            <div style={{ fontSize: 11, color: "#4b5563", marginTop: 6 }}>One key will be picked randomly for each search request.</div>
           </div>
           <button className="btn btn-primary" onClick={saveSettings} style={{ minWidth: 120 }}>
             {saved ? "✓ Saved!" : "Save Settings"}
