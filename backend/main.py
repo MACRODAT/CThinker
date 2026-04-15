@@ -270,6 +270,9 @@ def seed_db(db: Session):
         db.add_all(seed_tkts)
         db.commit()
 
+    # ── Seed Marketplace Tools ─────────────────────────────────────────────────
+    seed_marketplace_tools(db)
+
 
 # ── WebSocket ─────────────────────────────────────────────────────────────────
 
@@ -353,6 +356,7 @@ def get_state(db: Session = Depends(database.get_db)):
             "id": t.id, "owner_department": t.owner_department_id, "owner_agent": t.owner_agent_id,
             "topic": t.topic, "aim": t.aim, "status": t.status, "created": t.created,
             "summary": t.summary or None,
+            "thread_goal": t.thread_goal or "",
             "favourite_color": t.favourite_color,
             "color_theme": t.color_theme,
             "css_pattern": t.css_pattern,
@@ -434,7 +438,22 @@ async def create_message(thread_id: str, message: schemas.MessageCreate, db: Ses
     t = db.query(models.Thread).filter(models.Thread.id == thread_id).first()
     if not t: return {"error": "Thread not found"}
     if message.who.upper() == "FOUNDER":
-        msg = models.Message(thread_id=thread_id, who="Founder", what=message.what, points=0)
+        msg_what = message.what.strip()
+        if msg_what.startswith("/set_thread_goal"):
+            goal_text = msg_what.replace("/set_thread_goal", "").strip()
+            t.thread_goal = goal_text
+            db.commit()
+            db.refresh(t)
+            msg_what = f"*System Activity:* Thread goal was updated by Founder.\n[New Goal: {goal_text}]"
+        elif msg_what.startswith("/append_to_thread_goal"):
+            append_text = msg_what.replace("/append_to_thread_goal", "").strip()
+            current_goal = t.thread_goal or ""
+            t.thread_goal = f"{current_goal}\n{append_text}".strip()
+            db.commit()
+            db.refresh(t)
+            msg_what = f"*System Activity:* Thread goal was appended by Founder.\n[Added: {append_text}]"
+
+        msg = models.Message(thread_id=thread_id, who="Founder", what=msg_what, points=0)
         db.add(msg); db.commit(); db.refresh(msg)
         asyncio.create_task(sim_engine.compute_thread_summary(thread_id))
         return msg
@@ -466,6 +485,7 @@ def update_thread(thread_id: str, req: schemas.ThreadUpdate, db: Session = Depen
     if not t: raise HTTPException(status_code=404, detail="Thread not found")
     if req.topic is not None: t.topic = req.topic
     if req.status is not None: t.status = req.status
+    if req.thread_goal is not None: t.thread_goal = req.thread_goal
     if req.favourite_color is not None: t.favourite_color = req.favourite_color
     if req.color_theme is not None: t.color_theme = req.color_theme
     if req.css_pattern is not None: t.css_pattern = req.css_pattern
@@ -966,3 +986,292 @@ if __name__ == "__main__":
         port=8000,
         reload=True
     )
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  MARKETPLACE ENDPOINTS
+# ══════════════════════════════════════════════════════════════════════════════
+
+def seed_marketplace_tools(db: Session):
+    """Seed the 100+ marketplace tools from marketplace_tools.py."""
+    try:
+        from marketplace_tools import MARKETPLACE_TOOLS
+    except ImportError:
+        return
+    for td in MARKETPLACE_TOOLS:
+        existing = db.query(models.AgentTool).filter(models.AgentTool.id == td["id"]).first()
+        if existing:
+            # Patch marketplace-specific fields if not yet set
+            if existing.status not in ("MARKETPLACE", "WORKSHOP"):
+                existing.status          = "MARKETPLACE"
+                existing.ownership_price = td.get("ownership_price", 0)
+                existing.price           = td.get("price", 0)
+                existing.category        = td.get("category", "General")
+                existing.tags            = td.get("tags", "[]")
+                existing.prompt_template = td.get("prompt_template", "")
+                existing.args_definition = td.get("args_definition", "[]")
+                existing.is_custom       = True
+                existing.workshop_validated = True
+            continue
+        tool = models.AgentTool(
+            id               = td["id"],
+            name             = td["name"],
+            description      = td["description"],
+            enabled          = True,
+            is_custom        = True,
+            status           = "MARKETPLACE",
+            ownership_price  = td.get("ownership_price", 0),
+            price            = td.get("price", 0),
+            category         = td.get("category", "General"),
+            tags             = td.get("tags", "[]"),
+            version          = td.get("version", "1.0"),
+            workshop_validated = True,
+            prompt_template  = td.get("prompt_template", ""),
+            args_definition  = td.get("args_definition", "[]"),
+            call_tools       = td.get("call_tools", "[]"),
+            allowed_actions  = td.get("allowed_actions", "[]"),
+            owner_id         = None,          # owned by FOUNDER initially
+            created_by       = "FOUNDER",
+            purchase_count   = 0,
+        )
+        db.add(tool)
+    db.commit()
+
+
+# ── Marketplace: list all published tools ──────────────────────────────────────
+
+@app.get("/api/marketplace")
+def get_marketplace(
+    category: Optional[str] = None,
+    db: Session = Depends(database.get_db)
+):
+    q = db.query(models.AgentTool).filter(models.AgentTool.status == "MARKETPLACE")
+    if category:
+        q = q.filter(models.AgentTool.category == category)
+    tools = q.order_by(models.AgentTool.category, models.AgentTool.name).all()
+    result = []
+    for t in tools:
+        owner_name = "FOUNDER"
+        if t.owner_id:
+            ag = db.query(models.Agent).filter(models.Agent.id == t.owner_id).first()
+            owner_name = ag.name_id if ag else t.owner_id
+        result.append({
+            "id": t.id, "name": t.name, "description": t.description,
+            "category": t.category or "General",
+            "ownership_price": t.ownership_price or 0,
+            "price": t.price or 0,
+            "purchase_count": t.purchase_count or 0,
+            "owner_id": t.owner_id,
+            "owner_name": owner_name,
+            "tags": t.tags or "[]",
+            "version": t.version or "1.0",
+            "enabled": t.enabled,
+            "status": t.status,
+            "workshop_validated": bool(t.workshop_validated),
+            "changelog": t.changelog,
+        })
+    return result
+
+
+# ── Marketplace: list categories ───────────────────────────────────────────────
+
+@app.get("/api/marketplace/categories")
+def get_marketplace_categories(db: Session = Depends(database.get_db)):
+    tools = db.query(models.AgentTool).filter(models.AgentTool.status == "MARKETPLACE").all()
+    cats  = sorted(set(t.category or "General" for t in tools))
+    return cats
+
+
+# ── Workshop: list tools pending validation ─────────────────────────────────────
+
+@app.get("/api/workshop")
+def get_workshop(db: Session = Depends(database.get_db)):
+    tools = db.query(models.AgentTool).filter(models.AgentTool.status == "WORKSHOP").all()
+    result = []
+    for t in tools:
+        creator_name = "FOUNDER"
+        if t.created_by and t.created_by != "FOUNDER":
+            ag = db.query(models.Agent).filter(models.Agent.id == t.created_by).first()
+            creator_name = ag.name_id if ag else t.created_by
+        result.append({
+            "id": t.id, "name": t.name, "description": t.description,
+            "category": t.category or "General",
+            "ownership_price": t.ownership_price or 0,
+            "price": t.price or 0,
+            "creator_id": t.created_by,
+            "creator_name": creator_name,
+            "tags": t.tags or "[]",
+            "version": t.version or "1.0",
+            "workshop_validated": bool(t.workshop_validated),
+            "prompt_template": t.prompt_template or "",
+            "args_definition": t.args_definition or "[]",
+        })
+    return result
+
+
+# ── Workshop: submit a custom tool for workshop ─────────────────────────────────
+
+@app.post("/api/workshop")
+def submit_to_workshop(req: schemas.WorkshopToolCreate, agent_id: Optional[str] = None, db: Session = Depends(database.get_db)):
+    if db.query(models.AgentTool).filter(models.AgentTool.id == req.id).first():
+        return {"error": f"Tool ID '{req.id}' already exists"}
+    tool = models.AgentTool(
+        id              = req.id,
+        name            = req.name,
+        description     = req.description,
+        enabled         = False,          # disabled until validated
+        is_custom       = True,
+        status          = "WORKSHOP",
+        ownership_price = req.ownership_price,
+        price           = req.price,
+        category        = req.category,
+        tags            = req.tags,
+        version         = "1.0",
+        workshop_validated = False,
+        prompt_template = req.prompt_template,
+        args_definition = req.args_definition,
+        call_tools      = req.call_tools,
+        allowed_actions = req.allowed_actions,
+        owner_id        = agent_id if agent_id else None,
+        created_by      = agent_id if agent_id else "FOUNDER",
+    )
+    db.add(tool); db.commit()
+    return {"status": "submitted", "id": req.id}
+
+
+# ── Workshop: validate a tool (Founder action → moves to MARKETPLACE) ────────────
+
+@app.post("/api/workshop/{tool_id}/validate")
+def validate_workshop_tool(tool_id: str, payload: dict = {}, db: Session = Depends(database.get_db)):
+    tool = db.query(models.AgentTool).filter(models.AgentTool.id == tool_id).first()
+    if not tool:                       return {"error": "Tool not found"}
+    if tool.status != "WORKSHOP":      return {"error": "Tool is not in workshop"}
+    tool.workshop_validated = True
+    tool.status             = "MARKETPLACE"
+    tool.enabled            = True
+    if "ownership_price" in payload:   tool.ownership_price = int(payload["ownership_price"])
+    if "price" in payload:             tool.price           = int(payload["price"])
+    if "category" in payload:          tool.category        = payload["category"]
+    if "changelog" in payload:         tool.changelog       = payload["changelog"]
+    db.commit()
+    return {"status": "validated", "id": tool_id}
+
+
+# ── Marketplace: buy a tool (agent purchases ownership) ─────────────────────────
+
+@app.post("/api/marketplace/{tool_id}/buy")
+def buy_marketplace_tool(tool_id: str, payload: dict, db: Session = Depends(database.get_db)):
+    """
+    Agent pays ownership_price once → gets free usage forever.
+    The price goes to the current tool owner (or FOUNDER).
+    """
+    agent_id = payload.get("agent_id")
+    agent = db.query(models.Agent).filter(models.Agent.id == agent_id).first()
+    if not agent:  return {"error": "Agent not found"}
+
+    tool = db.query(models.AgentTool).filter(models.AgentTool.id == tool_id).first()
+    if not tool:               return {"error": "Tool not found"}
+    if tool.status != "MARKETPLACE": return {"error": "Tool not on marketplace"}
+
+    # Check already owns it
+    already = db.query(models.ToolOwnership).filter(
+        models.ToolOwnership.agent_id == agent_id,
+        models.ToolOwnership.tool_id  == tool_id
+    ).first()
+    if already: return {"error": "Already owned"}
+
+    price = tool.ownership_price or 0
+    if price > 0:
+        if agent.wallet_current < price:
+            return {"error": f"Insufficient funds (need {price} pts)"}
+        agent.wallet_current -= price
+        # Pay the current owner
+        owner_id = tool.owner_id
+        if owner_id:
+            owner = db.query(models.Agent).filter(models.Agent.id == owner_id).first()
+            if owner: owner.wallet_current += price
+        db.add(models.Transaction(
+            from_id=agent_id, to_id=owner_id or "FOUNDER",
+            amount=price, reason=f"tool_purchase:{tool_id}"
+        ))
+
+    db.add(models.ToolOwnership(
+        agent_id=agent_id, tool_id=tool_id, price_paid=price
+    ))
+    tool.purchase_count = (tool.purchase_count or 0) + 1
+    db.commit()
+    return {"status": "purchased", "tool_id": tool_id, "price_paid": price}
+
+
+# ── Marketplace: get owned tools for an agent ────────────────────────────────────
+
+@app.get("/api/agents/{agent_id}/owned-tools")
+def get_owned_tools(agent_id: str, db: Session = Depends(database.get_db)):
+    ownerships = db.query(models.ToolOwnership).filter(models.ToolOwnership.agent_id == agent_id).all()
+    result = []
+    for own in ownerships:
+        tool = db.query(models.AgentTool).filter(models.AgentTool.id == own.tool_id).first()
+        if tool:
+            result.append({
+                "tool_id":      tool.id,
+                "name":         tool.name,
+                "category":     tool.category or "General",
+                "price":        tool.price or 0,
+                "purchased_at": own.purchased_at,
+                "price_paid":   own.price_paid,
+            })
+    return result
+
+
+# ── Marketplace: publish an existing STANDARD/custom tool to marketplace ────────
+
+@app.post("/api/tools/{tool_id}/publish")
+def publish_tool_to_marketplace(tool_id: str, req: schemas.PublishToolRequest, db: Session = Depends(database.get_db)):
+    tool = db.query(models.AgentTool).filter(models.AgentTool.id == tool_id).first()
+    if not tool: return {"error": "Tool not found"}
+    # First goes to WORKSHOP for validation
+    tool.status          = "WORKSHOP"
+    tool.ownership_price = req.ownership_price
+    tool.price           = req.price
+    tool.category        = req.category
+    tool.tags            = req.tags
+    if req.changelog: tool.changelog = req.changelog
+    db.commit()
+    return {"status": "submitted_to_workshop", "tool_id": tool_id}
+
+
+# ── Marketplace: ownerships list (admin view) ─────────────────────────────────
+
+@app.get("/api/tool-ownerships")
+def get_all_ownerships(db: Session = Depends(database.get_db)):
+    rows = db.query(models.ToolOwnership).order_by(models.ToolOwnership.id.desc()).limit(200).all()
+    result = []
+    for r in rows:
+        agent = db.query(models.Agent).filter(models.Agent.id == r.agent_id).first()
+        tool  = db.query(models.AgentTool).filter(models.AgentTool.id == r.tool_id).first()
+        result.append({
+            "id":          r.id,
+            "agent_id":    r.agent_id,
+            "agent_name":  agent.name_id if agent else r.agent_id,
+            "tool_id":     r.tool_id,
+            "tool_name":   tool.name if tool else r.tool_id,
+            "price_paid":  r.price_paid,
+            "purchased_at":r.purchased_at,
+        })
+    return result
+
+
+# ── State: extend to include marketplace summary ──────────────────────────────
+
+@app.get("/api/marketplace/stats")
+def marketplace_stats(db: Session = Depends(database.get_db)):
+    total     = db.query(models.AgentTool).filter(models.AgentTool.status == "MARKETPLACE").count()
+    workshop  = db.query(models.AgentTool).filter(models.AgentTool.status == "WORKSHOP").count()
+    purchases = db.query(models.ToolOwnership).count()
+    revenue   = db.query(models.ToolOwnership).all()
+    total_rev = sum(r.price_paid for r in revenue)
+    return {
+        "marketplace_count": total,
+        "workshop_count":    workshop,
+        "total_purchases":   purchases,
+        "total_revenue_pts": total_rev,
+    }

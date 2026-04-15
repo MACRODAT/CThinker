@@ -1902,6 +1902,7 @@ function Threads({ state, approveThread, rejectThread, deleteThread, updateThrea
                       <span>Owner: <b style={{ color: "#e2e8f0" }}>{state.agents[thread.owner_agent]?.name_id || thread.owner_agent}</b></span>
                       <span>Dept: <b style={{ color: DEPT_META[thread.owner_department]?.color || "#fff" }}>{thread.owner_department || "—"}</b></span>
                       <span>Aim: <b style={{ color: "#6366f1" }}>{thread.aim}</b></span>
+                      {thread.thread_goal && <span>Goal: <b style={{ color: "#10b981" }}>{thread.thread_goal}</b></span>}
                       <span className="mono" style={{ color: "#4b5563" }}>{thread.id}</span>
                     </div>
 
@@ -2149,6 +2150,7 @@ function Threads({ state, approveThread, rejectThread, deleteThread, updateThrea
                           ["Thread ID", thread.id],
                           ["Created", thread.created ? new Date(thread.created).toLocaleString() : "—"],
                           ["Aim", thread.aim],
+                          ["Goal", thread.thread_goal || "No goal set"],
                           ["Status", thread.status],
                           ["Budget", `${thread.point_wallet?.budget || 0} pts`],
                           ["Messages", thread.messages_log?.length || 0],
@@ -2212,6 +2214,7 @@ function Threads({ state, approveThread, rejectThread, deleteThread, updateThrea
                       <span>Owner: <b style={{ color: "#e2e8f0" }}>{state.agents[thread.owner_agent]?.name_id}</b></span>
                       <span>Dept: <b style={{ color: DEPT_META[thread.owner_department]?.color || "#fff" }}>{thread.owner_department || "none"}</b></span>
                       <span>Aim: <b style={{ color: "#6366f1" }}>{thread.aim}</b></span>
+                      {thread.thread_goal && <span>Goal: <b style={{ color: "#10b981" }}>{thread.thread_goal}</b></span>}
                     </div>
                   </div>
                   <div style={{ textAlign: "right", minWidth: 120 }}>

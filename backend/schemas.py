@@ -173,3 +173,53 @@ class SystemLogResponse(BaseModel):
     details: str
     class Config:
         from_attributes = True
+
+
+# ── Marketplace ───────────────────────────────────────────────────────────────
+
+class MarketplaceToolResponse(BaseModel):
+    id: str
+    name: str
+    description: str
+    category: str
+    ownership_price: int = 0
+    price: int = 0
+    purchase_count: int = 0
+    owner_id: Optional[str]
+    tags: str = "[]"
+    version: str = "1.0"
+    enabled: bool
+    status: str = "MARKETPLACE"
+    workshop_validated: bool = False
+    changelog: Optional[str] = None
+    class Config:
+        from_attributes = True
+
+class ToolOwnershipResponse(BaseModel):
+    id: int
+    agent_id: str
+    tool_id: str
+    purchased_at: str
+    price_paid: int
+    class Config:
+        from_attributes = True
+
+class PublishToolRequest(BaseModel):
+    ownership_price: int = 0
+    price: int = 0
+    category: str = "General"
+    tags: str = "[]"
+    changelog: Optional[str] = None
+
+class WorkshopToolCreate(BaseModel):
+    id: str
+    name: str
+    description: str
+    prompt_template: str = ""
+    args_definition: str = "[]"
+    call_tools: str = "[]"
+    allowed_actions: str = "[]"
+    category: str = "General"
+    tags: str = "[]"
+    ownership_price: int = 0
+    price: int = 0

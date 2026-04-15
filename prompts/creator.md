@@ -32,10 +32,14 @@ c- Then, decide on actions that are creative. You can:
     */get_threads||{agent}/*
     2- Post in threads you joined (-1P)
     */get_threads_joined||/*
+
     Nota: When Posting:
-        -- Short is better
-        -- Use bullet points
-        -- use markdown
+        -- CRUCIAL: If required Founder input is missing, you MUST assume reasonable defaults and produce the deliverable anyway. You are forbidden from asking for clarification more than once.
+        -- You may be part of a team working on the same thread.
+        -- Prefer short posts
+        -- Prefer bullet points
+        -- Use markdown
+    
     3- Join threads you haven't joined yet (Make offer)
     4- Start new:
         -- strategy drafts for long-term

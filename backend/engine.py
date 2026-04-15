@@ -10,7 +10,8 @@ from database import SessionLocal
 from models import (
     Agent, Thread, LogAction, LogLedger, Department,
     PromptTemplate, Setting, AgentTool, SystemLog,
-    ThreadCollaborator, JoinQuest, Message, Ticket, Transaction
+    ThreadCollaborator, JoinQuest, Message, Ticket,
+    Transaction, ToolOwnership
 )
 
 
@@ -946,7 +947,8 @@ class SimEngine:
                 else:
                     for t in threads:
                         summary_snippet = f"\n   Summary: {t.summary[:120]}" if getattr(t, "summary", None) else ""
-                        line = f"{t.id} | {t.topic} | {t.aim} | {t.budget}pt{summary_snippet}"
+                        goal_snippet = f"\n   Goal: {t.thread_goal}" if getattr(t, "thread_goal", None) else ""
+                        line = f"{t.id} | {t.topic} | {t.aim} | {t.budget}pt{goal_snippet}{summary_snippet}"
                         if t.status == "FROZEN":
                             line = f"[FROZEN] {line}"
 
@@ -992,7 +994,8 @@ class SimEngine:
                 else:
                     for t in threads:
                         summary_snippet = f"Summary: {t.summary[:500]}" if getattr(t, "summary", None) else ""
-                        lines.append(f"{t.id} | {t.topic} | {t.aim} | {t.budget}pt | {summary_snippet}\n")
+                        goal_snippet = f"Goal: {t.thread_goal} | " if getattr(t, "thread_goal", None) else ""
+                        lines.append(f"{t.id} | {t.topic} | {t.aim} | {t.budget}pt | {goal_snippet}{summary_snippet}\n")
                     result = "THREADS_LIST:\n" + "\n".join(lines)
                     return result
             except Exception as e: result = f"THREADS_ERROR: {str(e)}"
@@ -1133,6 +1136,245 @@ class SimEngine:
             except Exception as e: result = f"TXN_ERROR: {e}"
 
         # ── custom / programmatic tool fallback ────────────────────────────────
+        # ── post_in_thread ─────────────────────────────────────────────────────
+        elif tool_name == "post_in_thread":
+            try:
+                tid     = args[0].upper() if args else ""
+                content = args[1] if len(args) > 1 else "(no content)"
+                t = db.query(Thread).filter(Thread.id == tid).first()
+                if not t: return f"POST_ERROR: Thread {tid} not found."
+                if t.status not in ("OPEN", "ACTIVE", "FROZEN"):
+                    return f"POST_ERROR: Thread is {t.status}."
+                is_owner  = t.owner_agent_id == agent.id
+                is_collab = db.query(ThreadCollaborator).filter(
+                    ThreadCollaborator.thread_id == tid,
+                    ThreadCollaborator.agent_id  == agent.id
+                ).first() is not None
+                if not (is_owner or is_collab):
+                    return "POST_ERROR: Must be owner or collaborator to post."
+                cost = 0 if is_owner else 1
+                if cost > 0 and t.budget < cost:
+                    return "POST_ERROR: Thread has insufficient budget."
+                t.budget -= cost
+                db.add(Message(thread_id=tid, who=agent.id, what=content, points=-cost))
+                result = f"POST_OK:{tid}"
+            except Exception as e:
+                result = f"POST_ERROR:{e}"
+
+        # ── own_tool ───────────────────────────────────────────────────────────
+        elif tool_name == "own_tool":
+            try:
+                from models import ToolOwnership
+                tid = args[0].strip() if args else ""
+                tool_obj = db.query(AgentTool).filter(AgentTool.id == tid).first()
+                if not tool_obj:
+                    return f"OWN_ERROR: Tool '{tid}' not found."
+                if tool_obj.status != "MARKETPLACE":
+                    return f"OWN_ERROR: Tool '{tid}' is not on the marketplace."
+                already = db.query(ToolOwnership).filter(
+                    ToolOwnership.agent_id == agent.id,
+                    ToolOwnership.tool_id  == tid
+                ).first()
+                if already:
+                    return f"OWN_ALREADY: You already own '{tid}'."
+                price = tool_obj.ownership_price or 0
+                if price > 0:
+                    if agent.wallet_current < price:
+                        return f"OWN_INSUFFICIENT: Need {price} pts to own '{tid}'. You have {agent.wallet_current}."
+                    agent.wallet_current -= price
+                    owner_id = tool_obj.owner_id
+                    if owner_id:
+                        seller = db.query(Agent).filter(Agent.id == owner_id).first()
+                        if seller: seller.wallet_current += price
+                    db.add(Transaction(from_id=agent.id, to_id=owner_id or "FOUNDER",
+                                       amount=price, reason=f"tool_purchase:{tid}"))
+                db.add(ToolOwnership(agent_id=agent.id, tool_id=tid, price_paid=price))
+                tool_obj.purchase_count = (tool_obj.purchase_count or 0) + 1
+                if add_step_cb:
+                    add_step_cb("wallet", f"Tool Purchase: -{price} pts", {"tool": tid, "price": price})
+                await self.log(db, "POINT", "AGENT", "TOOL_PURCHASED",
+                               {"tool": tid, "price": price, "agent": agent.name_id},
+                               agent_id=agent.id)
+                result = f"OWN_SUCCESS: Now own '{tid}' (paid {price} pts). Usage is now FREE."
+            except Exception as e:
+                result = f"OWN_ERROR:{e}"
+
+        # ── get_marketplace ────────────────────────────────────────────────────
+        elif tool_name == "get_marketplace":
+            try:
+                cat = args[0].strip() if args else None
+                q = db.query(AgentTool).filter(AgentTool.status == "MARKETPLACE")
+                if cat: q = q.filter(AgentTool.category == cat)
+                tools_list = q.order_by(AgentTool.category, AgentTool.name).limit(30).all()
+                if not tools_list:
+                    result = "MARKETPLACE: No tools available."
+                else:
+                    from models import ToolOwnership
+                    lines = [f"{'─'*50}", "🛒 MARKETPLACE TOOLS", f"{'─'*50}"]
+                    for t in tools_list:
+                        owned = db.query(ToolOwnership).filter(
+                            ToolOwnership.agent_id == agent.id,
+                            ToolOwnership.tool_id  == t.id
+                        ).first()
+                        own_tag = " ✅OWNED" if owned else f" [Buy: {t.ownership_price or 0}pts]"
+                        lines.append(f"• {t.id} — {t.name} [{t.category}]"
+                                     f" | Use: {t.price or 0}pts/call{own_tag}")
+                    result = "\n".join(lines)
+            except Exception as e:
+                result = f"MARKETPLACE_ERROR:{e}"
+
+        # ── get_owned_tools ────────────────────────────────────────────────────
+        elif tool_name == "get_owned_tools":
+            try:
+                from models import ToolOwnership
+                ownerships = db.query(ToolOwnership).filter(ToolOwnership.agent_id == agent.id).all()
+                if not ownerships:
+                    result = "OWNED_TOOLS: None yet. Browse the marketplace and use own_tool."
+                else:
+                    lines = [f"🔑 OWNED TOOLS ({len(ownerships)}):"]
+                    for own in ownerships:
+                        t = db.query(AgentTool).filter(AgentTool.id == own.tool_id).first()
+                        if t:
+                            lines.append(f"• {t.id} — {t.name} [{t.category}] (FREE usage)")
+                    result = "\n".join(lines)
+            except Exception as e:
+                result = f"OWNED_TOOLS_ERROR:{e}"
+
+        # ── get_agent_info ─────────────────────────────────────────────────────
+        elif tool_name == "get_agent_info":
+            try:
+                aid = args[0].strip().upper() if args else agent.id
+                a   = db.query(Agent).filter(Agent.id == aid).first()
+                if not a: return f"AGENT_INFO_ERROR: '{aid}' not found."
+                dept_name = a.department.name if a.department else "None"
+                own_threads = db.query(Thread).filter(Thread.owner_agent_id == a.id).count()
+                result = (f"AGENT: {a.name_id} (ID:{a.id}) | Dept:{dept_name} | "
+                          f"Wallet:{a.wallet_current}pts | Mode:{a.mode} | "
+                          f"CEO:{a.is_ceo} | Threads:{own_threads}")
+            except Exception as e:
+                result = f"AGENT_INFO_ERROR:{e}"
+
+        # ── get_thread_info ────────────────────────────────────────────────────
+        elif tool_name == "get_thread_info":
+            try:
+                tid = args[0].strip().upper() if args else ""
+                t   = db.query(Thread).filter(Thread.id == tid).first()
+                if not t: return f"THREAD_INFO_ERROR: '{tid}' not found."
+                collabs = db.query(ThreadCollaborator).filter(ThreadCollaborator.thread_id == tid).count()
+                msg_cnt = db.query(Message).filter(Message.thread_id == tid).count()
+                result = (f"THREAD {t.id} | '{t.topic}' | AIM:{t.aim} | "
+                          f"Status:{t.status} | Budget:{t.budget}pts | "
+                          f"Invested:{t.total_invested}pts | Collabs:{collabs} | "
+                          f"Messages:{msg_cnt} | Owner:{t.owner_agent_id}")
+            except Exception as e:
+                result = f"THREAD_INFO_ERROR:{e}"
+
+        # ── get_agent_ranking ──────────────────────────────────────────────────
+        elif tool_name == "get_agent_ranking":
+            try:
+                agents_all = db.query(Agent).order_by(Agent.wallet_current.desc()).all()
+                lines = [f"🏆 AGENT WEALTH RANKING:"]
+                for i, a in enumerate(agents_all, 1):
+                    lines.append(f"{i}. {a.name_id} ({a.id}) — {a.wallet_current} pts")
+                result = "\n".join(lines)
+            except Exception as e:
+                result = f"RANKING_ERROR:{e}"
+
+        # ── get_dept_ranking ───────────────────────────────────────────────────
+        elif tool_name == "get_dept_ranking":
+            try:
+                depts_all = db.query(Department).order_by(Department.ledger_current.desc()).all()
+                lines = [f"🏛️ DEPT RANKING:"]
+                for i, d in enumerate(depts_all, 1):
+                    lines.append(f"{i}. {d.name} ({d.id}) — {d.ledger_current} pts")
+                result = "\n".join(lines)
+            except Exception as e:
+                result = f"DEPT_RANKING_ERROR:{e}"
+
+        # ── get_recent_transactions ────────────────────────────────────────────
+        elif tool_name == "get_recent_transactions":
+            try:
+                txns = db.query(Transaction).order_by(Transaction.id.desc()).limit(10).all()
+                if not txns:
+                    result = "TRANSACTIONS: None yet."
+                else:
+                    def gname(uid):
+                        if uid == "FOUNDER": return "Founder"
+                        a = db.query(Agent).filter(Agent.id == uid).first()
+                        return a.name_id if a else uid
+                    lines = [f"💳 RECENT TRANSACTIONS:"]
+                    for t in txns:
+                        lines.append(f"• {gname(t.from_id)} → {gname(t.to_id)}: "
+                                     f"{t.amount}pts [{t.reason}]")
+                    result = "\n".join(lines)
+            except Exception as e:
+                result = f"TX_ERROR:{e}"
+
+        # ── get_collaboration_map ──────────────────────────────────────────────
+        elif tool_name == "get_collaboration_map":
+            try:
+                collabs = db.query(ThreadCollaborator).all()
+                threads_map = {}
+                for c in collabs:
+                    if c.thread_id not in threads_map:
+                        threads_map[c.thread_id] = []
+                    threads_map[c.thread_id].append(c.agent_id)
+                if not threads_map:
+                    result = "COLLAB_MAP: No active collaborations."
+                else:
+                    lines = ["🕸️ COLLABORATION MAP:"]
+                    for tid, aids in threads_map.items():
+                        t = db.query(Thread).filter(Thread.id == tid).first()
+                        if t:
+                            lines.append(f"• {tid} '{t.topic}': "
+                                         f"owner={t.owner_agent_id} + {aids}")
+                    result = "\n".join(lines)
+            except Exception as e:
+                result = f"COLLAB_MAP_ERROR:{e}"
+
+        # ── batch_invest ───────────────────────────────────────────────────────
+        elif tool_name == "batch_invest":
+            try:
+                thread_ids_raw = args[0] if args else ""
+                amount_each    = int(args[1]) if len(args) > 1 else 5
+                ids = [x.strip().upper() for x in thread_ids_raw.split(",") if x.strip()]
+                total_needed = amount_each * len(ids)
+                if agent.wallet_current < total_needed:
+                    return f"BATCH_INVEST_ERROR: Need {total_needed} pts, have {agent.wallet_current}."
+                results = []
+                for tid in ids:
+                    t = db.query(Thread).filter(Thread.id == tid).first()
+                    if not t:
+                        results.append(f"{tid}:NOT_FOUND")
+                        continue
+                    agent.wallet_current -= amount_each
+                    t.budget             += amount_each
+                    t.total_invested     += amount_each
+                    db.add(Message(thread_id=tid, who=agent.id,
+                                   what=f"💰 {agent.name_id} batch-invested {amount_each} pts.",
+                                   points=amount_each))
+                    results.append(f"{tid}:+{amount_each}pts")
+                result = "BATCH_INVEST: " + ", ".join(results)
+                if add_step_cb:
+                    add_step_cb("wallet", f"Batch Invest: -{total_needed} pts total",
+                                {"threads": ids, "each": amount_each})
+            except Exception as e:
+                result = f"BATCH_INVEST_ERROR:{e}"
+
+        # ── produce_transaction (alias kept) ──────────────────────────────────
+        elif tool_name == "produce_transaction":
+            try:
+                if len(args) < 3: return "TXN_ERROR: requires from_id, to_id, amount [,reason]"
+                from_id, to_id, amount = args[0], args[1], int(args[2])
+                reason = args[3] if len(args) > 3 else "agent_transfer"
+                if from_id != agent.id: return "TXN_ERROR: Can only transfer from own wallet."
+                ok = await self.produce_transaction(db, from_id, to_id, amount, reason)
+                result = (f"TXN_OK: {amount} pts {from_id} → {to_id}"
+                          if ok else "TXN_FAILED: Insufficient funds")
+            except Exception as e:
+                result = f"TXN_ERROR:{e}"
+
+        # ── fallback: check DB for registered tools ────────────────────────────
         else:
             tool_obj = db.query(AgentTool).filter(AgentTool.id == tool_name).first()
             if tool_obj and tool_obj.is_custom:
@@ -1593,16 +1835,22 @@ class SimEngine:
 
         if tool_obj:
             # Payment: charge the caller if this tool has a non-zero price
-            # and the owner is someone other than the calling agent.
+            # and the caller does NOT own the tool (ownership = free usage).
             if (tool_obj.price or 0) > 0:
                 owner_id = tool_obj.owner_id or "FOUNDER"
                 if owner_id != agent.id:
-                    ok = await self.produce_transaction(
-                        db, agent.id, owner_id, tool_obj.price,
-                        f"tool_use:{cmd}", add_step_cb
-                    )
-                    if not ok:
-                        return f"[TOOL_NO_FUNDS:{cmd} costs {tool_obj.price}pts]"
+                    # Check ToolOwnership — owners pay nothing
+                    caller_owns = db.query(ToolOwnership).filter(
+                        ToolOwnership.agent_id == agent.id,
+                        ToolOwnership.tool_id  == cmd
+                    ).first()
+                    if not caller_owns:
+                        ok = await self.produce_transaction(
+                            db, agent.id, owner_id, tool_obj.price,
+                            f"tool_use:{cmd}", add_step_cb
+                        )
+                        if not ok:
+                            return f"[TOOL_NO_FUNDS:{cmd} costs {tool_obj.price}pts]"
 
             if tool_obj.is_custom:
                 # Returns the substituted template string.
