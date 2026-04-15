@@ -276,6 +276,19 @@ function RunDetailsModal({ run, onClose }) {
                       <div style={{ fontStyle: "italic", color: "#6b7280", marginBottom: 10 }}>Intelligence validation & internal thought cycle...</div>
                       {s.metadata?.user_prompt && (
                         <div>
+                          <div style={{ fontSize: 10, color: "#4b5563", marginBottom: 6, fontWeight: 600 }}>SYSTEM PROMPT</div>
+                          <div style={{ fontSize: 12, color: "#4b5563", background: "#070809", padding: 12, borderRadius: 6, border: "1px dashed #1a1d24", lineHeight: 1.5 }}>
+                            {s.metadata.system_prompt}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {s.type === 'thought' && (
+                    <div style={{ background: "#0b0c10", padding: 16, borderRadius: 10, border: "1px solid #1a1d24" }}>
+                      <div style={{ fontStyle: "italic", color: "#6b7280", marginBottom: 10 }}>Intelligence validation & internal thought cycle...</div>
+                      {s.metadata?.user_prompt && (
+                        <div>
                           <div style={{ fontSize: 10, color: "#4b5563", marginBottom: 6, fontWeight: 600 }}>PROMPT CONTEXT</div>
                           <div style={{ fontSize: 12, color: "#4b5563", background: "#070809", padding: 12, borderRadius: 6, border: "1px dashed #1a1d24", lineHeight: 1.5 }}>
                             {s.metadata.user_prompt}
