@@ -1,4 +1,5 @@
-from fastapi import FastAPI, Depends, WebSocket, WebSocketDisconnect
+from fastapi import HTTPException
+from fastapi import FastAPI, Depends, WebSocket, WebSocketDisconnect, HTTPException
 from sqlalchemy.orm import Session
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
@@ -480,6 +481,37 @@ async def create_message(thread_id: str, message: schemas.MessageCreate, db: Ses
             db.commit()
             db.refresh(t)
             msg_what = f"🏁 **New Milestone Set**\n> {milestone_text}"
+        elif msg_what.lower().startswith("/web_search"):
+            query = msg_what[len("/web_search"):].strip()
+            if not query:
+                return {"error": "Usage: /web_search <query>"}
+            
+            # Post command message first
+            confirm_msg = models.Message(thread_id=thread_id, who="Founder", what=f"🔍 Searching the web for: `{query}`...", points=0)
+            db.add(confirm_msg); db.commit(); db.refresh(confirm_msg)
+            
+            # Background search task
+            async def run_search():
+                from database import SessionLocal
+                _db = SessionLocal()
+                try:
+                    class FounderAgent:
+                        id = "FOUNDER"
+                        name_id = "Founder"
+                        wallet_current = 999999
+                        department_id = None
+                        department = None
+                    await sim_engine.execute_tool_logic(_db, FounderAgent(), "web_search", [thread_id, query])
+                    _db.commit()
+                except Exception as e:
+                    import traceback
+                    print(f"BACKGROUND WEB_SEARCH ERROR: {e}")
+                    traceback.print_exc()
+                finally:
+                    _db.close()
+            
+            asyncio.create_task(run_search())
+            return confirm_msg
 
         msg = models.Message(thread_id=thread_id, who="Founder", what=msg_what, points=0)
         db.add(msg); db.commit(); db.refresh(msg)

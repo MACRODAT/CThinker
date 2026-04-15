@@ -947,22 +947,26 @@ class SimEngine:
                 if not t:
                     return f"WEB_SEARCH_ERROR: Thread {tid} not found."
 
-                # Auth: must be owner or collaborator
+                # Auth: must be owner or collaborator (Founder bypasses)
+                is_founder = (agent.id == "FOUNDER")
                 is_owner = t.owner_agent_id == agent.id
                 is_collab = db.query(ThreadCollaborator).filter(
                     ThreadCollaborator.thread_id == tid,
                     ThreadCollaborator.agent_id == agent.id
                 ).first() is not None
-                if not (is_owner or is_collab):
+                if not (is_owner or is_collab or is_founder):
                     return "WEB_SEARCH_ERROR: Must be owner or collaborator of the thread."
 
-                # Pricing: 10 pts first use in this thread, 30 pts after
-                prior_searches = db.query(Message).filter(
-                    Message.thread_id == tid,
-                    Message.who == agent.id,
-                    Message.what.like("%🔍 WEB_SEARCH%")
-                ).count()
-                cost = 10 if prior_searches == 0 else 30
+                # Pricing: 10 pts first use in this thread, 30 pts after (Free for Founder)
+                if is_founder:
+                    cost = 0
+                else:
+                    prior_searches = db.query(Message).filter(
+                        Message.thread_id == tid,
+                        Message.who == agent.id,
+                        Message.what.like("%🔍 WEB_SEARCH%")
+                    ).count()
+                    cost = 10 if prior_searches == 0 else 30
 
                 if t.budget < cost:
                     return f"WEB_SEARCH_ERROR: Thread budget insufficient ({t.budget} < {cost} pts needed)."
@@ -1094,7 +1098,11 @@ class SimEngine:
 
                     # ── Final result ─────────────────────────────────────────
                     combined = "\n\n".join(summaries)
-                    search_msg = f"🔍 WEB_SEARCH: '{query}'\nCost: {cost} pts | Results: {len(final_urls)}\n\n{combined}"
+                    if is_founder:
+                        search_msg = f"🔍 **WEB SEARCH: '{query}'**\n_Performed courtesy of the Founder_\n\n{combined}"
+                    else:
+                        search_msg = f"🔍 WEB_SEARCH: '{query}'\nCost: {cost} pts | Results: {len(final_urls)}\n\n{combined}"
+                    
                     db.add(Message(thread_id=tid, who=agent.id, what=search_msg, points=-cost))
                     result = f"WEB_SEARCH_RESULTS ({len(final_urls)} pages):\n\n{combined}"
 
