@@ -14,7 +14,7 @@ from models import (
     Transaction, ToolOwnership
 )
 
-thread_tools_list = ['get_time', 'get_weather', 'get_news', 'create_thread', 'post_in_thread', 'join_thread', 'set_thread_status', 'get_thread_summary', 'stealth_mode_thread']
+thread_tools_list = ['get_time', 'get_weather', 'get_news', 'web_search', 'create_thread', 'post_in_thread', 'join_thread', 'set_thread_status', 'get_thread_summary', 'stealth_mode_thread']
 points_accounter_tools_list = ['get_time', 'invest_thread', 'join_thread', 'refill_thread']
 investor_tools_list = ['get_time', 'get_threads', 'get_agents', 'join_thread', 'refill_thread', 'invite_to_thread', 'get_thread_summary', 'get_all_summaries', 'get_threads_joined', 'get_threads_not_joined']
 
@@ -932,6 +932,174 @@ class SimEngine:
                     resp = await client.get(f"https://wttr.in/{city}?format=3", timeout=10.0)
                     result = f"WEATHER: {resp.text.strip()}"
             except Exception as e: result = f"WEATHER_ERROR: {str(e)}"
+
+        # ── web_search ─────────────────────────────────────────────────────────
+        elif tool_name == "web_search":
+            try:
+                if len(args) < 2:
+                    return "WEB_SEARCH_ERROR: Usage: web_search | thread_id | search query"
+                tid = args[0].strip().upper()
+                query = " ".join(args[1:]).strip()
+                if not query:
+                    return "WEB_SEARCH_ERROR: Empty search query."
+
+                t = db.query(Thread).filter(Thread.id == tid).first()
+                if not t:
+                    return f"WEB_SEARCH_ERROR: Thread {tid} not found."
+
+                # Auth: must be owner or collaborator
+                is_owner = t.owner_agent_id == agent.id
+                is_collab = db.query(ThreadCollaborator).filter(
+                    ThreadCollaborator.thread_id == tid,
+                    ThreadCollaborator.agent_id == agent.id
+                ).first() is not None
+                if not (is_owner or is_collab):
+                    return "WEB_SEARCH_ERROR: Must be owner or collaborator of the thread."
+
+                # Pricing: 10 pts first use in this thread, 30 pts after
+                prior_searches = db.query(Message).filter(
+                    Message.thread_id == tid,
+                    Message.who == agent.id,
+                    Message.what.like("%🔍 WEB_SEARCH%")
+                ).count()
+                cost = 10 if prior_searches == 0 else 30
+
+                if t.budget < cost:
+                    return f"WEB_SEARCH_ERROR: Thread budget insufficient ({t.budget} < {cost} pts needed)."
+
+                t.budget -= cost
+                if add_step_cb:
+                    add_step_cb("wallet", f"Web Search Fee: -{cost} pts from thread {tid}",
+                                {"amount": -cost, "reason": "web_search", "thread_id": tid, "query": query})
+                await self.log(db, "POINT", "AGENT", "WEB_SEARCH_FEE",
+                               {"agent": agent.name_id, "thread_id": tid, "cost": -cost, "query": query},
+                               agent_id=agent.id)
+
+                # ── Step 1: Crawl DuckDuckGo HTML search ─────────────────────
+                import urllib.parse
+                encoded_q = urllib.parse.quote_plus(query)
+                search_url = f"https://html.duckduckgo.com/html/?q={encoded_q}"
+                headers = {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                }
+
+                async with httpx.AsyncClient() as client:
+                    search_resp = await client.post(
+                        "https://html.duckduckgo.com/html/",
+                        data={"q": query},
+                        headers=headers,
+                        timeout=15.0,
+                        follow_redirects=True
+                    )
+
+                search_html = search_resp.text
+
+                # ── Step 2: Extract result URLs ──────────────────────────────
+                # DuckDuckGo HTML results have links in <a class="result__a" href="...">
+                url_pattern = r'class="result__a"[^>]*href="([^"]+)"'
+                raw_urls = re.findall(url_pattern, search_html)
+
+                # DuckDuckGo wraps URLs in redirects: //duckduckgo.com/l/?uddg=ENCODED_URL
+                clean_urls = []
+                for raw in raw_urls:
+                    if "uddg=" in raw:
+                        uddg_match = re.search(r'uddg=([^&]+)', raw)
+                        if uddg_match:
+                            clean_urls.append(urllib.parse.unquote(uddg_match.group(1)))
+                    elif raw.startswith("http"):
+                        clean_urls.append(raw)
+
+                # Take max 3 unique URLs
+                seen = set()
+                final_urls = []
+                for u in clean_urls:
+                    if u not in seen and len(final_urls) < 3:
+                        seen.add(u)
+                        final_urls.append(u)
+
+                if not final_urls:
+                    db.add(Message(thread_id=tid, who=agent.id,
+                                   what=f"🔍 WEB_SEARCH: '{query}' — No results found.", points=-cost))
+                    result = f"WEB_SEARCH: No results found for '{query}'."
+                else:
+                    # ── Step 3: Fetch and extract text from each page ─────────
+                    summaries = []
+                    s_url_setting = db.query(Setting).filter(Setting.key == "ollama_server").first()
+                    s_mod_setting = db.query(Setting).filter(Setting.key == "ollama_model").first()
+                    server = s_url_setting.value if s_url_setting else "http://localhost:11434"
+                    model = s_mod_setting.value if s_mod_setting else "gemma4:e4b"
+
+                    async with httpx.AsyncClient() as client:
+                        for i, page_url in enumerate(final_urls):
+                            try:
+                                if add_step_cb:
+                                    add_step_cb("tool_call", f"Fetching page {i+1}/3: {page_url[:80]}",
+                                                {"url": page_url})
+
+                                page_resp = await client.get(
+                                    page_url, headers=headers, timeout=12.0,
+                                    follow_redirects=True
+                                )
+                                page_html = page_resp.text
+
+                                # Strip HTML to plain text
+                                # Remove script and style tags entirely
+                                text = re.sub(r'<(script|style|noscript)[^>]*>.*?</\1>', '', page_html, flags=re.DOTALL | re.IGNORECASE)
+                                # Remove all HTML tags
+                                text = re.sub(r'<[^>]+>', ' ', text)
+                                # Decode HTML entities
+                                import html as html_mod
+                                text = html_mod.unescape(text)
+                                # Collapse whitespace
+                                text = re.sub(r'\s+', ' ', text).strip()
+                                # Limit to ~3000 chars for LLM context
+                                text = text[:3000]
+
+                                if len(text) < 50:
+                                    summaries.append(f"**[{i+1}] {page_url}**\n> (Page content too short or blocked)")
+                                    continue
+
+                                # ── Step 4: Summarize with local LLM ────────
+                                summary_system = (
+                                    "You are a web page summarizer. Given raw text from a web page, "
+                                    "produce a concise, factual summary in 3-5 sentences. "
+                                    "Focus on key information, facts, and insights. "
+                                    "Do NOT add opinions or hallucinate details not in the text."
+                                )
+                                summary_user = f"URL: {page_url}\n\nPage content:\n{text}\n\nSummary:"
+
+                                llm_resp = await client.post(
+                                    f"{server}/api/generate",
+                                    json={
+                                        "model": model,
+                                        "system": summary_system,
+                                        "prompt": summary_user,
+                                        "stream": False,
+                                        "options": {"num_predict": 512, "temperature": 0.3}
+                                    },
+                                    timeout=60.0
+                                )
+                                page_summary = llm_resp.json().get("response", "").strip()
+                                if not page_summary:
+                                    page_summary = text[:300] + "..."
+
+                                summaries.append(f"**[{i+1}] {page_url}**\n> {page_summary}")
+
+                                if add_step_cb:
+                                    add_step_cb("tool_result", f"Page {i+1} summarized",
+                                                {"url": page_url, "summary": page_summary[:200]})
+
+                            except Exception as page_err:
+                                summaries.append(f"**[{i+1}] {page_url}**\n> (Fetch error: {str(page_err)[:100]})")
+
+                    # ── Final result ─────────────────────────────────────────
+                    combined = "\n\n".join(summaries)
+                    search_msg = f"🔍 WEB_SEARCH: '{query}'\nCost: {cost} pts | Results: {len(final_urls)}\n\n{combined}"
+                    db.add(Message(thread_id=tid, who=agent.id, what=search_msg, points=-cost))
+                    result = f"WEB_SEARCH_RESULTS ({len(final_urls)} pages):\n\n{combined}"
+
+            except Exception as e:
+                result = f"WEB_SEARCH_ERROR: {str(e)}"
 
         # ── get_threads ────────────────────────────────────────────────────────
         elif tool_name == "get_threads":

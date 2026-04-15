@@ -230,6 +230,11 @@ def seed_db(db: Session):
             name="Set Thread Vibe",
             description="[CALL_TOOL]\n- set_thread_vibe\n- thread_id\n- color_theme (hex or name)\n- css_pattern (grid, cross, none)\n[END_CALL_TOOL]\nOwner/Collab: Style the thread background and accent.",
             enabled=True),
+        models.AgentTool(
+            id="web_search",
+            name="Web Search",
+            description="[CALL_TOOL]\n- web_search\n- thread_id\n- search query\n[END_CALL_TOOL]\nSearch the web for information. Crawls top 3 results and summarizes each page. Costs 10 pts (first use in thread) or 30 pts (subsequent uses). Deducted from thread budget.",
+            enabled=True),
     ]
     for tool in tool_defs:
         if db.query(models.AgentTool).filter(models.AgentTool.id == tool.id).first() is None:
