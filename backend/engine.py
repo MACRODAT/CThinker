@@ -16,7 +16,7 @@ from models import (
 
 thread_tools_list = ['get_time', 'get_weather', 'get_news', 'create_thread', 'post_in_thread', 'join_thread', 'set_thread_status', 'get_thread_summary', 'stealth_mode_thread']
 points_accounter_tools_list = ['get_time', 'invest_thread', 'join_thread', 'refill_thread']
-investor_tools_list = ['get_time', 'get_threads', 'get_agents', 'join_thread', 'refill_thread', 'invite_to_thread', 'get_thread_summary', 'get_all_summaries', 'get_threads_joined']
+investor_tools_list = ['get_time', 'get_threads', 'get_agents', 'join_thread', 'refill_thread', 'invite_to_thread', 'get_thread_summary', 'get_all_summaries', 'get_threads_joined', 'get_threads_not_joined']
 
 class SimEngine:
     def __init__(self):
@@ -989,13 +989,25 @@ class SimEngine:
                     result = "THREADS_LIST:\n" + "\n".join(lines)
             except Exception as e: result = f"THREADS_ERROR: {str(e)}"
         # ── get_threads which agent joined ────────────────────────────────────────────────────────
-        elif tool_name == "get_threads_joined":
+        elif (tool_name == "get_threads_joined" or tool_name == "get_threads_not_joined"):
             try:
                 f_dept   = args[0].strip().upper() if len(args) > 0 and args[0].strip() else None
                 f_owner  = args[1].strip().upper() if len(args) > 1 and args[1].strip() else None
                 
-                q = db.query(Thread).join(ThreadCollaborator, Thread.id == ThreadCollaborator.thread_id)\
-                .filter(ThreadCollaborator.agent_id == agent.id, Thread.status.in_(["ACTIVE", "OPEN", "FROZEN"]))
+                if tool_name == "get_threads_joined":
+                    q = db.query(Thread).join(ThreadCollaborator, Thread.id == ThreadCollaborator.thread_id)\
+                    .filter(ThreadCollaborator.agent_id == agent.id, Thread.status.in_(["ACTIVE", "OPEN", "FROZEN"]))
+                else:
+                    # needs rework!
+                    q = db.query(Thread)\
+                        .outerjoin(ThreadCollaborator, 
+                                (Thread.id == ThreadCollaborator.thread_id) &
+                                (ThreadCollaborator.agent_id == agent.id))\
+                        .filter(
+                            Thread.status.in_(["ACTIVE", "OPEN", "FROZEN"]),
+                            ThreadCollaborator.thread_id.is_(None)   # not joined
+                        )
+
                 if f_dept:   q = q.filter(Thread.owner_department_id == f_dept)
                 if f_owner:  q = q.filter(Thread.owner_agent_id == f_owner)
 

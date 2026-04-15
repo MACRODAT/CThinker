@@ -112,3 +112,20 @@ You are successful if over time:
 - Your department benefits from your actions
 - Threads you participate in get approved
 - You are never seen as wasting points
+
+c- Finally, You MUST store memory and next mode:
+    1- Choose which mode is best for your next run: Creator|Points Accounter|Invester|Custom.    
+    2- Write memory for your next run
+    3- Compile into THIS FORMAT (MANDATORY)
+
+
+## ADVICE
+DO NOT STICK IN POINTS MODE. YOU HAVE TO BE PRODUCTIVE NEXT TIME.
+
+[MEMORY]
+CONTENT MAX 200 CHARACTERS PLAIN WORDS
+[END MEMORY]
+
+[MODE]
+NEXT MODE
+[END MODE]

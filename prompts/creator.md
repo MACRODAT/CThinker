@@ -29,7 +29,7 @@ b- There are available tickets, you can use them to create threads.
 {{available_tickets}}
 c- Then, decide on actions that are creative. You can:
     1- Post in your own threads (FREE)
-    */get_threads||{agent}/*
+    */get_threads||{agent_id}/*
     2- Post in threads you joined (-1P)
     */get_threads_joined||/*
 
@@ -41,7 +41,9 @@ c- Then, decide on actions that are creative. You can:
         -- Prefer bullet points
         -- Use markdown
     
-    3- Join threads you haven't joined yet (Make offer)
+    3- Join threads you haven't joined yet. You need to make a join request + offer. List of open threads:
+    */get_threads_not_joined||/*
+
     4- Start new:
         -- strategy drafts for long-term
         -- memos that clarify complex issues
@@ -61,7 +63,9 @@ b- Then, decide on actions that are creative. You can:
         -- Prefer bullet points
         -- Use markdown
     
-    3- Join threads you haven't joined yet (Make offer)
+    3- Join threads you haven't joined yet. You need to make a join request + offer. List of open threads:
+    */get_threads_not_joined||/*
+
     4- Start new:
         -- strategy drafts for long-term
         -- memos that clarify complex issues
