@@ -70,6 +70,9 @@ class Thread(Base):
     favourite_color = Column(String, nullable=True)
     color_theme = Column(String, nullable=True)
     css_pattern = Column(String, nullable=True)
+    thread_goal = Column(Text, nullable=True)
+    current_milestone = Column(Text, nullable=True)
+    milestones_log = Column(Text, default="[]")
     owner_department = relationship("Department", back_populates="threads")
     collaborators = relationship("ThreadCollaborator", back_populates="thread")
 

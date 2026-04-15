@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import './index.css';
 
 const DEPT_META = {
@@ -658,6 +658,8 @@ export default function App() {
   const [view, setView] = useState("dashboard");
 
   const fetchState = useCallback(async () => {
+    // wait 100ms before fetching
+    await new Promise(resolve => setTimeout(resolve, 600));
     try {
       const [stateRes, tktRes] = await Promise.all([
         fetch(`${API_BASE}/state`),
@@ -671,16 +673,18 @@ export default function App() {
 
   useEffect(() => {
     fetchState();
+
     const ws = new WebSocket(WS_BASE);
     ws.onmessage = (e) => {
       const data = JSON.parse(e.data);
       if (data.type === "heartbeat") {
         setState(s => ({ ...s, heartbeat: data.counter }));
-        if (data.counter % 5 === 0) fetchState();
+        if (data.counter % 100 === 0) fetchState();
       } else if (data.type === "run") {
         const item = data.run;
         setRuns(r => [item, ...r].slice(0, 60));
-        fetchState();
+        // fetchState();
+        if (data.counter % 100 === 0) fetchState();
       } else if (data.type === "log") {
         setLogs(l => [data.log, ...l].slice(0, 600));
       } else if (data.type === "thread_summary") {
@@ -1173,7 +1177,7 @@ function PromptParser({ state }) {
     const start = (lo > lc) ? lo : pos;
     setPrompt(prompt.slice(0, start) + snippet + prompt.slice(pos));
     setShowSug(false);
-    setTimeout(() => { ta?.focus(); }, 0);
+    setTimeout(() => { ta?.focus(); }, 10);
   };
 
   const insertPlaceholder = (key) => insertAt(`{{${key}}}`);
@@ -1295,7 +1299,7 @@ function PromptParser({ state }) {
             ref={taRef}
             value={prompt}
             onChange={handleChange}
-            onBlur={() => setTimeout(() => setShowSug(false), 150)}
+            onBlur={() => setTimeout(() => setShowSug(false), 550)}
             placeholder={"Enter prompt text here…\n\nExample:\nHello {name}, you have {wallet} pts.\n{{available_tickets_exist ??\n- Tickets available: {{available_tickets}}\n- No tickets right now.\n}}"}
             style={{
               width: "100%", height: 340, fontFamily: "'JetBrains Mono', monospace",
@@ -1718,17 +1722,56 @@ function Threads({ state, approveThread, rejectThread, deleteThread, updateThrea
   const [favOnly, setFavOnly] = useState(false);
   const msgEndRef = useRef(null);
 
-  const tArr = Object.values(state.threads)
-    .filter(t => t.aim !== "Chat")
-    .filter(t => {
-      if (q && !t.topic.toLowerCase().includes(q.toLowerCase())) return false;
-      if (fStatus && t.status !== fStatus) return false;
-      if (fAim && t.aim !== fAim) return false;
-      if (favOnly && !t.favourite_color) return false;
-      return true;
-    })
-    .reverse();
+
+
   const thread = sel ? state.threads[sel] : null;
+
+  const filteredDiscussion = useMemo(() =>
+    thread?.messages_log?.filter(m => !m.what.startsWith("INVESTMENT")) || [],
+    [thread?.messages_log]
+  );
+
+  const filteredLedger = useMemo(() =>
+    thread?.messages_log?.filter(m => m.points !== 0).reverse() || [],
+    [thread?.messages_log]
+  );
+
+  const milestonesLog = useMemo(() => {
+    try {
+      return JSON.parse(thread?.milestones_log || "[]");
+    } catch (e) {
+      console.log(e);
+      return [];
+    }
+  }, [thread?.milestones_log]);
+
+  const tArr = useMemo(() =>
+    Object.values(state.threads)
+      .filter(t => t.aim !== "Chat")
+      .filter(t => {
+        if (q && !t.topic.toLowerCase().includes(q.toLowerCase())) return false;
+        if (fStatus && t.status !== fStatus) return false;
+        if (fAim && t.aim !== fAim) return false;
+        if (favOnly && !t.favourite_color) return false;
+        return true;
+      })
+      .reverse(),
+    [state.threads, q, fStatus, fAim, favOnly]
+  );
+
+
+
+  // const tArr = Object.values(state.threads)
+  //   .filter(t => t.aim !== "Chat")
+  //   .filter(t => {
+  //     if (q && !t.topic.toLowerCase().includes(q.toLowerCase())) return false;
+  //     if (fStatus && t.status !== fStatus) return false;
+  //     if (fAim && t.aim !== fAim) return false;
+  //     if (favOnly && !t.favourite_color) return false;
+  //     return true;
+  //   })
+  //   .reverse();
+  // const thread = sel ? state.threads[sel] : null;
 
   useEffect(() => {
     if (thread) { setNewTopic(thread.topic); setEditMode(false); }
@@ -1941,6 +1984,46 @@ function Threads({ state, approveThread, rejectThread, deleteThread, updateThrea
               </div>
             </div>
 
+            {/* ── Goal & Milestone Banner ── */}
+            {(thread.thread_goal || thread.current_milestone) && (
+              <div style={{
+                display: "flex", gap: 16, padding: "10px 16px",
+                background: "linear-gradient(135deg, #064e3b22, #1e1b4b22)",
+                border: "1px solid #1e222d", borderRadius: 10,
+                alignItems: "center", flexWrap: "wrap",
+              }}>
+                {thread.thread_goal && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 180 }}>
+                    <span style={{ fontSize: 16 }}>🎯</span>
+                    <div>
+                      <div style={{ fontSize: 9, fontWeight: 800, color: "#6b7280", letterSpacing: 1.2, marginBottom: 2 }}>GOAL</div>
+                      <div style={{ fontSize: 12, color: "#10b981", fontWeight: 600, lineHeight: 1.4 }}>{thread.thread_goal}</div>
+                    </div>
+                  </div>
+                )}
+                {thread.current_milestone && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 180 }}>
+                    <span style={{ fontSize: 16 }}>🏁</span>
+                    <div>
+                      <div style={{ fontSize: 9, fontWeight: 800, color: "#6b7280", letterSpacing: 1.2, marginBottom: 2 }}>CURRENT MILESTONE</div>
+                      <div style={{ fontSize: 12, color: "#818cf8", fontWeight: 600, lineHeight: 1.4 }}>{thread.current_milestone}</div>
+                    </div>
+                  </div>
+                )}
+                {(() => {
+                  try {
+
+                    const log = JSON.parse(thread.milestones_log || "[]");
+                    if (log.length > 0) return (
+                      <div style={{ fontSize: 10, color: "#4b5563", display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                        <span style={{ color: "#10b981", fontWeight: 700 }}>✓ {log.length}</span> achieved
+                      </div>
+                    );
+                  } catch (e) { console.log(e); return null; }
+                })()}
+              </div>
+            )}
+
             {/* ── Two-column body ── */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 14, flex: 1, overflow: "hidden" }}>
 
@@ -1950,9 +2033,27 @@ function Threads({ state, approveThread, rejectThread, deleteThread, updateThrea
                   DISCUSSION LOG
                 </div>
                 <div className="card-body" style={{ flex: 1, overflowY: "auto", background: "#08090c" }}>
-                  {thread.messages_log?.filter(m => !m.what.startsWith("INVESTMENT")).map((m, i) => {
+                  {filteredDiscussion.map((m, i) => {
                     const isFounder = m.who === "FOUNDER" || m.who === "Founder";
                     const isSystem = m.who === "SYSTEM";
+                    const isMilestoneAchieved = isSystem && m.what.includes("MILESTONE ACHIEVED:");
+                    if (isMilestoneAchieved) {
+                      return (
+                        <div key={i} style={{ marginBottom: 14, textAlign: "center" }}>
+                          <div style={{
+                            display: "inline-block", padding: "10px 20px",
+                            background: "linear-gradient(135deg, #064e3b44, #065f4622)",
+                            border: "1px solid #10b98144",
+                            borderRadius: 10, maxWidth: "90%",
+                          }}>
+                            <div style={{ fontSize: 10, fontWeight: 800, color: "#10b981", letterSpacing: 1.5, marginBottom: 4 }}>✅ MILESTONE ACHIEVED</div>
+                            <div style={{ fontSize: 13, color: "#34d399", fontWeight: 600 }}
+                              dangerouslySetInnerHTML={{ __html: renderMd(m.what.replace(/✅ \*\*MILESTONE ACHIEVED:\*\*\s*/, "")) }} />
+                            <div className="mono" style={{ fontSize: 9, color: "#4b5563", marginTop: 4 }}>{hhmm(m.when)}</div>
+                          </div>
+                        </div>
+                      );
+                    }
                     return (
                       <div key={i} style={{ marginBottom: 14 }}>
                         <div style={{
@@ -1989,7 +2090,8 @@ function Threads({ state, approveThread, rejectThread, deleteThread, updateThrea
                   display: "flex", gap: 8, background: "#0a0b0e"
                 }}>
                   <input placeholder="Post as Founder… (Enter to send)"
-                    value={msg} onChange={e => setMsg(e.target.value)}
+                    value={msg}
+                    onChange={e => setMsg(e.target.value)}
                     onKeyDown={e => e.key === "Enter" && !e.shiftKey && sendMsg()}
                     style={{ flex: 1, fontSize: 12, padding: "6px 10px" }} disabled={sending} />
                   <button className="btn btn-primary" onClick={sendMsg}
@@ -2017,7 +2119,7 @@ function Threads({ state, approveThread, rejectThread, deleteThread, updateThrea
                 {/* ── Ledger tab ── */}
                 {rightTab === "ledger" && (
                   <div style={{ flex: 1, overflowY: "auto", background: "#0a0b0e", padding: "0 0 8px" }}>
-                    {thread.messages_log?.filter(m => m.points !== 0).reverse().map((m, i) => (
+                    {filteredLedger.map((m, i) => (
                       <div key={i} style={{ padding: "9px 14px", borderBottom: "1px solid #111316" }}>
                         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
                           <span style={{
@@ -2155,6 +2257,7 @@ function Threads({ state, approveThread, rejectThread, deleteThread, updateThrea
                           ["Created", thread.created ? new Date(thread.created).toLocaleString() : "—"],
                           ["Aim", thread.aim],
                           ["Goal", thread.thread_goal || "No goal set"],
+                          ["Milestone", thread.current_milestone || "No milestone set"],
                           ["Status", thread.status],
                           ["Budget", `${thread.point_wallet?.budget || 0} pts`],
                           ["Messages", thread.messages_log?.length || 0],
@@ -2164,11 +2267,45 @@ function Threads({ state, approveThread, rejectThread, deleteThread, updateThrea
                             padding: "7px 12px", borderBottom: "1px solid #111316"
                           }}>
                             <span style={{ fontSize: 11, color: "#6b7280" }}>{label}</span>
-                            <span className="mono" style={{ fontSize: 11, color: "#9ca3af" }}>{val}</span>
+                            <span className="mono" style={{ fontSize: 11, color: label === "Goal" ? "#10b981" : label === "Milestone" ? "#818cf8" : "#9ca3af" }}>{val}</span>
                           </div>
                         ))}
                       </div>
                     </div>
+
+                    {/* Milestones History */}
+                    {(() => {
+                      try {
+                        const log = JSON.parse(thread.milestones_log || "[]");
+                        if (log.length === 0) return null;
+                        return (
+                          <div>
+                            <div style={{ fontSize: 10, fontWeight: 800, color: "#10b981", letterSpacing: 1, marginBottom: 8 }}>
+                              MILESTONES ACHIEVED ({log.length})
+                            </div>
+                            <div style={{ background: "#08090c", border: "1px solid #1e222d", borderRadius: 8, overflow: "hidden" }}>
+                              {log.slice().reverse().map((ms, idx) => (
+                                <div key={idx} style={{
+                                  padding: "8px 12px", borderBottom: "1px solid #111316",
+                                  display: "flex", justifyContent: "space-between", alignItems: "center",
+                                }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                    <span style={{ color: "#10b981", fontSize: 12 }}>✓</span>
+                                    <span style={{ fontSize: 11, color: "#d1d5db", fontWeight: 500 }}>{ms.text}</span>
+                                  </div>
+                                  <span className="mono" style={{ fontSize: 9, color: "#4b5563", flexShrink: 0 }}>
+                                    {ms.achieved_at ? new Date(ms.achieved_at).toLocaleString() : "—"}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      } catch (e) {
+                        console.log(e)
+                        return null;
+                      }
+                    })()}
                   </div>
                 )}
               </div>

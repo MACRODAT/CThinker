@@ -959,7 +959,8 @@ class SimEngine:
                     for t in threads:
                         summary_snippet = f"\n   Summary: {t.summary[:120]}" if getattr(t, "summary", None) else ""
                         goal_snippet = f"\n   Goal: {t.thread_goal}" if getattr(t, "thread_goal", None) else ""
-                        line = f"{t.id} | {t.topic} | {t.aim} | {t.budget}pt{goal_snippet}{summary_snippet}"
+                        milestone_snippet = f"\n   Current Milestone: {t.current_milestone}" if getattr(t, "current_milestone", None) else ""
+                        line = f"{t.id} | {t.topic} | {t.aim} | {t.budget}pt{goal_snippet}{milestone_snippet}{summary_snippet}"
                         if t.status == "FROZEN":
                             line = f"[FROZEN] {line}"
 
@@ -1006,7 +1007,8 @@ class SimEngine:
                     for t in threads:
                         summary_snippet = f"Summary: {t.summary[:500]}" if getattr(t, "summary", None) else ""
                         goal_snippet = f"Goal: {t.thread_goal} | " if getattr(t, "thread_goal", None) else ""
-                        lines.append(f"{t.id} | {t.topic} | {t.aim} | {t.budget}pt | {goal_snippet}{summary_snippet}\n")
+                        milestone_snippet = f"Current Milestone: {t.current_milestone} | " if getattr(t, "current_milestone", None) else ""
+                        lines.append(f"{t.id} | {t.topic} | {t.aim} | {t.budget}pt | {goal_snippet}{milestone_snippet}{summary_snippet}\n")
                     result = "THREADS_LIST:\n" + "\n".join(lines)
                     return result
             except Exception as e: result = f"THREADS_ERROR: {str(e)}"
@@ -1454,9 +1456,12 @@ class SimEngine:
                 "Produce 3-4 complete continuous sentences, with simple words."
                 "Be factual and concise. Preserve important IDs and numbers."
             )
+            goal_line = f"Goal: {t.thread_goal}\n" if getattr(t, "thread_goal", None) else ""
+            milestone_line = f"Current Milestone: {t.current_milestone}\n" if getattr(t, "current_milestone", None) else ""
             user_p = (
                 f"Thread: {t.id} | Topic: {t.topic} | AIM: {t.aim} | "
-                f"Budget: {t.budget}pt | Status: {t.status}\n\n"
+                f"Budget: {t.budget}pt | Status: {t.status}\n"
+                f"{goal_line}{milestone_line}\n"
                 f"Messages ({len(msgs)} shown):\n{convo}\n\nSummary:"
             )
 
@@ -1545,7 +1550,9 @@ class SimEngine:
         lines = []
         for t in threads:
             summary_bit = f" — {t.summary[:120]}" if t.summary else " — (no summary yet)"
-            lines.append(f"• [{t.id}] {t.topic} | {t.aim} | {t.budget}pt{summary_bit}")
+            goal_bit = f" | Goal: {t.thread_goal}" if getattr(t, "thread_goal", None) else ""
+            milestone_bit = f" | Milestone: {t.current_milestone}" if getattr(t, "current_milestone", None) else ""
+            lines.append(f"• [{t.id}] {t.topic} | {t.aim} | {t.budget}pt{goal_bit}{milestone_bit}{summary_bit}")
         return "\n".join(lines)
 
     def get_available_tickets_context(self, db: Session):
@@ -1695,6 +1702,8 @@ class SimEngine:
             "investor_tools":           self.get_filter_tools(db, lst=investor_tools_list),
             "all_quest_tools":          self.get_quest_tools(db),
             "agent":                    agent.name_id,
+            "agent_id":                 agent.id,
+            "agent_dept":               agent_dept.id,
             "wallet":                   str(agent.wallet_current),
             "departmentPoints":         agent_dept.ledger_current,
             "thread_summary":           self.get_thread_summaries_context(db),

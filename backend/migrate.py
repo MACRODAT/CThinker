@@ -193,6 +193,21 @@ def run():
         print("Added css_pattern to threads")
     except Exception as e: print("css_pattern:", e)
 
+    try:
+        c.execute('ALTER TABLE threads ADD COLUMN thread_goal TEXT')
+        print("Added thread_goal to threads")
+    except Exception as e: print("thread_goal:", e)
+
+    try:
+        c.execute('ALTER TABLE threads ADD COLUMN current_milestone TEXT')
+        print("Added current_milestone to threads")
+    except Exception as e: print("current_milestone:", e)
+
+    try:
+        c.execute("ALTER TABLE threads ADD COLUMN milestones_log TEXT DEFAULT '[]'")
+        print("Added milestones_log to threads")
+    except Exception as e: print("milestones_log:", e)
+
     conn.commit()
     conn.close()
     print("Migration complete.")

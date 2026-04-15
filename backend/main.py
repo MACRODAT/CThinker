@@ -356,6 +356,9 @@ def get_state(db: Session = Depends(database.get_db)):
             "id": t.id, "owner_department": t.owner_department_id, "owner_agent": t.owner_agent_id,
             "topic": t.topic, "aim": t.aim, "status": t.status, "created": t.created,
             "summary": t.summary or None,
+            "thread_goal": t.thread_goal or None,
+            "current_milestone": t.current_milestone or None,
+            "milestones_log": t.milestones_log or "[]",
             "favourite_color": t.favourite_color,
             "color_theme": t.color_theme,
             "css_pattern": t.css_pattern,
@@ -437,20 +440,41 @@ async def create_message(thread_id: str, message: schemas.MessageCreate, db: Ses
     t = db.query(models.Thread).filter(models.Thread.id == thread_id).first()
     if not t: return {"error": "Thread not found"}
     if message.who.upper() == "FOUNDER":
+        import json as _json
         msg_what = message.what.strip()
-        if msg_what.startswith("/set_thread_goal"):
-            goal_text = msg_what.replace("/set_thread_goal", "").strip()
+        if msg_what.lower().startswith("/newgoal"):
+            goal_text = msg_what[len("/newgoal"):].strip()
+            if not goal_text:
+                return {"error": "Usage: /newgoal <goal text>"}
             t.thread_goal = goal_text
             db.commit()
             db.refresh(t)
-            msg_what = f"*System Activity:* Thread goal was updated by Founder.\n[New Goal: {goal_text}]"
-        elif msg_what.startswith("/append_to_thread_goal"):
-            append_text = msg_what.replace("/append_to_thread_goal", "").strip()
-            current_goal = t.thread_goal or ""
-            t.thread_goal = f"{current_goal}\n{append_text}".strip()
+            msg_what = f"🎯 **Thread Goal Updated**\n> {goal_text}"
+        elif msg_what.lower().startswith("/newmilestone"):
+            milestone_text = msg_what[len("/newmilestone"):].strip()
+            if not milestone_text:
+                return {"error": "Usage: /newmilestone <milestone text>"}
+            now_stamp = models.get_stamp()
+            # Archive the current milestone if one exists
+            old_milestone = t.current_milestone
+            if old_milestone:
+                try:
+                    log = _json.loads(t.milestones_log or "[]")
+                except Exception:
+                    log = []
+                log.append({"text": old_milestone, "achieved_at": now_stamp})
+                t.milestones_log = _json.dumps(log)
+                # Insert a visible "milestone achieved" message
+                achieved_msg = models.Message(
+                    thread_id=thread_id, who="SYSTEM",
+                    what=f"✅ **MILESTONE ACHIEVED:** {old_milestone}\n_Validated at {now_stamp}_",
+                    points=0
+                )
+                db.add(achieved_msg)
+            t.current_milestone = milestone_text
             db.commit()
             db.refresh(t)
-            msg_what = f"*System Activity:* Thread goal was appended by Founder.\n[Added: {append_text}]"
+            msg_what = f"🏁 **New Milestone Set**\n> {milestone_text}"
 
         msg = models.Message(thread_id=thread_id, who="Founder", what=msg_what, points=0)
         db.add(msg); db.commit(); db.refresh(msg)

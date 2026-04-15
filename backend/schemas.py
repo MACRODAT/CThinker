@@ -33,6 +33,8 @@ class ThreadCreate(ThreadBase):
 class ThreadUpdate(BaseModel):
     topic: Optional[str] = None
     status: Optional[str] = None
+    thread_goal: Optional[str] = None
+    current_milestone: Optional[str] = None
     favourite_color: Optional[str] = None
     color_theme: Optional[str] = None
     css_pattern: Optional[str] = None
@@ -44,6 +46,9 @@ class ThreadResponse(ThreadBase):
     status: str
     created: str
     budget: int
+    thread_goal: Optional[str] = None
+    current_milestone: Optional[str] = None
+    milestones_log: Optional[str] = "[]"
     favourite_color: Optional[str] = None
     color_theme: Optional[str] = None
     css_pattern: Optional[str] = None
