@@ -356,7 +356,6 @@ def get_state(db: Session = Depends(database.get_db)):
             "id": t.id, "owner_department": t.owner_department_id, "owner_agent": t.owner_agent_id,
             "topic": t.topic, "aim": t.aim, "status": t.status, "created": t.created,
             "summary": t.summary or None,
-            "thread_goal": t.thread_goal or "",
             "favourite_color": t.favourite_color,
             "color_theme": t.color_theme,
             "css_pattern": t.css_pattern,
@@ -604,6 +603,16 @@ def update_agent(agent_id: str, payload: dict, db: Session = Depends(database.ge
     if not a: return {"error": "Agent not found"}
     for field in ("mode", "custom_prompt", "memory"):
         if field in payload: setattr(a, field, payload[field])
+    db.commit()
+    return {"status": "success"}
+
+@app.post("/api/agents/{agent_id}/points")
+def add_agent_points(agent_id: str, payload: dict, db: Session = Depends(database.get_db)):
+    agent = db.query(models.Agent).filter(models.Agent.id == agent_id).first()
+    if not agent: return {"error": "Agent not found"}
+    amount = payload.get("amount", 0)
+    agent.wallet_current += amount
+    db.add(models.Transaction(from_id="FOUNDER", to_id=agent.id, amount=amount, reason="Founder Wallet Top-up"))
     db.commit()
     return {"status": "success"}
 

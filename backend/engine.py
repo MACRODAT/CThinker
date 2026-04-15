@@ -14,6 +14,9 @@ from models import (
     Transaction, ToolOwnership
 )
 
+thread_tools_list = ['get_time', 'get_weather', 'get_news', 'create_thread', 'post_in_thread', 'join_thread', 'set_thread_status', 'get_thread_summary', 'stealth_mode_thread']
+points_accounter_tools_list = ['get_time', 'invest_thread', 'join_thread', 'refill_thread']
+investor_tools_list = ['get_time', 'get_threads', 'get_agents', 'join_thread', 'refill_thread', 'invite_to_thread', 'get_thread_summary', 'get_all_summaries', 'get_threads_joined']
 
 class SimEngine:
     def __init__(self):
@@ -81,6 +84,14 @@ class SimEngine:
 
     def get_tools(self, db: Session):
         enabled_tools = db.query(AgentTool).filter(AgentTool.enabled == True).all()
+        tools_block = (
+            "\n".join([f"- {t.description}" for t in enabled_tools])
+            if enabled_tools else "No tools currently available."
+        )
+        return tools_block
+    
+    def get_filter_tools(self, db: Session, lst=[]):
+        enabled_tools = db.query(AgentTool).filter(AgentTool.enabled == True, AgentTool.id.in_(lst)).all()
         tools_block = (
             "\n".join([f"- {t.description}" for t in enabled_tools])
             if enabled_tools else "No tools currently available."
@@ -1666,6 +1677,11 @@ class SimEngine:
             "pending_invitation_exist": inv_exist,
             "pending_quests_exist":     pending_quests_exist,
             "exist_invitation_status":  inv_status_exist,
+            "mode_is_creator":          agent.mode.upper() == "CREATOR",
+            "mode_is_points_accounter": agent.mode.upper() == "POINTS ACCOUNTER",
+            "mode_is_custom":           agent.mode.upper() == "CUSTOM",
+            "mode_is_investor":         agent.mode.upper() == "INVESTOR",
+            "is_ceo":                   agent.is_ceo,
         }
         
         simple = {
@@ -1674,10 +1690,12 @@ class SimEngine:
             "pending_invitation":       self.get_rich_invitation_context(db, agent),
             "invitation_status":        last_quest.status if last_quest else "None",
             "all_enabled_tools":        self.get_tools(db),
+            "thread_tools":             self.get_filter_tools(db, lst=thread_tools_list),
+            "points_accounter_tools":   self.get_filter_tools(db, lst=points_accounter_tools_list),
+            "investor_tools":           self.get_filter_tools(db, lst=investor_tools_list),
             "all_quest_tools":          self.get_quest_tools(db),
             "agent":                    agent.name_id,
             "wallet":                   str(agent.wallet_current),
-            "is_ceo":                   "true" if agent.is_ceo else "false",
             "departmentPoints":         agent_dept.ledger_current,
             "thread_summary":           self.get_thread_summaries_context(db),
         }
