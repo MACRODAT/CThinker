@@ -2238,6 +2238,8 @@ class SimEngine:
         if extra_ctx:
             simple.update(extra_ctx)
 
+        protected = {}
+
         # ── The Inside-Out Iteration Loop ──
         # We loop until the text stops changing.
         # 2. Iterative Resolver Loop
@@ -2245,6 +2247,17 @@ class SimEngine:
         MAX_RECURSION = 20
         for _ in range(MAX_RECURSION):
             original = text
+            
+            # 1. Protect escaped comments [/]! ... [\]
+            def protect(m):
+                key = f"---PROTECTED_{len(protected)}---"
+                protected[key] = m.group(1)
+                return key
+            text = re.sub(r'\[/\]!(.*?)\[\\\]', protect, text, flags=re.DOTALL)
+
+            # 2. Strip normal comments: multiline [/]...[\] and inline //
+            text = re.sub(r'\[/\].*?\[\\\]', '', text, flags=re.DOTALL)
+            text = re.sub(r'(?<!:)\/\/.*', '', text)
             
             # Resolve Simple Variables {agent} or {{agent}}
             for k, v in simple.items():
@@ -2267,6 +2280,10 @@ class SimEngine:
             if text == original:
                 break
         
+        # 3. Restore protected content
+        for key, content in protected.items():
+            text = text.replace(key, content)
+            
         return text
     def _eval_conditional(self, raw: str, bool_ctx: dict) -> str:
         inner = raw[2:-2].strip()

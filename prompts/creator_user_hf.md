@@ -12,7 +12,7 @@ A- Pending quests: MUST CALL approve_join or decline_join
                 {{
                     available_tickets_exist
 YOU CAN:
-0- PRIORITY IS GATHERING INFO, USE /glue_query(HF; query) OR glue_search (HF; keywords spaced) OR glue_read (HF; path)
+!- PRIORITY IS GATHERING INFO, USE [/]! */glue_query|HF|query/* [\] OR glue_search (HF; keywords spaced) OR glue_read (HF; path)
 A- USE Available tickets to create threads (CHOOSE SCIENTIFIC/IT)
 - APPROVED: EARN
 - REJECTED: LOOSE
@@ -30,7 +30,7 @@ C- Join/Create new thread USE join_thread (THREAD_ID; AGENT_ID)
 D- Store memory for next run.
                     /ELSE/
 YOU CAN:
-0- FIND INFO USE glue_query (HF; query) OR glue_search (HF; keywords spaced) OR glue_read (HF; path)
+!- PRIORITY IS GATHERING INFO, USE [/]!*/glue_query|HF|query/*[\] OR glue_search (HF; keywords spaced) OR glue_read (HF; path)
 A- LIST THREADS 
     * YOUR THREADS=> USE get_threads (FILTER DEPARTMENT OPTIONAL; {agent}) =>
     * OR THREADS YOU JOINED=> USE get_threads_joined (FILTER DEPARTMENT OPTIONAL; {agent})
