@@ -223,7 +223,7 @@ class SimEngine:
             s_timeout = db.query(Setting).filter(Setting.key == "llm_timeout").first()
             server = s_url.value if s_url else "http://localhost:11434"
             model  = s_mod.value if s_mod else "gemma4:e4b"
-            timeout_val = float(s_timeout.value) if s_timeout else 300.0
+            timeout_val = float(s_timeout.value) if s_timeout else 1500.0
 
             # CONTINUE
             final_processed_raw = ""
@@ -330,6 +330,7 @@ class SimEngine:
                         
                         # 4. Handle State [MEMORY]...[END MEMORY] and [MODE]...[END MODE]
                         mem_match = re.search(r"\[MEMORY\](.*?)\s*\[END MEMORY\]", raw, re.DOTALL | re.IGNORECASE)
+                        mode_match = re.search(r"\[MODE\](.*?)\s*\[END MODE\]", raw, re.DOTALL | re.IGNORECASE)
                         if mem_match:
                             agent.memory = mem_match.group(1).strip()[:200]
                             raw = raw.replace(mem_match.group(0), "").strip()
@@ -459,7 +460,8 @@ class SimEngine:
 
     async def deduct_points(self, db, agent, amount: int, reason: str, add_step_cb=None):
         """Helper to deduct points from department or agent wallet. Priority: Dept > Wallet."""
-        dept = agent.department
+        # get department of the agent
+        dept = db.query(Department).filter(Department.id == agent.department_id).first()
         success = False
         if dept and dept.ledger_current >= amount:
             dept.ledger_current -= amount
@@ -1161,6 +1163,7 @@ class SimEngine:
                     result += "DO NOT INVENT\n"
                     result += "NO NEW ACRONYMS UNLESS EXPLAINED\n"
                     result += "MARKDOWN ALLOWED\n"
+                    result += "TO JOIN CALL join_thread||thread_id\n"
             except Exception as e: result = f"THREADS_ERROR: {str(e)}"
         # ── get_threads which agent joined ────────────────────────────────────────────────────────
         elif (tool_name == "get_threads_joined" or tool_name == "get_threads_not_joined"):
@@ -1196,13 +1199,17 @@ class SimEngine:
                         milestone_snippet = f"Current Milestone: {t.current_milestone} | " if getattr(t, "current_milestone", None) else ""
                         lines.append(f"{t.id} | {t.topic} | {t.aim} | {t.budget}pt | {goal_snippet}{milestone_snippet}{summary_snippet}\n")
                     result = "THREADS_LIST:\n" + "\n".join(lines)
-                    result += "\nGOAL=THREAD GOAL+THREAD MILESTONE\n"
-                    result += "NO input=ASSUME DEFAULT\n"
-                    result += "SEARCH USING web_search tool.\n"
-                    result += "BE CONCRETE.\n"
-                    result += "DO NOT INVENT\n"
-                    result += "NO NEW ACRONYMS UNLESS EXPLAINED\n"
-                    result += "MARKDOWN ALLOWED\n"
+                    if tool_name == "get_threads_joined":
+                        result += "\nGOAL=THREAD GOAL+THREAD MILESTONE\n"
+                        result += "NO input=ASSUME DEFAULT\n"
+                        result += "SEARCH USING web_search tool.\n"
+                        result += "BE CONCRETE.\n"
+                        result += "DO NOT INVENT\n"
+                        result += "NO NEW ACRONYMS UNLESS EXPLAINED\n"
+                        result += "MARKDOWN ALLOWED\n"
+                    else:
+                        result += "TO JOIN CALL join_thread||thread_id\n"
+                        
                     return result
             except Exception as e: result = f"THREADS_ERROR: {str(e)}"
 
@@ -2086,7 +2093,7 @@ class SimEngine:
                     ).first()
                     if not caller_owns:
                         ok = await self.deduct_points(db, agent, tool_obj.price, f"tool_use toll:{cmd}", add_step_cb)
-                        if ok:
+                        if ok and owner_id != "FOUNDER":
                             await self.deduct_points(db, owner, -tool_obj.price, f"tool_use reward:{cmd}", add_step_cb)
                         # ok = await self.produce_transaction(
                         #     db, agent.id, owner_id, tool_obj.price,
