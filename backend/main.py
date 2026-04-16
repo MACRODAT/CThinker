@@ -172,6 +172,79 @@ def seed_db(db: Session):
             name="Web Search",
             description="[CALL_TOOL]\n- web_search\n- thread_id\n- search query\n[END_CALL_TOOL]\nSearch the web for information. Crawls top 3 results and summarizes each page. Costs 10 pts (first use in thread) or 30 pts (subsequent uses). Deducted from thread budget.",
             enabled=True),
+        # ── GLUE Wiki Tools ─────────────────────────────────────────────────
+        models.AgentTool(
+            id="glue_ingest", name="Glue: Ingest Source",
+            description="[CALL_TOOL]\n- glue_ingest\n- vault_id\n- filename\n[END_CALL_TOOL]\nIngest a file from raw/inbox into the wiki. Creates a source summary page.",
+            enabled=True),
+        models.AgentTool(
+            id="glue_ingest_text", name="Glue: Ingest Text",
+            description="[CALL_TOOL]\n- glue_ingest_text\n- vault_id\n- title\n- content\n[END_CALL_TOOL]\nIngest raw text directly into the wiki as a source page.",
+            enabled=True),
+        models.AgentTool(
+            id="glue_ingest_url", name="Glue: Ingest URL",
+            description="[CALL_TOOL]\n- glue_ingest_url\n- vault_id\n- url\n[END_CALL_TOOL]\nFetch a URL, extract text, summarize, and add to wiki.",
+            enabled=True),
+        models.AgentTool(
+            id="glue_query", name="Glue: Query Wiki",
+            description="[CALL_TOOL]\n- glue_query\n- vault_id\n- question\n- save (y/n)\n[END_CALL_TOOL]\nAsk a question against the wiki. Optionally save the answer.",
+            enabled=True),
+        models.AgentTool(
+            id="glue_search", name="Glue: Search Wiki",
+            description="[CALL_TOOL]\n- glue_search\n- vault_id\n- keyword1\n- keyword2\n[END_CALL_TOOL]\nMulti-keyword full-text search across wiki pages.",
+            enabled=True),
+        models.AgentTool(
+            id="glue_read", name="Glue: Read Page",
+            description="[CALL_TOOL]\n- glue_read\n- vault_id\n- page_path\n[END_CALL_TOOL]\nRead a specific wiki page by path (e.g. wiki/sources/page.md).",
+            enabled=True),
+        models.AgentTool(
+            id="glue_write", name="Glue: Write Page",
+            description="[CALL_TOOL]\n- glue_write\n- vault_id\n- page_path\n- content\n[END_CALL_TOOL]\nCreate or overwrite a wiki page.",
+            enabled=True),
+        models.AgentTool(
+            id="glue_list", name="Glue: List Pages",
+            description="[CALL_TOOL]\n- glue_list\n- vault_id\n- category (optional: sources/concepts/entities/syntheses/queries/meta)\n[END_CALL_TOOL]\nList wiki pages, optionally filtered by category.",
+            enabled=True),
+        models.AgentTool(
+            id="glue_follow", name="Glue: Follow Node",
+            description="[CALL_TOOL]\n- glue_follow\n- vault_id\n- page_path\n[END_CALL_TOOL]\nRead a page and see its outbound [[links]].",
+            enabled=True),
+        models.AgentTool(
+            id="glue_backlinks", name="Glue: Backlinks",
+            description="[CALL_TOOL]\n- glue_backlinks\n- vault_id\n- page_path\n[END_CALL_TOOL]\nFind all pages that link TO a given page.",
+            enabled=True),
+        models.AgentTool(
+            id="glue_recent", name="Glue: Recent Pages",
+            description="[CALL_TOOL]\n- glue_recent\n- vault_id\n- count (default 10)\n[END_CALL_TOOL]\nGet the most recently modified wiki pages.",
+            enabled=True),
+        models.AgentTool(
+            id="glue_lint", name="Glue: Lint Wiki",
+            description="[CALL_TOOL]\n- glue_lint\n- vault_id\n[END_CALL_TOOL]\nRun a health check on the wiki: orphans, broken links, thin pages.",
+            enabled=True),
+        models.AgentTool(
+            id="glue_git_status", name="Glue: Git Status",
+            description="[CALL_TOOL]\n- glue_git_status\n- vault_id\n[END_CALL_TOOL]\nShow git status and recent commits for a vault.",
+            enabled=True),
+        models.AgentTool(
+            id="glue_git_commit", name="Glue: Git Commit",
+            description="[CALL_TOOL]\n- glue_git_commit\n- vault_id\n- message\n[END_CALL_TOOL]\nCommit all staged wiki changes.",
+            enabled=True),
+        models.AgentTool(
+            id="glue_git_log", name="Glue: Git Log",
+            description="[CALL_TOOL]\n- glue_git_log\n- vault_id\n- count (default 20)\n[END_CALL_TOOL]\nView recent git commits.",
+            enabled=True),
+        models.AgentTool(
+            id="glue_git_diff", name="Glue: Git Diff",
+            description="[CALL_TOOL]\n- glue_git_diff\n- vault_id\n[END_CALL_TOOL]\nView pending changes (staged + unstaged diffs).",
+            enabled=True),
+        models.AgentTool(
+            id="glue_git_revert", name="Glue: Git Revert",
+            description="[CALL_TOOL]\n- glue_git_revert\n- vault_id\n- commit_ref\n[END_CALL_TOOL]\nRevert a specific commit.",
+            enabled=True),
+        models.AgentTool(
+            id="glue_git_discard", name="Glue: Git Discard",
+            description="[CALL_TOOL]\n- glue_git_discard\n- vault_id\n- filepath\n[END_CALL_TOOL]\nDiscard unstaged changes to a specific file.",
+            enabled=True),
     ]
     for tool in tool_defs:
         if db.query(models.AgentTool).filter(models.AgentTool.id == tool.id).first() is None:
@@ -262,7 +335,7 @@ def get_state(db: Session = Depends(database.get_db)):
         my_prompts = {p.mode: {"system_prompt": p.system_prompt, "user_prompt": p.user_prompt} for p in agent_prompts if p.agent_id == a.id}
         state_agents[a.id] = {
             "id": a.id, "name_id": a.name_id, "born": a.born, "department": a.department_id,
-            "is_ceo": a.is_ceo, "ticks": a.ticks, "mode": a.mode, "next_mode": a.next_mode,
+            "is_ceo": a.is_ceo, "ticks": a.ticks, "is_halted": a.is_halted, "mode": a.mode, "next_mode": a.next_mode,
             "wallet": {"current": a.wallet_current, "log": []},
             "prompts": my_prompts,
             "log_actions": acts, "memory": a.memory, "own_threads": own_t
@@ -302,6 +375,7 @@ def get_state(db: Session = Depends(database.get_db)):
             "thread_goal": t.thread_goal or None,
             "current_milestone": t.current_milestone or None,
             "milestones_log": t.milestones_log or "[]",
+            "vault_id": t.vault_id or None,
             "favourite_color": t.favourite_color,
             "color_theme": t.color_theme,
             "css_pattern": t.css_pattern,
@@ -490,6 +564,10 @@ async def create_message(thread_id: str, message: schemas.MessageCreate, db: Ses
         msg = models.Message(thread_id=thread_id, who="Founder", what=msg_what, points=0)
         db.add(msg); db.commit(); db.refresh(msg)
         asyncio.create_task(sim_engine.compute_thread_summary(thread_id))
+        # GLUE: Log message to wiki if thread is linked to a vault
+        if t.vault_id:
+            import glue
+            glue.log_message_to_wiki(t.vault_id, thread_id, "Founder", msg_what)
         return msg
     agent = db.query(models.Agent).filter(models.Agent.id == message.who).first()
     if not agent: return {"error": "Agent not found"}
@@ -520,6 +598,7 @@ def update_thread(thread_id: str, req: schemas.ThreadUpdate, db: Session = Depen
     if req.topic is not None: t.topic = req.topic
     if req.status is not None: t.status = req.status
     if req.thread_goal is not None: t.thread_goal = req.thread_goal
+    if req.vault_id is not None: t.vault_id = req.vault_id
     if req.favourite_color is not None: t.favourite_color = req.favourite_color
     if req.color_theme is not None: t.color_theme = req.color_theme
     if req.css_pattern is not None: t.css_pattern = req.css_pattern
@@ -639,6 +718,8 @@ def update_agent(agent_id: str, payload: dict, db: Session = Depends(database.ge
     
     if "memory" in payload: a.memory = payload["memory"]
     if "mode" in payload: a.mode = payload["mode"]
+    if "ticks" in payload: a.ticks = payload["ticks"]
+    if "is_halted" in payload: a.is_halted = payload["is_halted"]
     
     edit_mode = payload.get("edit_mode")
     if edit_mode and ("system_prompt" in payload or "user_prompt" in payload):
@@ -1050,6 +1131,143 @@ async def summarize_thread(thread_id: str, db: Session = Depends(database.get_db
     if not t: return {"error": "Thread not found"}
     asyncio.create_task(sim_engine.compute_thread_summary(thread_id))
     return {"status": "queued", "thread_id": thread_id}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  GLUE VAULT ENDPOINTS
+# ══════════════════════════════════════════════════════════════════════════════
+
+import glue
+
+@app.get("/api/vaults")
+def get_vaults():
+    return glue.list_vaults()
+
+@app.post("/api/vaults")
+def create_vault(data: dict):
+    vault_id = data.get("id", "").strip()
+    if not vault_id:
+        return {"error": "Missing vault id"}
+    glue.init_vault(vault_id)
+    return {"status": "created", "id": vault_id}
+
+@app.get("/api/vaults/{vault_id}/index")
+def get_vault_index(vault_id: str):
+    return {"content": glue.read_index(vault_id)}
+
+@app.get("/api/vaults/{vault_id}/log")
+def get_vault_log(vault_id: str):
+    return {"content": glue.read_file(glue.log_path(vault_id))}
+
+@app.get("/api/vaults/{vault_id}/pages")
+def get_vault_pages(vault_id: str, category: Optional[str] = None):
+    return glue.list_wiki_pages(vault_id, category)
+
+@app.get("/api/vaults/{vault_id}/pages/{page_path:path}")
+def get_vault_page(vault_id: str, page_path: str):
+    return glue.read_wiki_page(vault_id, page_path)
+
+@app.put("/api/vaults/{vault_id}/pages/{page_path:path}")
+def put_vault_page(vault_id: str, page_path: str, data: dict):
+    content = data.get("content", "")
+    return glue.write_wiki_page(vault_id, page_path, content)
+
+@app.delete("/api/vaults/{vault_id}/pages/{page_path:path}")
+def delete_vault_page(vault_id: str, page_path: str):
+    return glue.delete_wiki_page(vault_id, page_path)
+
+@app.post("/api/vaults/{vault_id}/search")
+def search_vault(vault_id: str, data: dict):
+    keywords = data.get("keywords", [])
+    if isinstance(keywords, str):
+        keywords = keywords.split()
+    return glue.search_wiki(vault_id, keywords)
+
+@app.post("/api/vaults/{vault_id}/ingest")
+async def ingest_vault(vault_id: str, data: dict, db: Session = Depends(database.get_db)):
+    mode = data.get("mode", "text")
+    if mode == "file":
+        filename = data.get("filename", "")
+        return await glue.ingest_source(db, vault_id, filename)
+    elif mode == "url":
+        url = data.get("url", "")
+        return await glue.ingest_url(db, vault_id, url)
+    else:
+        title = data.get("title", "Untitled")
+        content = data.get("content", "")
+        return await glue.ingest_text(db, vault_id, title, content)
+
+@app.post("/api/vaults/{vault_id}/query")
+async def query_vault(vault_id: str, data: dict, db: Session = Depends(database.get_db)):
+    question = data.get("question", "")
+    save = data.get("save", False)
+    if not question:
+        return {"error": "Missing question"}
+    return await glue.query_wiki(db, vault_id, question, save=save)
+
+@app.post("/api/vaults/{vault_id}/lint")
+async def lint_vault(vault_id: str, db: Session = Depends(database.get_db)):
+    return await glue.lint_wiki(db, vault_id)
+
+# ── Git endpoints ─────────────────────────────────────────────────────────────
+
+@app.get("/api/vaults/{vault_id}/git/status")
+def vault_git_status(vault_id: str):
+    return glue.git_status(vault_id)
+
+@app.post("/api/vaults/{vault_id}/git/commit")
+def vault_git_commit(vault_id: str, data: dict):
+    message = data.get("message", f"Wiki update {glue.today()}")
+    return {"result": glue.git_commit(vault_id, message)}
+
+@app.get("/api/vaults/{vault_id}/git/log")
+def vault_git_log(vault_id: str, n: int = 20):
+    return {"log": glue.git_log(vault_id, n)}
+
+@app.get("/api/vaults/{vault_id}/git/diff")
+def vault_git_diff(vault_id: str):
+    return {"diff": glue.git_diff_full(vault_id)}
+
+@app.post("/api/vaults/{vault_id}/git/revert")
+def vault_git_revert(vault_id: str, data: dict):
+    ref = data.get("ref", "")
+    if not ref:
+        return {"error": "Missing commit ref"}
+    return {"result": glue.git_revert(vault_id, ref)}
+
+@app.post("/api/vaults/{vault_id}/git/discard")
+def vault_git_discard(vault_id: str, data: dict):
+    filepath = data.get("filepath", "")
+    if not filepath:
+        return {"error": "Missing filepath"}
+    return {"result": glue.git_discard(vault_id, filepath)}
+
+@app.post("/api/vaults/{vault_id}/git/stage")
+def vault_git_stage(vault_id: str):
+    return {"result": glue.git_stage_all(vault_id)}
+
+# ── Raw inbox endpoints ───────────────────────────────────────────────────────
+
+@app.get("/api/vaults/{vault_id}/raw/inbox")
+def get_vault_inbox(vault_id: str):
+    return glue.list_inbox(vault_id)
+
+@app.get("/api/vaults/{vault_id}/raw/library")
+def get_vault_library(vault_id: str):
+    return glue.list_library(vault_id)
+
+@app.post("/api/vaults/{vault_id}/raw/inbox")
+async def upload_to_inbox(vault_id: str, data: dict):
+    """Upload text content as a file to the inbox."""
+    filename = data.get("filename", "")
+    content = data.get("content", "")
+    if not filename or not content:
+        return {"error": "Missing filename or content"}
+    inbox_path = glue.raw_path(vault_id) / "inbox" / filename
+    inbox_path.parent.mkdir(parents=True, exist_ok=True)
+    inbox_path.write_text(content, encoding="utf-8")
+    return {"status": "uploaded", "filename": filename}
+
 
 if __name__ == "__main__":
     import uvicorn

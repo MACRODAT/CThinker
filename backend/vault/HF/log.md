@@ -73,3 +73,22 @@ Key result:
 Open questions:
 - Whether to keep the report format purely markdown or add frontmatter later
 - Whether HF should also define a weekly review template now
+
+## [2026-04-16] query | first real HF daily report
+
+Created the first real dated HF daily report from the user's stated condition on April 16, 2026.
+
+Pages added or updated:
+- [[wiki/queries/2026-04-16-hf-daily-report]]
+- [[index]]
+
+Key result:
+- HF now has a live daily report in addition to the abstract template and example.
+
+Open questions:
+- Whether afternoon sleep should be treated as a nap or the main sleep period for this reporting style
+- Whether caffeine timing should become a standard tracked metric
+
+## [2026-04-16] query | what's HF
+- Saved: `wiki/queries/2026-04-16-what-s-hf.md`
+- Pages: 

@@ -770,6 +770,7 @@ export default function App() {
     { id: "departments", label: "Departments", icon: "🏢" },
     { id: "chats", label: "Agent Chats", icon: "🗯️" },
     { id: "threads", label: "Threads", icon: "💬" },
+    { id: "glue", label: "Glue (Wiki)", icon: "🧠" },
     { id: "tools", label: "Agent Tools", icon: "🛠️" },
     { id: "marketplace", label: "Marketplace", icon: "🛒" },
     { id: "founder", label: "Economy", icon: "👑" },
@@ -852,9 +853,10 @@ export default function App() {
         <div style={{ flex: 1, overflowY: "auto", padding: 24 }}>
           {view === "dashboard" && <Dashboard state={state} />}
           {view === "agents" && <Agents state={state} createThread={createThread} updateAgent={updateAgent} setView={setView} />}
-          {view === "departments" && <Departments state={state} />}
+          {view === "departments" && <Departments state={state} updateAgent={updateAgent} />}
           {view === "chats" && <Chats state={state} fetchState={fetchState} />}
           {view === "threads" && <Threads state={state} approveThread={approveThread} rejectThread={rejectThread} deleteThread={deleteThread} updateThread={updateThread} postMessage={postMessage} />}
+          {view === "glue" && <Glue state={state} fetchState={fetchState} />}
           {view === "tools" && <Tools state={state} fetchState={fetchState} />}
           {view === "marketplace" && <Marketplace agents={Object.values(state.agents || {})} />}
           {view === "founder" && <Founder state={state} addDeptPoints={addDeptPoints} addAgentPoints={addAgentPoints} />}
@@ -1277,6 +1279,29 @@ function Agents({ state, createThread, updateAgent, setView }) {
                     )}
                   </div>
 
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                    <div>
+                      <label style={{ display: "block", fontSize: 11, marginBottom: 6, color: "#6b7280" }}>Lifecycle Status</label>
+                      <button 
+                        className={`btn ${agent.is_halted ? 'btn-soft' : 'btn-primary'}`} 
+                        onClick={() => updateAgent(sel, { is_halted: !agent.is_halted })}
+                        style={{ width: "100%", fontSize: 11, background: agent.is_halted ? "#450a0a" : "#064e3b", color: agent.is_halted ? "#fca5a5" : "#34d399", borderColor: agent.is_halted ? "#991b1b" : "#059669" }}
+                      >
+                        {agent.is_halted ? "▶ RESUME AGENT" : "⏸ SUSPEND AGENT"}
+                      </button>
+                    </div>
+                    <div>
+                      <label style={{ display: "block", fontSize: 11, marginBottom: 6, color: "#6b7280" }}>Tick Interval (s)</label>
+                      <input 
+                        type="number" 
+                        min="1" 
+                        value={agent.ticks} 
+                        onChange={e => updateAgent(sel, { ticks: parseInt(e.target.value) || 1 })} 
+                        style={{ width: "100%", background: "#0b0c10", border: "1px solid #1e222d", color: "#fff", padding: "6px 10px", borderRadius: 6 }}
+                      />
+                    </div>
+                  </div>
+
                   <div>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, marginTop: 4 }}>
                       <label style={{ fontSize: 11, color: "#6b7280" }}>Memory Scratchpad</label>
@@ -1496,6 +1521,391 @@ function Agenting({ state, updateAgent }) {
             </div>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ── Glue (Persistent Wiki) ──────────────────────────────────────────────────
+function Glue({ state, fetchState }) {
+  const [vaults, setVaults] = useState([]);
+  const [selVault, setSelVault] = useState(null);
+  const [pages, setPages] = useState([]);
+  const [selPage, setSelPage] = useState(null); // { path: string, content: string }
+  const [isEditing, setIsEditing] = useState(false);
+  const [editContent, setEditContent] = useState("");
+  const [activeTab, setActiveTab] = useState("browse"); // browse | search | ingest | query | git
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchRes, setSearchRes] = useState([]);
+  const [gitStatus, setGitStatus] = useState(null);
+  const [gitLog, setGitLog] = useState([]);
+  const [gitDiff, setGitDiff] = useState("");
+  const [ingestForm, setIngestForm] = useState({ mode: "text", title: "", content: "", url: "", filename: "" });
+  const [queryInput, setQueryInput] = useState("");
+  const [queryRes, setQueryRes] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    fetchVaults();
+  }, []);
+
+  useEffect(() => {
+    if (selVault) {
+      loadPages();
+      loadGitStatus();
+    }
+  }, [selVault]);
+
+  const fetchVaults = async () => {
+    const r = await fetch(`${API_BASE}/vaults`);
+    const data = await r.json();
+    setVaults(data);
+    if (data.length > 0 && !selVault) setSelVault(data[0]);
+  };
+
+  const loadPages = async (cat = null) => {
+    if (!selVault) return;
+    setLoading(true);
+    const url = `${API_BASE}/vaults/${selVault}/pages` + (cat ? `?category=${cat}` : "");
+    const r = await fetch(url);
+    const data = await r.json();
+    setPages(data);
+    setLoading(false);
+  };
+
+  const loadPage = async (path) => {
+    setLoading(true);
+    const r = await fetch(`${API_BASE}/vaults/${selVault}/pages/${path}`);
+    const data = await r.json();
+    setSelPage({ path, ...data });
+    setEditContent(data.content || "");
+    setIsEditing(false);
+    setLoading(false);
+  };
+
+  const savePage = async () => {
+    if (!selVault || !selPage) return;
+    setLoading(true);
+    await fetch(`${API_BASE}/vaults/${selVault}/pages/${selPage.path}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: editContent })
+    });
+    setIsEditing(false);
+    loadPage(selPage.path);
+    loadGitStatus();
+  };
+
+  const doSearch = async () => {
+    if (!searchQuery.trim()) return;
+    setLoading(true);
+    const r = await fetch(`${API_BASE}/vaults/${selVault}/search`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ keywords: searchQuery })
+    });
+    setSearchRes(await r.json());
+    setLoading(false);
+  };
+
+  const doQuery = async () => {
+    if (!queryInput.trim()) return;
+    setLoading(true);
+    const r = await fetch(`${API_BASE}/vaults/${selVault}/query`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question: queryInput, save: true })
+    });
+    setQueryRes(await r.json());
+    setLoading(false);
+    loadPages("queries");
+  };
+
+  const doIngest = async () => {
+    setLoading(true);
+    await fetch(`${API_BASE}/vaults/${selVault}/ingest`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(ingestForm)
+    });
+    setLoading(false);
+    setIngestForm({ mode: "text", title: "", content: "", url: "", filename: "" });
+    loadPages("sources");
+    loadGitStatus();
+  };
+
+  const loadGitStatus = async () => {
+    if (!selVault) return;
+    const [stat, log, diff] = await Promise.all([
+      fetch(`${API_BASE}/vaults/${selVault}/git/status`).then(r => r.json()),
+      fetch(`${API_BASE}/vaults/${selVault}/git/log`).then(r => r.json()),
+      fetch(`${API_BASE}/vaults/${selVault}/git/diff`).then(r => r.json()),
+    ]);
+    setGitStatus(stat);
+    setGitLog(log.log || []);
+    setGitDiff(diff.diff || "");
+  };
+
+  const commitChanges = async (msg) => {
+    const text = msg || `Wiki update ${new Date().toISOString()}`;
+    await fetch(`${API_BASE}/vaults/${selVault}/git/commit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: text })
+    });
+    loadGitStatus();
+  };
+
+  const discardFile = async (path) => {
+    if (!window.confirm(`Discard all unstaged changes to ${path}?`)) return;
+    await fetch(`${API_BASE}/vaults/${selVault}/git/discard`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filepath: path })
+    });
+    loadGitStatus();
+    if (selPage?.path === path) loadPage(path);
+  };
+
+  const inputStyle = { background: "#0b0c10", border: "1px solid #1e222d", color: "#e2e8f0", borderRadius: 6, padding: "8px 12px", fontSize: 12, width: "100%", outline: "none" };
+
+  return (
+    <div style={{ display: "flex", gap: 20, height: "calc(100vh - 120px)" }}>
+      {/* Sidebar: Navigation + Tree */}
+      <div style={{ width: 260, flexShrink: 0, display: "flex", flexDirection: "column", gap: 12 }}>
+        <div className="card glass">
+          <div className="card-body" style={{ padding: 12 }}>
+            <label style={{ fontSize: 10, color: "#4b5563", fontWeight: 700, letterSpacing: 1, marginBottom: 8, display: "block" }}>VAULT SELECTOR</label>
+            <select value={selVault || ""} onChange={e => setSelVault(e.target.value)} style={{ width: "100%", fontSize: 12, border: "1px solid #3730a3", color: "#a5b4fc", background: "#1e1b4b11" }}>
+              {vaults.map(v => <option key={v} value={v}>{v}</option>)}
+            </select>
+            <button 
+              onClick={() => {
+                const name = window.prompt("New Vault ID (e.g. PROJECT_X):");
+                if (name) {
+                  fetch(`${API_BASE}/vaults`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ id: name })
+                  }).then(() => fetchVaults());
+                }
+              }}
+              style={{ width: "100%", marginTop: 8, fontSize: 9, padding: "4px 0", background: "none", border: "1px dashed #3730a3", color: "#a5b4fc", borderRadius: 4, cursor: "pointer" }}
+            >
+              + Create New Vault
+            </button>
+          </div>
+        </div>
+
+        <div className="card glass" style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+          <div style={{ display: "flex", borderBottom: "1px solid #1a1d24" }}>
+            {[
+              { id: "browse", icon: "📁", label: "Wiki" },
+              { id: "search", icon: "🔍", label: "Find" },
+              { id: "ingest", icon: "📥", label: "Add" },
+              { id: "git", icon: "🌿", label: "Git" }
+            ].map(t => (
+              <button key={t.id} onClick={() => setActiveTab(t.id)}
+                style={{
+                  flex: 1, padding: "10px 0", fontSize: 10, background: activeTab === t.id ? "#1e1b4b" : "transparent",
+                  color: activeTab === t.id ? "#818cf8" : "#4b5563", border: "none", cursor: "pointer", transition: "all 0.2s"
+                }} title={t.label}>
+                {t.icon}
+              </button>
+            ))}
+          </div>
+
+          <div style={{ flex: 1, overflowY: "auto", padding: 12 }}>
+            {activeTab === "browse" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                <div>
+                  <div style={{ fontSize: 10, color: "#6b7280", fontWeight: 700, marginBottom: 8, display: "flex", justifyContent: "space-between" }}>
+                    <span>COLLECTIONS</span>
+                    <button onClick={() => loadPages()} style={{ background: "none", border: "none", color: "#6366f1", fontSize: 9, cursor: "pointer" }}>↻</button>
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                    {["sources", "concepts", "entities", "syntheses", "queries"].map(c => (
+                      <button key={c} onClick={() => loadPages(c)}
+                        style={{ padding: "2px 6px", fontSize: 9, borderRadius: 4, background: "#11141a", border: "1px solid #1e222d", color: "#9ca3af", cursor: "pointer" }}>
+                        {c}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                  {pages.length === 0 && <div style={{ fontSize: 11, color: "#374151" }}>No pages found.</div>}
+                  {pages.map(p => {
+                    const parts = p.path.split('/');
+                    const name = parts[parts.length - 1];
+                    const depth = parts.length - 1;
+                    return (
+                      <div key={p.path}
+                        className={`wiki-tree-item ${selPage?.path === p.path ? 'active' : ''}`}
+                        onClick={() => loadPage(p.path)}
+                        style={{ paddingLeft: 8 + depth * 12 }}>
+                        {p.path.endsWith('.md') ? "📄 " : "📁 "} {name.replace('.md', '')}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {activeTab === "search" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <input placeholder="Keywords..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && doSearch()} style={inputStyle} />
+                  <button onClick={doSearch} className="btn btn-primary" style={{ padding: "0 10px" }}>Go</button>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  {searchRes.map(r => (
+                    <div key={r.path} className="wiki-tree-item" onClick={() => loadPage(r.path)} style={{ fontSize: 11, padding: 8, background: "#11141a" }}>
+                      <div style={{ color: "#818cf8", fontWeight: 600, marginBottom: 2 }}>{r.path}</div>
+                      <div style={{ fontSize: 10, opacity: 0.7, whiteSpace: "normal" }}>{r.snippets?.[0] || "..."}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {activeTab === "ingest" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <div style={{ display: "flex", gap: 4 }}>
+                  {["text", "url", "file"].map(m => (
+                    <button key={m} onClick={() => setIngestForm({ ...ingestForm, mode: m })}
+                      style={{ flex: 1, padding: "4px 0", fontSize: 9, borderRadius: 4, background: ingestForm.mode === m ? "#6366f1" : "transparent", border: "1px solid #2d3748", color: ingestForm.mode === m ? "#fff" : "#6b7280" }}>
+                      {m.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+                {ingestForm.mode === "text" && (
+                  <>
+                    <input placeholder="Title..." value={ingestForm.title} onChange={e => setIngestForm({ ...ingestForm, title: e.target.value })} style={inputStyle} />
+                    <textarea placeholder="Content..." rows={5} value={ingestForm.content} onChange={e => setIngestForm({ ...ingestForm, content: e.target.value })} style={inputStyle} />
+                  </>
+                )}
+                {ingestForm.mode === "url" && (
+                  <input placeholder="https://..." value={ingestForm.url} onChange={e => setIngestForm({ ...ingestForm, url: e.target.value })} style={inputStyle} />
+                )}
+                {ingestForm.mode === "file" && (
+                  <input placeholder="filename in inbox..." value={ingestForm.filename} onChange={e => setIngestForm({ ...ingestForm, filename: e.target.value })} style={inputStyle} />
+                )}
+                <button onClick={doIngest} disabled={loading} className="btn btn-primary" style={{ width: "100%" }}>{loading ? "Ingesting..." : "Execute Ingest"}</button>
+              </div>
+            )}
+
+            {activeTab === "git" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                <div>
+                  <div style={{ fontSize: 10, color: "#6b7280", fontWeight: 700, marginBottom: 8 }}>STAGED CHANGES</div>
+                  {gitStatus?.files?.filter(f => f.staged).map(f => (
+                    <div key={f.path} style={{ fontSize: 11, color: "#10b981", padding: "2px 0" }}>+ {f.path}</div>
+                  ))}
+                  <div style={{ fontSize: 10, color: "#6b7280", fontWeight: 700, marginTop: 12, marginBottom: 8 }}>UNSTAGED</div>
+                  {gitStatus?.files?.filter(f => !f.staged).map(f => (
+                    <div key={f.path} style={{ fontSize: 11, color: "#f87171", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span>M {f.path}</span>
+                      <button onClick={() => discardFile(f.path)} style={{ background: "none", border: "none", color: "#ef4444", fontSize: 9, cursor: "pointer" }}>✖</button>
+                    </div>
+                  ))}
+                </div>
+                <button onClick={() => commitChanges()} className="btn btn-primary glass" style={{ borderColor: "#10b98155", color: "#10b981", background: "#064e3b11" }}>Commit Staged</button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Main Content: Viewer / Query / Git Diff */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 16 }}>
+        {/* Top Header / Query Bar */}
+        <div className="card glass" style={{ padding: "8px 16px", display: "flex", alignItems: "center", gap: 12 }}>
+          <div className="recorder-pulse" style={{ opacity: loading ? 1 : 0.2 }} title={loading ? "Thinking..." : "Idle"}></div>
+          <input placeholder="Ask the Wiki..." value={queryInput} onChange={e => setQueryInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && doQuery()}
+            style={{ flex: 1, background: "none", border: "none", fontSize: 14, fontWeight: 500 }} />
+          <button className="btn btn-soft" onClick={doQuery} disabled={loading} style={{ borderRadius: 20, padding: "4px 16px" }}>Query</button>
+        </div>
+
+        {/* Content Area */}
+        <div style={{ flex: 1, position: "relative" }}>
+          {queryRes ? (
+            <div className="card" style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+              <div className="card-header">
+                <div style={{ fontSize: 14, fontWeight: 700, color: "#818cf8" }}>Result for: {queryInput}</div>
+                <button onClick={() => setQueryRes(null)} className="btn btn-ghost">✕</button>
+              </div>
+              <div className="card-body" style={{ flex: 1, overflowY: "auto", fontSize: 13, lineHeight: 1.6 }} dangerouslySetInnerHTML={{ __html: renderMd(queryRes.answer) }} />
+              {queryRes.sources && (
+                <div style={{ padding: 12, borderTop: "1px solid #1a1d24", background: "#0b0c10", display: "flex", gap: 8, overflowX: "auto" }}>
+                  {queryRes.sources.map(s => (
+                    <button key={s} onClick={() => { setQueryRes(null); loadPage(s); }} className="btn btn-soft" style={{ fontSize: 10, whiteSpace: "nowrap" }}>{s}</button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : activeTab === "git" ? (
+            <div className="card" style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+              <div style={{ display: "flex", background: "#0b0c10", borderBottom: "1px solid #1a1d24" }}>
+                <button className="btn-ghost" style={{ padding: "10px 20px", fontSize: 12, borderBottom: "2px solid #818cf8", color: "#818cf8" }}>Pending Diff</button>
+                <button className="btn-ghost" style={{ padding: "10px 20px", fontSize: 12 }}>History</button>
+              </div>
+              <div className="card-body" style={{ flex: 1, overflowY: "auto", padding: 0 }}>
+                <pre style={{ margin: 0, padding: 20, fontSize: 12, fontFamily: "'JetBrains Mono', monospace", lineHeight: 1.5 }}>
+                  {gitDiff.split('\n').map((l, i) => (
+                    <div key={i} className={l.startsWith('+') ? 'diff-add' : l.startsWith('-') ? 'diff-del' : ''}>{l}</div>
+                  ))}
+                  {!gitDiff && <div style={{ color: "#374151", textAlign: "center", marginTop: 40 }}>No differences to display.</div>}
+                </pre>
+              </div>
+            </div>
+          ) : selPage ? (
+            <div className="card" style={{ height: "100%", display: "flex", flexDirection: "column", border: isEditing ? "1px solid #6366f1" : "1px solid #1a1d24" }}>
+              <div className="card-header" style={{ padding: "8px 16px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontSize: 11, color: "#4b5563", fontWeight: 700 }}>{selPage.path}</span>
+                  {selPage.metadata?.category && <span style={{ fontSize: 9, padding: "1px 5px", background: "#1e1b4b", color: "#818cf8", borderRadius: 4 }}>{selPage.metadata.category}</span>}
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  {isEditing ? (
+                    <>
+                      <button onClick={() => setIsEditing(false)} className="btn btn-ghost" style={{ fontSize: 11 }}>Cancel</button>
+                      <button onClick={savePage} className="btn btn-primary" style={{ fontSize: 11 }}>Save Changes</button>
+                    </>
+                  ) : (
+                    <>
+                      <button onClick={() => setIsEditing(true)} className="btn btn-soft" style={{ fontSize: 11 }}>Edit</button>
+                      <button onClick={() => window.confirm("Delete page?") && fetch(`${API_BASE}/vaults/${selVault}/pages/${selPage.path}`, { method: "DELETE" }).then(() => { setSelPage(null); loadPages(); })} className="btn btn-ghost" style={{ fontSize: 11, color: "#ef4444" }}>Delete</button>
+                    </>
+                  )}
+                </div>
+              </div>
+              <div className="card-body" style={{ flex: 1, overflowY: "auto", padding: 0 }}>
+                {isEditing ? (
+                  <MarkdownEditor value={editContent} onChange={setEditContent} rows={30} />
+                ) : (
+                  <div className="md-viewer" style={{ padding: 30 }} dangerouslySetInnerHTML={{ __html: renderMd(selPage.content) }} />
+                )}
+              </div>
+              {selPage.backlinks?.length > 0 && !isEditing && (
+                <div style={{ padding: "12px 20px", borderTop: "1px solid #1a1d24", background: "#0b0c10" }}>
+                  <div style={{ fontSize: 10, color: "#4b5563", fontWeight: 700, marginBottom: 8 }}>BACKLINKS</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    {selPage.backlinks.map(b => (
+                      <button key={b} onClick={() => loadPage(b)} className="btn btn-soft" style={{ fontSize: 10 }}>{b}</button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#374151" }}>
+              <div style={{ fontSize: 48, marginBottom: 20 }}>🧠</div>
+              <div style={{ fontSize: 14, fontWeight: 600 }}>Wiki Workspace</div>
+              <div style={{ fontSize: 11 }}>Select a page or query the knowledge base</div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -1946,6 +2356,24 @@ function Threads({ state, approveThread, rejectThread, deleteThread, updateThrea
                 {rightTab === "properties" && (
                   <div style={{ flex: 1, overflowY: "auto", padding: 14, display: "flex", flexDirection: "column", gap: 14 }}>
 
+                    {/* Vault Link */}
+                    <div>
+                      <div style={{ fontSize: 10, fontWeight: 800, color: "#9ca3af", letterSpacing: 1, marginBottom: 8 }}>GLUE LINK</div>
+                      <select 
+                        value={thread.vault_id || ""} 
+                        onChange={e => updateThread(sel, { vault_id: e.target.value })}
+                        style={{ width: "100%", fontSize: 12, border: "1px solid #3730a3", color: "#a5b4fc", background: "#1e1b4b11" }}
+                      >
+                        <option value="">None (Standalone)</option>
+                        <option value="HF">HF (Health & Wellness)</option>
+                        <option value="ING">ING (Engineering)</option>
+                        <option value="STP">STP (Strategic Planning)</option>
+                        <option value="UIT">UIT (Useful Intel)</option>
+                        <option value="FIN">FIN (Financing)</option>
+                      </select>
+                      <div style={{ fontSize: 9, color: "#4b5563", marginTop: 4 }}>Messages from this thread will be logged to the linked vault index.</div>
+                    </div>
+
                     {/* Summary */}
                     <div>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
@@ -2262,7 +2690,7 @@ function Threads({ state, approveThread, rejectThread, deleteThread, updateThrea
 }
 
 // ── Departments ───────────────────────────────────────────────────────────────
-function Departments({ state }) {
+function Departments({ state, updateAgent }) {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 20 }}>
       {Object.entries(DEPT_META).map(([id, meta]) => {
@@ -2288,30 +2716,52 @@ function Departments({ state }) {
               {ceo && (
                 <div style={{ background: "#0a0b0e", border: `1px solid ${meta.color}44`, borderRadius: 8, padding: "10px 14px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <div>
+                    <div style={{ opacity: ceo.is_halted ? 0.5 : 1 }}>
                       <span style={{ fontSize: 10, fontWeight: 700, color: meta.color, letterSpacing: 1 }}>CEO  </span>
                       <span style={{ fontWeight: 600, color: "#fff", fontSize: 13 }}>{ceo.name_id}</span>
+                      {ceo.is_halted && <span style={{ fontSize: 9, marginLeft: 8, background: "#450a0a", color: "#fca5a5", padding: "1px 6px", borderRadius: 4, fontWeight: 700 }}>HALTED</span>}
                     </div>
-                    <span style={{ fontSize: 11, color: "#818cf8", background: "#1e1b4b", padding: "2px 8px", borderRadius: 4 }}>{ceo.mode}</span>
+                    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                      <button 
+                        onClick={() => updateAgent(ceo.id, { is_halted: !ceo.is_halted })}
+                        style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, padding: 0, opacity: 0.8 }}
+                        title={ceo.is_halted ? "Resume" : "Suspend"}
+                      >
+                        {ceo.is_halted ? "▶️" : "⏸️"}
+                      </button>
+                      <span style={{ fontSize: 11, color: "#818cf8", background: "#1e1b4b", padding: "2px 8px", borderRadius: 4 }}>{ceo.mode}</span>
+                    </div>
                   </div>
-                  <div style={{ display: "flex", gap: 16, marginTop: 6, fontSize: 11, color: "#6b7280" }}>
+                  <div style={{ display: "flex", gap: 16, marginTop: 6, fontSize: 11, color: "#6b7280", opacity: ceo.is_halted ? 0.5 : 1 }}>
                     <span>Wallet: <span style={{ color: "#10b981" }}>{ceo.wallet?.current ?? 0} pts</span></span>
                     <span>Ticks: {ceo.ticks}s</span>
                     {ceo.next_mode && <span style={{ color: "#6366f1" }}>→ {ceo.next_mode}</span>}
                   </div>
-                  {ceo.memory && <div style={{ marginTop: 6, fontSize: 11, color: "#4b5563", fontStyle: "italic" }}>💭 {ceo.memory.slice(0, 80)}</div>}
+                  {ceo.memory && <div style={{ marginTop: 6, fontSize: 11, color: "#4b5563", fontStyle: "italic", opacity: ceo.is_halted ? 0.5 : 1 }}>💭 {ceo.memory.slice(0, 80)}</div>}
                 </div>
               )}
               {members.length > 0 && <div style={{ fontSize: 10, color: "#374151", fontWeight: 600, letterSpacing: 1 }}>MEMBERS</div>}
               {members.map(a => (
                 <div key={a.id} style={{ background: "#0d0f14", border: "1px solid #1a1d24", borderRadius: 6, padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div>
-                    <div style={{ fontWeight: 500, color: "#e2e8f0", fontSize: 12 }}>{a.name_id}</div>
+                  <div style={{ opacity: a.is_halted ? 0.5 : 1 }}>
+                    <div style={{ fontWeight: 500, color: "#e2e8f0", fontSize: 12 }}>
+                      {a.name_id}
+                      {a.is_halted && <span style={{ fontSize: 8, marginLeft: 6, background: "#450a0a", color: "#fca5a5", padding: "1px 4px", borderRadius: 3, fontWeight: 700 }}>HALTED</span>}
+                    </div>
                     <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>
                       Wallet: <span style={{ color: "#10b981" }}>{a.wallet?.current ?? 0}</span> · Tick: {a.ticks}s
                     </div>
                   </div>
-                  <span style={{ fontSize: 11, color: "#9ca3af", background: "#1a1d24", padding: "2px 8px", borderRadius: 4 }}>{a.mode}</span>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <button 
+                      onClick={() => updateAgent(a.id, { is_halted: !a.is_halted })}
+                      style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, padding: 0, opacity: 0.8 }}
+                      title={a.is_halted ? "Resume" : "Suspend"}
+                    >
+                      {a.is_halted ? "▶️" : "⏸️"}
+                    </button>
+                    <span style={{ fontSize: 11, color: "#9ca3af", background: "#1a1d24", padding: "2px 8px", borderRadius: 4 }}>{a.mode}</span>
+                  </div>
                 </div>
               ))}
               {(dept.ledger?.log?.length > 0) && (

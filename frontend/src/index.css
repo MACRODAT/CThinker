@@ -197,3 +197,48 @@ input:focus, textarea:focus, select:focus {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+/* ── GLUE WIKI STYLES ─────────────────────────────────────────────────── */
+.wiki-tree-item {
+  color: #9ca3af;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  transition: all 0.1s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wiki-tree-item:hover {
+  background: #1a1d24;
+  color: #e2e8f0;
+}
+.wiki-tree-item.active {
+  background: #1e1b4b;
+  color: #818cf8;
+}
+
+.diff-add { color: #10b981; background: #064e3b33; }
+.diff-del { color: #f87171; background: #7f1d1d33; }
+
+.glass {
+  background: rgba(17, 20, 26, 0.7) !important;
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.05) !important;
+}
+
+.recorder-pulse {
+  width: 10px;
+  height: 10px;
+  background: #ef4444;
+  border-radius: 50%;
+  box-shadow: 0 0 0 rgba(239, 68, 68, 0.4);
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+  70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}

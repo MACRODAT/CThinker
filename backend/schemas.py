@@ -30,6 +30,7 @@ class SettingResponse(SettingBase):
 class ThreadCreate(ThreadBase):
     owner_agent_id: str
     ticket_id: Optional[str] = None
+    vault_id: Optional[str] = None
 
 class ThreadUpdate(BaseModel):
     topic: Optional[str] = None
@@ -39,6 +40,7 @@ class ThreadUpdate(BaseModel):
     favourite_color: Optional[str] = None
     color_theme: Optional[str] = None
     css_pattern: Optional[str] = None
+    vault_id: Optional[str] = None
 
 class ThreadResponse(ThreadBase):
     id: str
@@ -50,6 +52,7 @@ class ThreadResponse(ThreadBase):
     thread_goal: Optional[str] = None
     current_milestone: Optional[str] = None
     milestones_log: Optional[str] = "[]"
+    vault_id: Optional[str] = None
     favourite_color: Optional[str] = None
     color_theme: Optional[str] = None
     css_pattern: Optional[str] = None

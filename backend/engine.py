@@ -107,7 +107,7 @@ class SimEngine:
         db: Session = SessionLocal()
         try:
             agents = db.query(Agent).all()
-            ticking_agents = [a for a in agents if a.ticks > 0 and self.counter % a.ticks == 0]
+            ticking_agents = [a for a in agents if not a.is_halted and a.ticks > 0 and self.counter % a.ticks == 0]
             print(ticking_agents)
             # Broadcast heartbeat every second (lightweight – no DB write)
             await self.broadcast({"type": "heartbeat", "counter": self.counter})
@@ -1175,6 +1175,7 @@ class SimEngine:
                 # f_status = args[0].strip().upper() if len(args) > 0 and args[0].strip().lower() != "none" else None
                 f_dept   = args[0].strip().upper() if len(args) > 0 and args[0].strip() else None
                 f_owner  = args[1].strip().upper() if len(args) > 1 and args[1].strip() else None
+                f_none  = args[2].strip().upper() if len(args) > 2 and args[2].strip() else None # format to just data, no prompt
                 
                 q = db.query(Thread)
                 # if f_status: q = q.filter(Thread.status == f_status)
@@ -1661,6 +1662,249 @@ class SimEngine:
                           if ok else "TXN_FAILED: Insufficient funds")
             except Exception as e:
                 result = f"TXN_ERROR:{e}"
+
+        # ── GLUE Wiki Tools ────────────────────────────────────────────────────
+        elif tool_name == "glue_ingest":
+            try:
+                import glue
+                vid = args[0].strip() if args else "HF"
+                fname = args[1].strip() if len(args) > 1 else ""
+                if not fname:
+                    return "GLUE_INGEST_ERROR: Missing filename. Usage: glue_ingest | vault_id | filename"
+                res = await glue.ingest_source(db, vid, fname)
+                if "error" in res:
+                    result = f"GLUE_INGEST_ERROR: {res['error']}"
+                else:
+                    result = f"GLUE_INGEST_OK: {res.get('title','')} → {res.get('page','')}\nPreview: {res.get('preview','')}"
+            except Exception as e:
+                result = f"GLUE_INGEST_ERROR: {e}"
+
+        elif tool_name == "glue_ingest_text":
+            try:
+                import glue
+                vid = args[0].strip() if args else "HF"
+                title = args[1].strip() if len(args) > 1 else "Untitled"
+                content = "\n".join(args[2:]) if len(args) > 2 else ""
+                if not content:
+                    return "GLUE_INGEST_TEXT_ERROR: Missing content."
+                res = await glue.ingest_text(db, vid, title, content)
+                if "error" in res:
+                    result = f"GLUE_INGEST_TEXT_ERROR: {res['error']}"
+                else:
+                    result = f"GLUE_INGEST_TEXT_OK: {res.get('page','')}\nPreview: {res.get('preview','')}"
+            except Exception as e:
+                result = f"GLUE_INGEST_TEXT_ERROR: {e}"
+
+        elif tool_name == "glue_ingest_url":
+            try:
+                import glue
+                vid = args[0].strip() if args else "HF"
+                url = args[1].strip() if len(args) > 1 else ""
+                if not url:
+                    return "GLUE_INGEST_URL_ERROR: Missing URL."
+                res = await glue.ingest_url(db, vid, url)
+                if "error" in res:
+                    result = f"GLUE_INGEST_URL_ERROR: {res['error']}"
+                else:
+                    result = f"GLUE_INGEST_URL_OK: {res.get('title','')} → {res.get('page','')}\nPreview: {res.get('preview','')}"
+            except Exception as e:
+                result = f"GLUE_INGEST_URL_ERROR: {e}"
+
+        elif tool_name == "glue_query":
+            try:
+                import glue
+                vid = args[0].strip() if args else "HF"
+                question = args[1].strip() if len(args) > 1 else ""
+                save = len(args) > 2 and args[2].strip().lower() in ("y", "yes", "true", "save")
+                if not question:
+                    return "GLUE_QUERY_ERROR: Missing question."
+                res = await glue.query_wiki(db, vid, question, save=save)
+                pages = ", ".join(res.get("pages_used", [])[:3])
+                result = f"GLUE_ANSWER:\n{res.get('answer','')}\n\nPages: {pages}"
+                if res.get("saved_to"):
+                    result += f"\nSaved to: {res['saved_to']}"
+            except Exception as e:
+                result = f"GLUE_QUERY_ERROR: {e}"
+
+        elif tool_name == "glue_search":
+            try:
+                import glue
+                vid = args[0].strip() if args else "HF"
+                keywords = [k.strip() for k in args[1:] if k.strip()] if len(args) > 1 else []
+                if not keywords:
+                    return "GLUE_SEARCH_ERROR: Missing keywords."
+                hits = glue.search_wiki(vid, keywords)
+                if not hits:
+                    result = "GLUE_SEARCH: No results."
+                else:
+                    lines = [f"• {h['rel']} (hits:{h['hits']}): {h['snippet'][:120]}" for h in hits[:8]]
+                    result = f"GLUE_SEARCH ({len(hits)} results):\n" + "\n".join(lines)
+            except Exception as e:
+                result = f"GLUE_SEARCH_ERROR: {e}"
+
+        elif tool_name == "glue_read":
+            try:
+                import glue
+                vid = args[0].strip() if args else "HF"
+                page_rel = args[1].strip() if len(args) > 1 else ""
+                if not page_rel:
+                    return "GLUE_READ_ERROR: Missing page path."
+                res = glue.read_wiki_page(vid, page_rel)
+                if "error" in res:
+                    result = f"GLUE_READ_ERROR: {res['error']}"
+                else:
+                    # Truncate for small LLM context
+                    content = res["content"][:2000]
+                    links = ", ".join(res.get("links", [])[:10])
+                    result = f"GLUE_PAGE [{page_rel}]:\n{content}\n\nLinks: {links}"
+            except Exception as e:
+                result = f"GLUE_READ_ERROR: {e}"
+
+        elif tool_name == "glue_write":
+            try:
+                import glue
+                vid = args[0].strip() if args else "HF"
+                page_rel = args[1].strip() if len(args) > 1 else ""
+                content = "\n".join(args[2:]) if len(args) > 2 else ""
+                if not page_rel or not content:
+                    return "GLUE_WRITE_ERROR: Missing page path or content."
+                res = glue.write_wiki_page(vid, page_rel, content)
+                result = f"GLUE_WRITE_OK: {res['status']} → {res['rel']}"
+            except Exception as e:
+                result = f"GLUE_WRITE_ERROR: {e}"
+
+        elif tool_name == "glue_list":
+            try:
+                import glue
+                vid = args[0].strip() if args else "HF"
+                category = args[1].strip() if len(args) > 1 and args[1].strip() else None
+                pages = glue.list_wiki_pages(vid, category)
+                if not pages:
+                    result = "GLUE_LIST: No pages found."
+                else:
+                    lines = [f"• {p['rel']} ({p['category']}, {p['size']}b)" for p in pages[:20]]
+                    result = f"GLUE_LIST ({len(pages)} pages):\n" + "\n".join(lines)
+            except Exception as e:
+                result = f"GLUE_LIST_ERROR: {e}"
+
+        elif tool_name == "glue_follow":
+            try:
+                import glue
+                vid = args[0].strip() if args else "HF"
+                page_rel = args[1].strip() if len(args) > 1 else ""
+                if not page_rel:
+                    return "GLUE_FOLLOW_ERROR: Missing page path."
+                res = glue.follow_node(vid, page_rel)
+                content = res["content"][:1500]
+                links = ", ".join(res.get("links", [])[:10])
+                result = f"GLUE_NODE [{page_rel}]:\n{content}\n\nOutbound links: {links}"
+            except Exception as e:
+                result = f"GLUE_FOLLOW_ERROR: {e}"
+
+        elif tool_name == "glue_backlinks":
+            try:
+                import glue
+                vid = args[0].strip() if args else "HF"
+                page_rel = args[1].strip() if len(args) > 1 else ""
+                if not page_rel:
+                    return "GLUE_BACKLINKS_ERROR: Missing page path."
+                hits = glue.query_backlinks(vid, page_rel)
+                if not hits:
+                    result = f"GLUE_BACKLINKS [{page_rel}]: No pages link to this."
+                else:
+                    lines = [f"• {h['rel']} (via [[{h['link_text']}]])" for h in hits]
+                    result = f"GLUE_BACKLINKS [{page_rel}] ({len(hits)}):\n" + "\n".join(lines)
+            except Exception as e:
+                result = f"GLUE_BACKLINKS_ERROR: {e}"
+
+        elif tool_name == "glue_recent":
+            try:
+                import glue
+                vid = args[0].strip() if args else "HF"
+                n = int(args[1]) if len(args) > 1 else 10
+                pages = glue.query_recent(vid, n)
+                if not pages:
+                    result = "GLUE_RECENT: No pages."
+                else:
+                    lines = [f"• {p['rel']} ({p['modified'][:16]})" for p in pages]
+                    result = f"GLUE_RECENT ({len(pages)}):\n" + "\n".join(lines)
+            except Exception as e:
+                result = f"GLUE_RECENT_ERROR: {e}"
+
+        elif tool_name == "glue_lint":
+            try:
+                import glue
+                vid = args[0].strip() if args else "HF"
+                res = await glue.lint_wiki(db, vid)
+                if "error" in res:
+                    result = f"GLUE_LINT_ERROR: {res['error']}"
+                else:
+                    result = f"GLUE_LINT_OK: {res['issue_count']} issues found. Report: {res['report_path']}\n{res['preview']}"
+            except Exception as e:
+                result = f"GLUE_LINT_ERROR: {e}"
+
+        elif tool_name == "glue_git_status":
+            try:
+                import glue
+                vid = args[0].strip() if args else "HF"
+                res = glue.git_status(vid)
+                result = f"GLUE_GIT_STATUS:\n{res['status']}\n\nRecent commits:\n{res['log']}"
+            except Exception as e:
+                result = f"GLUE_GIT_ERROR: {e}"
+
+        elif tool_name == "glue_git_commit":
+            try:
+                import glue
+                vid = args[0].strip() if args else "HF"
+                msg = args[1].strip() if len(args) > 1 else f"Wiki update {glue.today()}"
+                res = glue.git_commit(vid, msg)
+                result = f"GLUE_GIT_COMMIT: {res}"
+            except Exception as e:
+                result = f"GLUE_GIT_ERROR: {e}"
+
+        elif tool_name == "glue_git_log":
+            try:
+                import glue
+                vid = args[0].strip() if args else "HF"
+                n = int(args[1]) if len(args) > 1 else 20
+                res = glue.git_log(vid, n)
+                result = f"GLUE_GIT_LOG:\n{res}"
+            except Exception as e:
+                result = f"GLUE_GIT_ERROR: {e}"
+
+        elif tool_name == "glue_git_diff":
+            try:
+                import glue
+                vid = args[0].strip() if args else "HF"
+                filepath = args[1].strip() if len(args) > 1 else None
+                res = glue.git_diff_full(vid)
+                result = f"GLUE_GIT_DIFF:\n{res[:3000]}"
+            except Exception as e:
+                result = f"GLUE_GIT_ERROR: {e}"
+
+        elif tool_name == "glue_git_revert":
+            try:
+                import glue
+                vid = args[0].strip() if args else "HF"
+                ref = args[1].strip() if len(args) > 1 else ""
+                if not ref:
+                    return "GLUE_GIT_REVERT_ERROR: Missing commit ref."
+                res = glue.git_revert(vid, ref)
+                result = f"GLUE_GIT_REVERT: {res}"
+            except Exception as e:
+                result = f"GLUE_GIT_ERROR: {e}"
+
+        elif tool_name == "glue_git_discard":
+            try:
+                import glue
+                vid = args[0].strip() if args else "HF"
+                filepath = args[1].strip() if len(args) > 1 else ""
+                if not filepath:
+                    return "GLUE_GIT_DISCARD_ERROR: Missing filepath."
+                res = glue.git_discard(vid, filepath)
+                result = f"GLUE_GIT_DISCARD: {res}"
+            except Exception as e:
+                result = f"GLUE_GIT_ERROR: {e}"
 
         # ── fallback: check DB for registered tools ────────────────────────────
         else:

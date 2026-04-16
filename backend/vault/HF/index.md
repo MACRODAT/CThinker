@@ -36,8 +36,10 @@ This is the navigation layer for the vault. Read this file first before explorin
 
 ## Queries
 
+- [[wiki/queries/2026-04-16-hf-daily-report]] - First real HF daily report based on the user's stated condition on April 16, 2026.
 - [[wiki/queries/2026-04-16-first-hf-daily-report-example]] - Worked example showing how an HF daily report should look in practice.
 
+- [[wiki/queries/2026-04-16-what-s-hf.md]] — what's HF
 ## Meta
 
 - [[wiki/meta/folder-conventions]] - Canonical folder taxonomy and page placement rules for this vault.

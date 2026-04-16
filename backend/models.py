@@ -42,6 +42,7 @@ class Agent(Base):
     user_prompt = Column(Text, default="")
     mode = Column(String, default="custom")
     next_mode = Column(String, nullable=True)
+    is_halted = Column(Boolean, default=False)
     memory = Column(String, default="")
     department = relationship("Department", back_populates="agents")
     prompts = relationship("AgentPrompt", back_populates="agent", cascade="all, delete-orphan")
@@ -78,6 +79,7 @@ class Thread(Base):
     thread_goal = Column(Text, nullable=True)
     current_milestone = Column(Text, nullable=True)
     milestones_log = Column(Text, default="[]")
+    vault_id = Column(String, nullable=True)  # GLUE wiki vault link
     owner_department = relationship("Department", back_populates="threads")
     collaborators = relationship("ThreadCollaborator", back_populates="thread")
 
