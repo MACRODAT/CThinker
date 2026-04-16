@@ -774,7 +774,7 @@ export default function App() {
     { id: "marketplace", label: "Marketplace", icon: "🛒" },
     { id: "founder", label: "Economy", icon: "👑" },
     { id: "tickets", label: "Tickets", icon: "🎟️" },
-    { id: "prompts", label: "Prompt Design", icon: "✨" },
+    { id: "agenting", label: "Agenting", icon: "🧠" },
     { id: "logger", label: "System Logger", icon: "📋" },
     { id: "settings", label: "Settings", icon: "⚙️" },
   ];
@@ -859,7 +859,7 @@ export default function App() {
           {view === "marketplace" && <Marketplace agents={Object.values(state.agents || {})} />}
           {view === "founder" && <Founder state={state} addDeptPoints={addDeptPoints} addAgentPoints={addAgentPoints} />}
           {view === "tickets" && <Tickets state={state} fetchState={fetchState} />}
-          {view === "prompts" && <Prompts state={state} updatePrompt={updatePrompt} />}
+          {view === "agenting" && <Agenting state={state} updateAgent={updateAgent} />}
           {view === "logger" && <Logger liveLogs={logs} state={state} />}
           {view === "settings" && <Settings state={state} updateSetting={updateSetting} />}
         </div>
@@ -1159,254 +1159,6 @@ const PARSER_FORMAT_VARS = [
 ];
 const CAT_COLORS = { tickets: "#10b981", invitations: "#818cf8", quests: "#f59e0b" };
 
-function PromptParser({ state }) {
-  const [prompt, setPrompt] = useState("");
-  const [agentId, setAgentId] = useState("");
-  const [threadId, setThreadId] = useState("");
-  const [parsed, setParsed] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [showSug, setShowSug] = useState(false);
-  const [sugFilter, setSugFilter] = useState("");
-  const taRef = useRef(null);
-
-  const agents = Object.values(state.agents || {});
-  const threads = Object.values(state.threads || {}).filter(t => t.aim !== "Chat");
-
-  // ── Autocomplete trigger ──────────────────────────────────────────────────
-  const handleChange = (e) => {
-    const val = e.target.value;
-    setPrompt(val);
-    const pos = e.target.selectionStart;
-    const before = val.slice(0, pos);
-    const lo = before.lastIndexOf("{{");
-    const lc = before.lastIndexOf("}}");
-    if (lo > lc) { setSugFilter(before.slice(lo + 2)); setShowSug(true); }
-    else { setShowSug(false); }
-  };
-
-  // ── Insert helpers ────────────────────────────────────────────────────────
-  const insertAt = (snippet) => {
-    const ta = taRef.current;
-    const pos = ta?.selectionStart ?? prompt.length;
-    const before = prompt.slice(0, pos);
-    const lo = before.lastIndexOf("{{");
-    const lc = before.lastIndexOf("}}");
-    const start = (lo > lc) ? lo : pos;
-    setPrompt(prompt.slice(0, start) + snippet + prompt.slice(pos));
-    setShowSug(false);
-    setTimeout(() => { ta?.focus(); }, 10);
-  };
-
-  const insertPlaceholder = (key) => insertAt(`{{${key}}}`);
-  const insertConditional = (key) => insertAt(
-    `{{${key} ??\n- Value if TRUE\n- Value if FALSE\n}}`
-  );
-  const insertFormatVar = (key) => {
-    const ta = taRef.current;
-    const pos = ta?.selectionStart ?? prompt.length;
-    setPrompt(p => p.slice(0, pos) + `{${key}}` + p.slice(pos));
-  };
-
-  // ── Parse ─────────────────────────────────────────────────────────────────
-  const parsePrompt = async () => {
-    if (!prompt.trim() || !agentId) return;
-    setLoading(true); setParsed(null);
-    try {
-      const r = await fetch(`${API_BASE}/debug/parse-prompt`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, agent_id: agentId, thread_id: threadId || null }),
-      });
-      setParsed(await r.json());
-    } catch (e) { setParsed({ error: e.message }); }
-    setLoading(false);
-  };
-
-  const filtered = PARSER_PLACEHOLDERS.filter(p =>
-    p.key.toLowerCase().includes(sugFilter.toLowerCase())
-  );
-
-  const chipSt = (col) => ({
-    fontSize: 10, padding: "3px 8px", cursor: "pointer", borderRadius: 4,
-    background: col + "18", border: `1px solid ${col}55`, color: col,
-    fontFamily: "monospace", userSelect: "none",
-  });
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-
-      {/* ── Controls row ── */}
-      <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
-        <div style={{ flex: "1 1 200px" }}>
-          <label style={{ fontSize: 10, color: "#6b7280", fontWeight: 700, letterSpacing: 1, display: "block", marginBottom: 5 }}>EXECUTE AS AGENT *</label>
-          <select value={agentId} onChange={e => setAgentId(e.target.value)} style={{ width: "100%" }}>
-            <option value="">— select agent —</option>
-            {agents.map(a => <option key={a.id} value={a.id}>{a.name_id} ({a.department || "no dept"}) — {a.wallet?.current}pt</option>)}
-          </select>
-        </div>
-        <div style={{ flex: "1 1 200px" }}>
-          <label style={{ fontSize: 10, color: "#6b7280", fontWeight: 700, letterSpacing: 1, display: "block", marginBottom: 5 }}>THREAD CONTEXT (optional)</label>
-          <select value={threadId} onChange={e => setThreadId(e.target.value)} style={{ width: "100%" }}>
-            <option value="">— none —</option>
-            {threads.map(t => <option key={t.id} value={t.id}>{t.id} · {t.topic.slice(0, 35)}</option>)}
-          </select>
-        </div>
-        <button className="btn btn-primary" onClick={parsePrompt}
-          disabled={loading || !agentId || !prompt.trim()}
-          style={{ minWidth: 120, height: 36, flexShrink: 0 }}>
-          {loading ? "⏳ Parsing…" : "▶ Parse Prompt"}
-        </button>
-        <button className="btn btn-soft" onClick={() => { setPrompt(""); setParsed(null); }}
-          style={{ height: 36, flexShrink: 0, fontSize: 11 }}>
-          Clear
-        </button>
-      </div>
-
-      {/* ── Placeholder helper chips ── */}
-      <div style={{ background: "#0a0b0e", border: "1px solid #1a1d24", borderRadius: 8, padding: 16 }}>
-        <div style={{ fontSize: 10, color: "#6b7280", fontWeight: 700, letterSpacing: 1, marginBottom: 10 }}>
-          DOUBLE-BRACE PLACEHOLDERS — click to insert at cursor
-        </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
-          {PARSER_PLACEHOLDERS.map(p => (
-            <span key={p.key} style={{ display: "inline-flex", gap: 3 }}>
-              <button onClick={() => insertPlaceholder(p.key)} title={p.desc} style={chipSt(CAT_COLORS[p.cat])}>
-                {`{{${p.key}}}`}
-              </button>
-              {p.conditional && (
-                <button onClick={() => insertConditional(p.key)} title={`Insert conditional block for ${p.key}`}
-                  style={{ ...chipSt("#64748b"), fontSize: 9, padding: "3px 6px" }}>
-                  ??
-                </button>
-              )}
-            </span>
-          ))}
-        </div>
-        <div style={{ fontSize: 10, color: "#6b7280", fontWeight: 700, letterSpacing: 1, marginBottom: 8 }}>
-          SINGLE-BRACE FORMAT VARIABLES
-        </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-          {PARSER_FORMAT_VARS.map(v => (
-            <button key={v.key} onClick={() => insertFormatVar(v.key)} title={v.desc}
-              style={{
-                fontSize: 10, padding: "3px 8px", cursor: "pointer", borderRadius: 4,
-                background: "#0a1f0a", border: "1px solid #166534", color: "#86efac",
-                fontFamily: "monospace", userSelect: "none"
-              }}>
-              {`{${v.key}}`}
-            </button>
-          ))}
-        </div>
-        <div style={{ marginTop: 10, fontSize: 10, color: "#374151" }}>
-          Conditional syntax: <code style={{ color: "#a5b4fc" }}>{"{{KEY ??"}</code>
-          <code style={{ color: "#86efac" }}>{" \\n- TRUE value\\n- FALSE value\\n"}</code>
-          <code style={{ color: "#a5b4fc" }}>{"}}"}  </code>
-          · Use the <strong style={{ color: "#9ca3af" }}>??</strong> button next to any boolean placeholder to insert one.
-        </div>
-      </div>
-
-      {/* ── Editor + Output split ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, alignItems: "start" }}>
-        {/* Input textarea */}
-        <div style={{ position: "relative" }}>
-          <div style={{ fontSize: 10, color: "#9ca3af", fontWeight: 700, letterSpacing: 1, marginBottom: 6 }}>
-            PROMPT INPUT — type <code style={{ color: "#a5b4fc" }}>{"{{"}</code> for autocomplete
-          </div>
-          <textarea
-            ref={taRef}
-            value={prompt}
-            onChange={handleChange}
-            onBlur={() => setTimeout(() => setShowSug(false), 550)}
-            placeholder={"Enter prompt text here…\n\nExample:\nHello {name}, you have {wallet} pts.\n{{available_tickets_exist ??\n- Tickets available: {{available_tickets}}\n- No tickets right now.\n}}"}
-            style={{
-              width: "100%", height: 340, fontFamily: "'JetBrains Mono', monospace",
-              fontSize: 12, resize: "vertical", background: "#0a0b0e",
-              border: "1px solid #1e222d", color: "#d4d8e8", padding: 12,
-              borderRadius: 8, lineHeight: 1.65, outline: "none",
-            }}
-          />
-          {/* Autocomplete dropdown */}
-          {showSug && filtered.length > 0 && (
-            <div style={{
-              position: "absolute", bottom: "calc(100% - 338px)", left: 0, width: "100%",
-              background: "#11141a", border: "1px solid #6366f1", borderRadius: 8,
-              zIndex: 200, maxHeight: 200, overflowY: "auto",
-              boxShadow: "0 8px 32px rgba(0,0,0,0.7)",
-            }}>
-              {filtered.map(p => (
-                <div key={p.key} onMouseDown={() => insertPlaceholder(p.key)}
-                  style={{
-                    padding: "8px 12px", cursor: "pointer", borderBottom: "1px solid #1a1d24",
-                    display: "flex", justifyContent: "space-between", alignItems: "center"
-                  }}
-                  onMouseEnter={e => e.currentTarget.style.background = "#1e1b4b"}
-                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                  <span style={{ fontFamily: "monospace", fontSize: 12, color: CAT_COLORS[p.cat] || "#a5b4fc" }}>
-                    {`{{${p.key}}}`}
-                  </span>
-                  <span style={{ fontSize: 10, color: "#6b7280" }}>{p.desc}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Parsed output */}
-        <div>
-          <div style={{ fontSize: 10, color: "#9ca3af", fontWeight: 700, letterSpacing: 1, marginBottom: 6 }}>
-            PARSED OUTPUT {parsed?.agent && <span style={{ color: "#6366f1", fontWeight: 400 }}>— as {parsed.agent}</span>}
-            {parsed?.thread_context && <span style={{ color: "#f59e0b", fontWeight: 400 }}> · {parsed.thread_context}</span>}
-          </div>
-          <div style={{
-            height: 340, overflowY: "auto", background: "#040506",
-            border: `1px solid ${parsed?.error ? "#ef4444" : "#1a1d24"}`,
-            borderRadius: 8, padding: 12, fontFamily: "'JetBrains Mono', monospace",
-            fontSize: 12, color: "#9ca3af", lineHeight: 1.65,
-            whiteSpace: "pre-wrap", wordBreak: "break-word",
-          }}>
-            {!parsed && !loading && <span style={{ color: "#374151", fontStyle: "italic" }}>Parsed output will appear here…</span>}
-            {loading && <span style={{ color: "#6366f1" }}>Resolving placeholders…</span>}
-            {parsed?.error && <span style={{ color: "#ef4444" }}>⚠ {parsed.error}</span>}
-            {parsed?.parsed}
-          </div>
-
-          {/* Diagnostics */}
-          {parsed && !parsed.error && (
-            <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
-              {parsed.placeholders_found?.length > 0 && (
-                <div style={{ fontSize: 10, color: "#6b7280" }}>
-                  <span style={{ color: "#818cf8", fontWeight: 700 }}>Placeholders resolved: </span>
-                  {parsed.placeholders_found.map(k => (
-                    <code key={k} style={{ marginRight: 4, color: "#a5b4fc", background: "#1e1b4b", padding: "1px 5px", borderRadius: 3 }}>{`{{${k}}}`}</code>
-                  ))}
-                </div>
-              )}
-              {parsed.format_vars_found?.length > 0 && (
-                <div style={{ fontSize: 10, color: "#6b7280" }}>
-                  <span style={{ color: "#86efac", fontWeight: 700 }}>Format vars: </span>
-                  {parsed.format_vars_found.map(k => (
-                    <code key={k} style={{ marginRight: 4, color: "#86efac", background: "#0a1f0a", padding: "1px 5px", borderRadius: 3 }}>{`{${k}}`}</code>
-                  ))}
-                </div>
-              )}
-              {parsed.parse_errors?.length > 0 && (
-                <div style={{ fontSize: 10, color: "#ef4444" }}>
-                  ⚠ {parsed.parse_errors.join("; ")}
-                </div>
-              )}
-              <button className="btn btn-soft"
-                onClick={() => navigator.clipboard.writeText(parsed.parsed || "")}
-                style={{ fontSize: 10, padding: "3px 10px", alignSelf: "flex-start", marginTop: 2 }}>
-                📋 Copy Parsed
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 function Dashboard({ state }) {
   return (
@@ -1458,7 +1210,7 @@ function Agents({ state, createThread, updateAgent, setView }) {
   const agent = sel ? state.agents[sel] : null;
 
   useEffect(() => {
-    if (agent) setDraft({ custom_prompt: agent.custom_prompt || "", memory: agent.memory || "" });
+    if (agent) setDraft({ memory: agent.memory || "" });
   }, [sel]);
 
   const updateDraft = (field, val) => {
@@ -1518,26 +1270,11 @@ function Agents({ state, createThread, updateAgent, setView }) {
                   <div>
                     <label style={{ display: "block", fontSize: 11, marginBottom: 6, color: "#6b7280" }}>Operating Mode</label>
                     <select value={agent.mode} onChange={e => updateAgent(sel, { mode: e.target.value })} style={{ width: "100%" }}>
-                      {Object.keys(state.prompts).map(k => <option key={k} value={k}>{k}</option>)}
+                      {["Creator", "Points Accounter", "Investor", "Custom"].map(k => <option key={k} value={k}>{k}</option>)}
                     </select>
                     {agent.next_mode && (
                       <div style={{ fontSize: 11, color: "#6366f1", marginTop: 6 }}>→ Self-selecting: <strong>{agent.next_mode}</strong></div>
                     )}
-                  </div>
-
-                  <div>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                      <label style={{ fontSize: 11, color: "#6b7280" }}>Personal Directives (markdown)</label>
-                      <button className="btn btn-soft" onClick={() => handleApply("custom_prompt")} style={{ fontSize: 10, padding: "2px 8px" }}>
-                        {savedField === "custom_prompt" ? "✓ Saved!" : "Save Directives"}
-                      </button>
-                    </div>
-                    <MarkdownEditor
-                      value={draft.custom_prompt || ""}
-                      onChange={val => updateDraft("custom_prompt", val)}
-                      rows={6}
-                      placeholder="Inject custom markdown-formatted directives for this agent…"
-                    />
                   </div>
 
                   <div>
@@ -1583,142 +1320,182 @@ function CreateThreadForm({ agentId, wallet, create }) {
   );
 }
 
-// ── Prompts ───────────────────────────────────────────────────────────────────
-function Prompts({ state, updatePrompt }) {
-  const [sel, setSel] = useState(null);
-  const [edit, setEdit] = useState({ name: "", system_prompt: "", user_prompt_template: "", custom_directives: "" });
-  const [entries, setEntries] = useState([]);
-  const [newEntry, setNewEntry] = useState({ title: "", body: "" });
-  const [showEntries, setShowEntries] = useState(false);
-  const [saved, setSaved] = useState(false);
+// ── Agenting ─────────────────────────────────────────────────────────────────
+function Agenting({ state, updateAgent }) {
+  const agents = Object.values(state.agents || {});
+  const [sel, setSel] = useState(agents[0]?.id || null);
+  const [promptType, setPromptType] = useState("system_prompt"); // "system_prompt" | "user_prompt"
+  const [tab, setTab] = useState("edit"); // "edit" | "parse"
+  const [promptText, setPromptText] = useState("");
+  const [selectedMode, setSelectedMode] = useState("Custom"); // "Creator" | "Points Accounter" | "Investor" | "Custom"
+  const [parsedRes, setParsedRes] = useState(null);
+  const [loading, setLoading] = useState(false);
 
-  const pArr = Object.values(state.prompts || {});
+  const selectedAgent = sel ? state.agents[sel] : null;
 
   useEffect(() => {
-    if (sel && state.prompts[sel]) {
-      const p = state.prompts[sel];
-      setEdit({ name: p.name || p.id, system_prompt: p.system_prompt || "", user_prompt_template: p.user_prompt_template || "", custom_directives: p.custom_directives || "" });
+    if (selectedAgent) {
+      const modeData = (selectedAgent.prompts || {})[selectedMode] || {};
+      setPromptText(modeData[promptType] || "");
     }
-  }, [sel]);
-
-  const fetchEntries = async () => {
-    const r = await fetch(`${API_BASE}/prompt-entries`);
-    setEntries(await r.json());
-  };
-  useEffect(() => { fetchEntries(); }, []);
-
-  const saveEntry = async () => {
-    if (!newEntry.title || !newEntry.body) return;
-    await fetch(`${API_BASE}/prompt-entries`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(newEntry) });
-    setNewEntry({ title: "", body: "" });
-    fetchEntries();
-  };
-  const deleteEntry = async (id) => {
-    await fetch(`${API_BASE}/prompt-entries/${id}`, { method: "DELETE" });
-    fetchEntries();
-  };
+  }, [sel, promptType, selectedMode, state.agents]);
 
   const handleSave = async () => {
-    await updatePrompt(sel, edit);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    if (!sel) return;
+    await updateAgent(sel, { [promptType]: promptText, edit_mode: selectedMode });
   };
+
+  const handleParse = async () => {
+    if (!sel || !promptText.trim()) return;
+    setLoading(true); setParsedRes(null);
+    try {
+      const p = { thread_id: null };
+      const modeData = (selectedAgent.prompts || {})[selectedMode] || {};
+      if (promptType === "system_prompt") {
+        p.system_prompt = promptText;
+        p.user_prompt = modeData.user_prompt || "";
+      } else {
+        p.system_prompt = modeData.system_prompt || "";
+        p.user_prompt = promptText;
+      }
+      const r = await fetch(`${API_BASE}/agents/${sel}/parse-prompt`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(p)
+      });
+      const data = await r.json();
+      setParsedRes(data[promptType]);
+    } catch (e) {
+      setParsedRes("Error: " + e.message);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    if (tab === "parse") handleParse();
+  }, [tab]);
+
+  const handleExport = () => {
+    const blob = new Blob([promptText], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${selectedAgent?.name_id || 'agent'}_${selectedMode}_${promptType}.cthinking`;
+    a.click();
+  };
+
+  const handleImport = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => setPromptText(ev.target.result);
+    reader.readAsText(file);
+  };
+
+  const insertHelper = (text) => setPromptText(p => p + text);
 
   return (
     <div style={{ display: "flex", gap: 20, height: "100%" }}>
-      {/* Mode list */}
-      <div style={{ width: 200, flexShrink: 0, overflowY: "auto" }}>
-        <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 600, letterSpacing: 1, marginBottom: 10, textTransform: "uppercase" }}>Modes</div>
-        {pArr.map(p => (
-          <div key={p.id} onClick={() => setSel(p.id)} className="card"
-            style={{ cursor: "pointer", marginBottom: 10, borderColor: sel === p.id ? "#6366f1" : "#1a1d24", background: sel === p.id ? "#1e1b4b" : "#11141a" }}>
+      {/* Left panel: Agents */}
+      <div style={{ width: 220, flexShrink: 0, overflowY: "auto" }}>
+        <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 600, letterSpacing: 1, marginBottom: 10, textTransform: "uppercase" }}>Select Agent</div>
+        {agents.map(a => (
+          <div key={a.id} onClick={() => setSel(a.id)} className="card"
+            style={{ cursor: "pointer", marginBottom: 10, borderColor: sel === a.id ? "#6366f1" : "#1a1d24", background: sel === a.id ? "#1e1b4b" : "#11141a" }}>
             <div className="card-body" style={{ padding: "10px 12px" }}>
-              <div style={{ fontWeight: 600, color: "#e2e8f0", marginBottom: 2 }}>{p.name || p.id}</div>
-              <div style={{ fontSize: 10, color: "#4b5563", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.system_prompt?.slice(0, 50)}</div>
+              <div style={{ fontWeight: 600, color: "#e2e8f0" }}>{a.name_id}</div>
+              <div style={{ fontSize: 10, color: "#6b7280" }}>{a.department || "No Dept"}</div>
             </div>
           </div>
         ))}
       </div>
 
-      {/* Editor */}
+      {/* Main panel */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
         {!sel ? (
-          <div style={{ textAlign: "center", color: "#6b7280", marginTop: 100 }}>Select a prompt template to edit</div>
+          <div style={{ textAlign: "center", color: "#6b7280", marginTop: 100 }}>Select an agent to manage their prompt</div>
         ) : (
           <div className="card" style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-            <div className="card-header">
-              <span style={{ fontWeight: 600, color: "#fff", fontSize: 15 }}>Edit: {sel}</span>
-              <button className="btn btn-primary" onClick={handleSave}>{saved ? "✓ Saved!" : "Save Changes"}</button>
+            {/* Topbar */}
+            <div className="card-header" style={{ padding: "12px 16px", borderBottom: "1px solid #1a1d24", display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                <span style={{ fontWeight: 600, color: "#fff", fontSize: 15 }}>{selectedAgent.name_id}</span>
+                <div style={{ textTransform: "uppercase", fontSize: 10, color: "#6b7280", fontWeight: 700, marginLeft: 10 }}>Mode:</div>
+                <select value={selectedMode} onChange={e => setSelectedMode(e.target.value)} style={{ padding: "4px 8px", background: "#11141a", color: "#f59e0b", border: "1px solid #78350f", borderRadius: 4, fontWeight: 600 }}>
+                   {["Creator", "Points Accounter", "Investor", "Custom"].map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
+                <div style={{ textTransform: "uppercase", fontSize: 10, color: "#6b7280", fontWeight: 700, marginLeft: 10 }}>Type:</div>
+                <select value={promptType} onChange={e => { setPromptType(e.target.value); setTab("edit"); }} style={{ padding: "4px 8px", background: "#11141a", color: "#e2e8f0", border: "1px solid #1e222d", borderRadius: 4 }}>
+                  <option value="system_prompt">System Prompt</option>
+                  <option value="user_prompt">User Prompt</option>
+                </select>
+              </div>
+              <div style={{ display: "flex", gap: 10 }}>
+                {tab === "edit" && (
+                  <>
+                    <label className="btn btn-soft" style={{ fontSize: 11, cursor: "pointer", margin: 0 }}>
+                      Import
+                      <input type="file" accept=".cthinking,.txt,.md" style={{ display: "none" }} onChange={handleImport} />
+                    </label>
+                    <button className="btn btn-soft" style={{ fontSize: 11 }} onClick={handleExport}>Export</button>
+                    <button className="btn btn-primary" onClick={handleSave}>Save</button>
+                  </>
+                )}
+                <div style={{ display: "flex", background: "#11141a", border: "1px solid #1e222d", borderRadius: 6, overflow: "hidden" }}>
+                  <button onClick={() => setTab("edit")} style={{ padding: "6px 12px", fontSize: 12, border: "none", cursor: "pointer", background: tab === "edit" ? "#6366f1" : "transparent", color: tab === "edit" ? "#fff" : "#9ca3af" }}>Edit</button>
+                  <button onClick={() => setTab("parse")} style={{ padding: "6px 12px", fontSize: 12, border: "none", cursor: "pointer", background: tab === "parse" ? "#6366f1" : "transparent", color: tab === "parse" ? "#fff" : "#9ca3af" }}>Parse-Compile</button>
+                </div>
+              </div>
             </div>
-            <div className="card-body" style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 20 }}>
 
-              <div>
-                <label style={{ display: "block", fontSize: 12, marginBottom: 6, color: "#9ca3af", fontWeight: 500 }}>Display Name</label>
-                <input value={edit.name} onChange={e => setEdit({ ...edit, name: e.target.value })} style={{ width: "100%" }} />
-              </div>
-
-              <MarkdownEditor
-                label="System Prompt — Identity & Strategy"
-                value={edit.system_prompt}
-                onChange={val => setEdit({ ...edit, system_prompt: val })}
-                rows={8}
-                placeholder="# Role\nDescribe who this agent is…"
-              />
-
-              <div>
-                <div style={{ fontSize: 11, color: "#4b5563", marginBottom: 6 }}>Behavioural rules applied whenever any agent runs in this mode.</div>
-                <MarkdownEditor
-                  label="Mode Directives — injected every tick"
-                  value={edit.custom_directives}
-                  onChange={val => setEdit({ ...edit, custom_directives: val })}
-                  rows={5}
-                  placeholder="- Rule 1\n- Rule 2"
-                />
-              </div>
-
-              <div>
-                <div style={{ fontSize: 11, color: "#4b5563", marginBottom: 6 }}>Appended last — specifies exact reply format and goals.</div>
-                <MarkdownEditor
-                  label="User Prompt Template — reply format & goals"
-                  value={edit.user_prompt_template}
-                  onChange={val => setEdit({ ...edit, user_prompt_template: val })}
-                  rows={6}
-                  placeholder="TASK: Describe 1 action… End with [MEM: note]"
-                />
-              </div>
+            <div className="card-body" style={{ flex: 1, display: "flex", flexDirection: "column", padding: 0 }}>
+              {tab === "edit" ? (
+                <div style={{ display: "flex", flex: 1 }}>
+                  {/* Editor */}
+                  <textarea
+                    value={promptText}
+                    onChange={e => setPromptText(e.target.value)}
+                    style={{ flex: 1, padding: 16, background: "#0a0b0e", color: "#e2e8f0", border: "none", resize: "none", fontSize: 13, outline: "none", fontFamily: "'JetBrains Mono', monospace" }}
+                    placeholder={`Enter ${promptType === "system_prompt" ? "system" : "user"} prompt using {{variables}}...\n\nExample:\n{{tools}}\n\nCurrent Thread Goal: {{THREAD_GOAL}}`}
+                  />
+                  {/* Helper Sidebar */}
+                  <div style={{ width: 250, borderLeft: "1px solid #1a1d24", background: "#11141a", padding: "16px", overflowY: "auto" }}>
+                    <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 700, letterSpacing: 1, marginBottom: 12 }}>Variables</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 20 }}>
+                      {PARSER_PLACEHOLDERS.map(p => (
+                        <button key={p.key} onClick={() => insertHelper(`{{${p.key}}}`)} title={p.desc} style={{ fontSize: 10, padding: "3px 8px", background: "#1e1b4b", color: "#a5b4fc", border: "1px solid #3730a3", borderRadius: 4, cursor: "pointer" }}>{`{{${p.key}}}`}</button>
+                      ))}
+                      <button onClick={() => insertHelper(`{{tools}}`)} title="Available Tools" style={{ fontSize: 10, padding: "3px 8px", background: "#1e1b4b", color: "#a5b4fc", border: "1px solid #3730a3", borderRadius: 4, cursor: "pointer" }}>{`{{tools}}`}</button>
+                      <button onClick={() => insertHelper(`{{recent_actions}}`)} title="Recent Actions Summary" style={{ fontSize: 10, padding: "3px 8px", background: "#1e1b4b", color: "#a5b4fc", border: "1px solid #3730a3", borderRadius: 4, cursor: "pointer" }}>{`{{recent_actions}}`}</button>
+                    </div>
+                    <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 700, letterSpacing: 1, marginBottom: 12 }}>Format Params</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 20 }}>
+                      {PARSER_FORMAT_VARS.map(p => (
+                        <button key={p.key} onClick={() => insertHelper(`{${p.key}}`)} title={p.desc} style={{ fontSize: 10, padding: "3px 8px", background: "#064e3b", color: "#34d399", border: "1px solid #065f46", borderRadius: 4, cursor: "pointer" }}>{`{${p.key}}`}</button>
+                      ))}
+                    </div>
+                    <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 700, letterSpacing: 1, marginBottom: 12 }}>Common Tools</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 300, overflowY: "auto", paddingRight: 4 }}>
+                      {Object.values(state.tools || {}).map(t => (
+                        <div key={t.id} onClick={() => insertHelper(`\n[CALL_TOOL]\n{"tool":"${t.id}", "args":{}}\n[/CALL_TOOL]`)} style={{ fontSize: 10, padding: "6px 8px", background: "#1c1400", border: "1px solid #78350f", borderRadius: 4, cursor: "pointer", textAlign: "left" }}>
+                          <div style={{ color: "#fbbf24", fontWeight: 600, marginBottom: 2 }}>{t.id}</div>
+                          <div style={{ color: "#d97706", fontSize: 9, whiteSpace: "normal", lineHeight: 1.2 }}>{t.description.slice(0, 80)}{t.description.length > 80 ? "..." : ""}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ flex: 1, overflowY: "auto", padding: 20, background: "#08090c", borderTop: "1px solid #1a1d24", display: "flex", flexDirection: "column" }}>
+                  {loading ? (
+                    <div style={{ color: "#6366f1", textAlign: "center", marginTop: 40 }}>Compiling Prompt as {selectedAgent.name_id}...</div>
+                  ) : (
+                    <div style={{ color: "#d1d5db", whiteSpace: "pre-wrap", fontFamily: "'JetBrains Mono', monospace", fontSize: 12, lineHeight: 1.6 }} dangerouslySetInnerHTML={{ __html: renderMd(parsedRes || "Nothing to preview") }} />
+                  )}
+                </div>
+              )}
             </div>
           </div>
         )}
-      </div>
-
-      {/* Saved Entries */}
-      <div style={{ width: 250, flexShrink: 0, display: "flex", flexDirection: "column", gap: 10 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 600, letterSpacing: 1, textTransform: "uppercase" }}>Saved Entries</div>
-          <button className="btn btn-soft" style={{ fontSize: 11, padding: "3px 8px" }} onClick={() => setShowEntries(v => !v)}>{showEntries ? "▲" : "▼ Add"}</button>
-        </div>
-        {showEntries && (
-          <div className="card">
-            <div className="card-body" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <input placeholder="Entry title…" value={newEntry.title} onChange={e => setNewEntry({ ...newEntry, title: e.target.value })} style={{ width: "100%" }} />
-              <textarea rows={3} placeholder="Prompt text…" value={newEntry.body} onChange={e => setNewEntry({ ...newEntry, body: e.target.value })} style={{ width: "100%", resize: "vertical" }} />
-              <button className="btn btn-primary" style={{ width: "100%" }} onClick={saveEntry}>Save Entry</button>
-            </div>
-          </div>
-        )}
-        <div style={{ flex: 1, overflowY: "auto" }}>
-          {entries.length === 0 && <div style={{ fontSize: 12, color: "#4b5563", textAlign: "center", marginTop: 20 }}>No saved entries.</div>}
-          {entries.map(e => (
-            <div key={e.id} style={{ background: "#11141a", border: "1px solid #1a1d24", borderRadius: 8, padding: 10, marginBottom: 8 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                <span style={{ fontWeight: 600, fontSize: 12, color: "#e2e8f0" }}>{e.title}</span>
-                <button onClick={() => deleteEntry(e.id)} style={{ background: "none", border: "none", color: "#6b7280", cursor: "pointer" }}>✕</button>
-              </div>
-              <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 8, lineHeight: 1.5 }}>{e.body.slice(0, 100)}{e.body.length > 100 ? "…" : ""}</div>
-              <button className="btn btn-soft" style={{ fontSize: 11, padding: "3px 10px", width: "100%" }} onClick={() => navigator.clipboard.writeText(e.body)}>Copy</button>
-            </div>
-          ))}
-        </div>
       </div>
     </div>
   );
@@ -3035,19 +2812,7 @@ function Settings({ state, updateSetting }) {
 
   return (
     <div style={{ maxWidth: 900, margin: "0 auto" }}>
-      {/* Tab bar */}
-      <div style={{ display: "flex", gap: 6, marginBottom: 24, borderBottom: "1px solid #1a1d24", paddingBottom: 12 }}>
-        {[["general", "⚙️ General"], ["debugging", "🔬 Prompt Debugger"]].map(([id, lbl]) => (
-          <button key={id} onClick={() => setSettingsTab(id)} style={{
-            padding: "7px 18px", fontSize: 12, cursor: "pointer", borderRadius: 6, fontWeight: 600,
-            background: settingsTab === id ? "#6366f1" : "#11141a",
-            border: `1px solid ${settingsTab === id ? "#6366f1" : "#1e222d"}`,
-            color: settingsTab === id ? "#fff" : "#6b7280", transition: "all 0.15s",
-          }}>{lbl}</button>
-        ))}
-      </div>
-      {settingsTab === "debugging" && <PromptParser state={state} />}
-      {settingsTab === "general" && <div className="card" style={{ maxWidth: 640 }}>
+      <div className="card" style={{ maxWidth: 640 }}>
         <div className="card-header" style={{ fontSize: 14, fontWeight: 600, color: "#fff" }}>Global Settings</div>
         <div className="card-body" style={{ display: "flex", flexDirection: "column", gap: 24 }}>
           <div>
@@ -3122,7 +2887,7 @@ function Settings({ state, updateSetting }) {
             )}
           </div>
         </div>
-      </div>}
+      </div>
     </div>
   );
 }

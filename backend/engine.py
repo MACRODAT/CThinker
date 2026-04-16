@@ -10,14 +10,13 @@ from sqlalchemy.orm import Session
 from database import SessionLocal
 from models import (
     Agent, Thread, LogAction, LogLedger, Department,
-    PromptTemplate, Setting, AgentTool, SystemLog,
+    Setting, AgentTool, SystemLog,
     ThreadCollaborator, JoinQuest, Message, Ticket,
-    Transaction, ToolOwnership
+    Transaction, ToolOwnership, AgentPrompt
 )
 
-thread_tools_list = ['get_time', 'get_weather', 'get_news', 'web_search', 'create_thread', 'post_in_thread', 'join_thread', 'set_thread_status', 'get_thread_summary', 'stealth_mode_thread']
-points_accounter_tools_list = ['get_time', 'invest_thread', 'join_thread', 'refill_thread']
-investor_tools_list = ['get_time', 'get_threads', 'get_agents', 'join_thread', 'refill_thread', 'invite_to_thread', 'get_thread_summary', 'get_all_summaries', 'get_threads_joined', 'get_threads_not_joined']
+# Legacy hardcoded tool lists removed in favour of dynamic Tool model injection.
+
 
 class SimEngine:
     def __init__(self):
@@ -190,22 +189,7 @@ class SimEngine:
             if not s_halt or s_halt.value != "true":
                 add_step("wallet", "Tick starting (1 pt cost)", {"amount": -1, "reason": "tick"})
 
-            # 1. Get Prompts
-            p_template = db.query(PromptTemplate).filter(PromptTemplate.id == agent.mode).first()
-            if not p_template:
-                p_template = db.query(PromptTemplate).first()
-            if not p_template:
-                return
 
-            
-            s_prefix = db.query(Setting).filter(Setting.key == "tools_instruction_prefix").first()
-            
-            
-
-            tools_block = s_prefix.value + "\n" + tools_block if s_prefix else f"AVAILABLE TOOLS: {self.get_tools(db)}\n{tools_block}"
-            # tools_block = await self.resolve_placeholders(tools_block, db, agent, "")
-            
-            # print(tools_block)
 
             # 2. Context
             # Find last quest for status placeholder
@@ -244,7 +228,17 @@ class SimEngine:
             # CONTINUE
             final_processed_raw = ""
             dept_info = f"Department: {agent.department.name} (Balance: {agent.department.ledger_current} pts)" if agent.department else "No Department"
-            system_prompt = p_template.system_prompt
+            
+            # Fetch prompt for the current mode
+            cur_mode = agent.mode or "Custom"
+            ap = db.query(AgentPrompt).filter(AgentPrompt.agent_id == agent.id, AgentPrompt.mode == cur_mode).first()
+            if not ap:
+                # Fallback to any prompt or default
+                ap = db.query(AgentPrompt).filter(AgentPrompt.agent_id == agent.id).first()
+
+            system_prompt_raw = ap.system_prompt if ap else agent.system_prompt or ""
+            user_prompt_raw = ap.user_prompt if ap else agent.user_prompt or ""
+            system_prompt = ""
             user_prompt = ""
             full_tool_results=""
             if s_halt and s_halt.value == "true":
@@ -286,26 +280,20 @@ class SimEngine:
                     raw_summary = resp.json().get("response", "")
                     actions_str = raw_summary
                     
-                    # Injection logic for placeholders (pre-format pass on directives)
-                    directives = await self.resolve_placeholders(
-                        p_template.custom_directives or "", db, agent, last_q, add_step
-                    )
-
-                    user_prompt = p_template.user_prompt_template.format(
-                        name=agent.name_id,
-                        id=agent.id,
-                        wallet=agent.wallet_current,
-                        dept=dept_info,
-                        memory=agent.memory or "None",
-                        actions=actions_str,
-                        tools=tools_block,
-                        directives=directives,
-                        message=""
-                    )
                     
-                    # Second pass: resolve all {{...}} that survived .format()
-                    user_prompt = await self.resolve_placeholders(user_prompt, db, agent, last_q, add_step)
-                    system_prompt = await self.resolve_placeholders(system_prompt, db, agent, last_q, add_step)
+                    # s_prefix = db.query(Setting).filter(Setting.key == "tools_instruction_prefix").first()
+                    # tools_block = (s_prefix.value + "\n" if s_prefix else "AVAILABLE TOOLS:\n") + self.get_tools(db)
+                    tools_block = self.get_tools(db)
+
+                    extra_ctx = {
+                        "actions": actions_str,
+                        "tools": tools_block,
+                    }
+                    
+                    user_prompt = await self.resolve_placeholders(user_prompt_raw, db, agent, last_q, add_step, extra_ctx=extra_ctx)
+                    system_prompt = await self.resolve_placeholders(system_prompt_raw, db, agent, last_q, add_step, extra_ctx=extra_ctx)
+                    
+
 
                     pr="\n# TOOLS USAGE FORMAT (IMPORTANT)\n[CALL_TOOL]\nNAME OF TOOL\nargument 1\nargument 2\n[END_CALL_TOOL]\n"
                     pr+="\n# EXAMPLE \n[CALL_TOOL]\nget_news\nCasablanca\n[END_CALL_TOOL]\n"
@@ -347,11 +335,10 @@ class SimEngine:
                             raw = raw.replace(mem_match.group(0), "").strip()
                             add_step("memory", f"Memory Updated", {"content": agent.memory})
 
-                        mode_match = re.search(r"\[MODE\](.*?)\s*\[END MODE\]", raw, re.DOTALL | re.IGNORECASE)
                         if mode_match:
                             next_val = mode_match.group(1).strip()
-                            exists = db.query(PromptTemplate).filter(PromptTemplate.id == next_val).first()
-                            if exists:
+                            valid_modes = ["Creator", "Points Accounter", "Investor", "Custom"]
+                            if next_val in valid_modes:
                                 agent.next_mode = next_val
                                 add_step("system", f"Mode change queued: {next_val}")
                             raw = raw.replace(mode_match.group(0), "").strip()
@@ -1156,17 +1143,24 @@ class SimEngine:
                             if not t.is_stealth and t.status != "FROZEN":
                                 need_join.append(line)
                     if owner_lines:
-                        lines.append("Threads you own:\n" + "\n".join(owner_lines))
+                        lines.append("YOURS:\n" + "\n".join(owner_lines))
                     if collab_lines:
-                        lines.append("Threads you can post in as collaborator:\n" + "\n".join(collab_lines))
+                        lines.append("COLLABORATOR:\n" + "\n".join(collab_lines))
                     if ceo_lines:
-                        lines.append("Threads you can post in as CEO:\n" + "\n".join(ceo_lines))
+                        lines.append("CEO:\n" + "\n".join(ceo_lines))
                     if superior_lines:
-                        lines.append("Threads you can post in as superior:\n" + "\n".join(superior_lines))
+                        lines.append("SUPERIOR:\n" + "\n".join(superior_lines))
                     if need_join:
-                        lines.append("Threads you NEED to JOIN to post in:\n" + "\n".join(need_join))
+                        lines.append("NEED TO JOIN:\n" + "\n".join(need_join))
 
                     result = "THREADS_LIST:\n" + "\n".join(lines)
+                    result += "\nGOAL=THREAD GOAL+THREAD MILESTONE\n"
+                    result += "NO input=ASSUME DEFAULT\n"
+                    result += "SEARCH USING web_search tool.\n"
+                    result += "BE CONCRETE.\n"
+                    result += "DO NOT INVENT\n"
+                    result += "NO NEW ACRONYMS UNLESS EXPLAINED\n"
+                    result += "MARKDOWN ALLOWED\n"
             except Exception as e: result = f"THREADS_ERROR: {str(e)}"
         # ── get_threads which agent joined ────────────────────────────────────────────────────────
         elif (tool_name == "get_threads_joined" or tool_name == "get_threads_not_joined"):
@@ -1202,6 +1196,13 @@ class SimEngine:
                         milestone_snippet = f"Current Milestone: {t.current_milestone} | " if getattr(t, "current_milestone", None) else ""
                         lines.append(f"{t.id} | {t.topic} | {t.aim} | {t.budget}pt | {goal_snippet}{milestone_snippet}{summary_snippet}\n")
                     result = "THREADS_LIST:\n" + "\n".join(lines)
+                    result += "\nGOAL=THREAD GOAL+THREAD MILESTONE\n"
+                    result += "NO input=ASSUME DEFAULT\n"
+                    result += "SEARCH USING web_search tool.\n"
+                    result += "BE CONCRETE.\n"
+                    result += "DO NOT INVENT\n"
+                    result += "NO NEW ACRONYMS UNLESS EXPLAINED\n"
+                    result += "MARKDOWN ALLOWED\n"
                     return result
             except Exception as e: result = f"THREADS_ERROR: {str(e)}"
 
@@ -1336,7 +1337,11 @@ class SimEngine:
                 reason = args[3] if len(args) > 3 else "agent_transfer"
                 # Agents can only initiate from themselves
                 if from_id != agent.id: return "TXN_ERROR: Can only transfer from own wallet."
-                ok = await self.produce_transaction(db, from_id, to_id, amount, reason)
+                from_ = db.query(Agent).filter(Agent.id == from_id).first()
+                to_ = db.query(Agent).filter(Agent.id == to_id).first()
+                ok = await self.deduct_points(db, from_, amount, reason, add_step_cb)
+                if ok:
+                    await self.deduct_points(db, to_, -amount, reason, add_step_cb)
                 result = f"TXN_OK: {amount} pts  {from_id} → {to_id}" if ok else "TXN_FAILED: Insufficient funds"
             except Exception as e: result = f"TXN_ERROR: {e}"
 
@@ -1573,7 +1578,11 @@ class SimEngine:
                 from_id, to_id, amount = args[0], args[1], int(args[2])
                 reason = args[3] if len(args) > 3 else "agent_transfer"
                 if from_id != agent.id: return "TXN_ERROR: Can only transfer from own wallet."
-                ok = await self.produce_transaction(db, from_id, to_id, amount, reason)
+                from_ = db.query(Agent).filter(Agent.id == from_id).first()
+                to_ = db.query(Agent).filter(Agent.id == to_id).first()
+                ok = await self.deduct_points(db, from_, amount, reason, add_step_cb)
+                if ok:
+                    ok = await self.deduct_points(db, to_, -amount, reason, add_step_cb) 
                 result = (f"TXN_OK: {amount} pts {from_id} → {to_id}"
                           if ok else "TXN_FAILED: Insufficient funds")
             except Exception as e:
@@ -1768,7 +1777,8 @@ class SimEngine:
         if (tool.price or 0) > 0:
             owner_id = tool.owner_id or "FOUNDER"
             if owner_id != agent.id:
-                ok = await self.produce_transaction(db, agent.id, owner_id, tool.price, f"tool_use:{tool.id}", add_step_cb)
+                owner = db.query(Agent).filter(Agent.id == owner_id).first()
+                ok = await self.deduct_points(db, agent, tool.price, f"Execute tool toll:{tool.id}", add_step_cb)
                 if not ok: 
                     return f"[INSUFFICIENT_FUNDS: {tool.id} requires {tool.price} pts]"
 
@@ -1850,7 +1860,7 @@ class SimEngine:
         
         return remainder.strip() if cond_val else ""
 
-    async def resolve_placeholders(self, text: str, db: Session, agent, last_quest, add_step_cb=None) -> str:
+    async def resolve_placeholders(self, text: str, db: Session, agent, last_quest, add_step_cb=None, extra_ctx=None) -> str:
         """
         Robust, async-safe, inside-out recursive parser.
         Supports infinite nesting of functions, conditionals, and variables.
@@ -1870,6 +1880,9 @@ class SimEngine:
 
         # Get agent's department
         agent_dept = db.query(Department).join(Agent, Agent.department_id == Department.id).filter(Agent.id == agent.id).first()
+        # recent actions of that agent from table log_actions
+        actions_str_list = db.query(LogAction).filter(LogAction.agent_id == agent.id).order_by(LogAction.when.desc()).limit(4).all()
+        actions_str = "\n".join([f"{a.points} pts: {a.what}" for a in actions_str_list])
 
         bool_ctx = {
             "available_tickets_exist":  tkt_exist,
@@ -1888,18 +1901,24 @@ class SimEngine:
             "pending_quests":           self.get_rich_quests_to_join_context(db, agent),
             "pending_invitation":       self.get_rich_invitation_context(db, agent),
             "invitation_status":        last_quest.status if last_quest else "None",
+            "tools":                    self.get_tools(db),
             "all_enabled_tools":        self.get_tools(db),
-            "thread_tools":             self.get_filter_tools(db, lst=thread_tools_list),
-            "points_accounter_tools":   self.get_filter_tools(db, lst=points_accounter_tools_list),
-            "investor_tools":           self.get_filter_tools(db, lst=investor_tools_list),
             "all_quest_tools":          self.get_quest_tools(db),
+            "recent_actions":           actions_str,
             "agent":                    agent.name_id,
             "agent_id":                 agent.id,
             "agent_dept":               agent_dept.id,
             "wallet":                   str(agent.wallet_current),
-            "departmentPoints":         agent_dept.ledger_current,
+            "departmentPoints":         agent_dept.ledger_current if agent_dept else 0,
             "thread_summary":           self.get_thread_summaries_context(db),
+            "memory":                   agent.memory or "None",
+            "name":                     agent.name_id,
+            "id":                       agent.id,
+            "dept":                     f"Department: {agent_dept.name} (Balance: {agent_dept.ledger_current} pts)" if agent_dept else "No Department"
         }
+        
+        if extra_ctx:
+            simple.update(extra_ctx)
 
         # ── The Inside-Out Iteration Loop ──
         # We loop until the text stops changing.
@@ -1909,9 +1928,10 @@ class SimEngine:
         for _ in range(MAX_RECURSION):
             original = text
             
-            # Resolve Simple Variables {agent}
+            # Resolve Simple Variables {agent} or {{agent}}
             for k, v in simple.items():
                 text = text.replace(f"{{{str(k)}}}", str(v))
+                text = text.replace(f"{{{{{str(k)}}}}}", str(v))
 
             # Resolve Innermost Conditionals: {{ key ... }}
             # Match: {{ followed by NOT {{ or }} and ending in }}
@@ -2057,6 +2077,7 @@ class SimEngine:
             # and the caller does NOT own the tool (ownership = free usage).
             if (tool_obj.price or 0) > 0:
                 owner_id = tool_obj.owner_id or "FOUNDER"
+                owner = db.query(Agent).filter(Agent.id == owner_id).first()
                 if owner_id != agent.id:
                     # Check ToolOwnership — owners pay nothing
                     caller_owns = db.query(ToolOwnership).filter(
@@ -2064,10 +2085,13 @@ class SimEngine:
                         ToolOwnership.tool_id  == cmd
                     ).first()
                     if not caller_owns:
-                        ok = await self.produce_transaction(
-                            db, agent.id, owner_id, tool_obj.price,
-                            f"tool_use:{cmd}", add_step_cb
-                        )
+                        ok = await self.deduct_points(db, agent, tool_obj.price, f"tool_use toll:{cmd}", add_step_cb)
+                        if ok:
+                            await self.deduct_points(db, owner, -tool_obj.price, f"tool_use reward:{cmd}", add_step_cb)
+                        # ok = await self.produce_transaction(
+                        #     db, agent.id, owner_id, tool_obj.price,
+                        #     f"tool_use:{cmd}", add_step_cb
+                        # )
                         if not ok:
                             return f"[TOOL_NO_FUNDS:{cmd} costs {tool_obj.price}pts]"
 

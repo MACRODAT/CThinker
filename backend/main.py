@@ -50,81 +50,16 @@ models.Base.metadata.create_all(bind=database.engine)
 # ── Seeder ───────────────────────────────────────────────────────────────────
 
 def seed_db(db: Session):
-    # ── Prompt templates ──────────────────────────────────────────────────────
-    if db.query(models.PromptTemplate).first() is None:
-        default_user = (
-            "AGENT: {name} (ID: {id})\n"
-            "WALLET: {wallet} pts | {dept}\n"
-            "MEMORY: {memory}\n"
-            "RECENT ACTIONS:\n{actions}\n\n"
-            "{directives}\n\n"
-            "{tools}\n\n"
-            "MANDATORY FORMAT FOR STATE UPDATES AT THE END:\n"
-            "[MEMORY]\nupdated_memory_content\n[END MEMORY]\n\n"
-            "[MODE]\nnext_mode_id\n[END MODE]"
-        )
-        templates = [
-        models.PromptTemplate(
-            id="Creator",
-            name="Creator / Actionist",
-            system_prompt="You are a proactive agent focused on creation and project execution.",
-            user_prompt_template="# STATUS\nName: {name}\nWallet: {wallet}pt\n{dept}\n\n# INSTRUCTIONS\n{directives}\n\n# RECENT ACTIVITY\n{actions}\n\n# AVAILABLE TICKETS\n{{available_tickets}}\n\n# PENDING INVITES\n{{pending_invitation}}\n\n# LAST INVITE STATUS\n{{invitation_status}}\n\n# TOOLS\n{tools}\n\n# MEMORY\n{memory}\n\nTASK: Generate strategy or take action.",
-            custom_directives="- Identify opportunities\n- Create threads for new ideas\n- Invite collaborators to your threads.\n- Accept or Decline invitations promptly."
-        ),
-            models.PromptTemplate(
-                id="Points Accounter", name="Points Accounter",
-                system_prompt="You are an analytical agent focused on resource management, efficiency and budget constraints.",
-                user_prompt_template=default_user),
-            models.PromptTemplate(
-                id="Invester", name="Investor",
-                system_prompt="You are a strategic agent evaluating logical investments and maximizing long-term value.",
-                user_prompt_template=default_user),
-            models.PromptTemplate(
-                id="Custom", name="Custom",
-                system_prompt="You act logically, precisely according to your given parameters.",
-                user_prompt_template=default_user),
-            models.PromptTemplate(
-                id="Chat", name="Direct Chat",
-                system_prompt="You are in a private 1-on-1 chat with the Founder. Stay professional and helpful according to your role.",
-                user_prompt_template=(
-                    "THE FOUNDER SAYS: {message}\n\n"
-                    "TASK: Respond directly and stay in character. You can use tools if needed.\n\n"
-                    "TOOL CALLING FORMAT:\n"
-                    "[CALL_TOOL]\n- tool_name\n- arg1\n[END_CALL_TOOL]\n\n"
-                    "MANDATORY FORMAT FOR STATE UPDATES:\n"
-                    "[MEMORY]\nupdated_memory_content\n[END MEMORY]\n\n"
-                    "[MODE]\nnext_mode_id\n[END MODE]"
-                )),
-        ]
-        db.add_all(templates)
-        db.commit()
-    else:
-        # Update existing templates to ensure they have the latest placeholders
-        existing = db.query(models.PromptTemplate).all()
-        for t in existing:
-            if "{name}" not in t.user_prompt_template and t.id != "Chat":
-                # Re-fetch default_user from above logic if needed, but here we can just use the latest
-                new_template = (
-                    "AGENT: {name} (ID: {id})\n"
-                    "WALLET: {wallet} pts | {dept}\n"
-                    "MEMORY: {memory}\n"
-                    "RECENT ACTIONS:\n{actions}\n\n"
-                    "{directives}\n\n"
-                    "{tools}\n\n"
-                    "MANDATORY FORMAT FOR STATE UPDATES:\n"
-                    "[MEMORY]\nupdated_memory_content\n[END MEMORY]\n\n"
-                    "[MODE]\nnext_mode_id\n[END MODE]"
-                )
-                t.user_prompt_template = new_template
-        db.commit()
-
-    # Ensure Chat template exists even on older DBs
-    if db.query(models.PromptTemplate).filter(models.PromptTemplate.id == "Chat").first() is None:
-        db.add(models.PromptTemplate(
-            id="Chat", name="Direct Chat",
-            system_prompt="You are in a private 1-on-1 chat with the Founder. Stay professional and helpful according to your role.",
-            user_prompt_template="THE FOUNDER SAYS: {message}\n\nTASK: Respond directly. End with [MEMORY]\ncontent\n[END MEMORY] and [MODE]\nnext_mode\n[END MODE]"))
-        db.commit()
+    default_user = (
+        "AGENT: {{name}} (ID: {{id}})\n"
+        "WALLET: {{wallet}} pts | {{dept}}\n"
+        "MEMORY: {{memory}}\n"
+        "RECENT ACTIONS:\n{{actions}}\n\n"
+        "{{tools}}\n\n"
+        "MANDATORY FORMAT FOR STATE UPDATES AT THE END:\n"
+        "[MEMORY]\nupdated_memory_content\n[END MEMORY]\n\n"
+    )
+    default_sys = "You are a proactive agent focused on creation and project execution."
 
     # ── Settings ──────────────────────────────────────────────────────────────
     def ensure_setting(key, value):
@@ -256,14 +191,14 @@ def seed_db(db: Session):
         db.commit()
 
         agents = [
-            models.Agent(id="ATLAS", name_id="Atlas Prime",   department_id="ING", is_ceo=True,  ticks=22, mode="Creator"),
-            models.Agent(id="VERA",  name_id="Vera Nexus",    department_id="STP", is_ceo=True,  ticks=35, mode="Points Accounter"),
-            models.Agent(id="KIRO",  name_id="Kiro Banks",    department_id="FIN", is_ceo=True,  ticks=28, mode="Invester"),
-            models.Agent(id="SANA",  name_id="Sana Vell",     department_id="HF",  is_ceo=True,  ticks=50, mode="Creator"),
-            models.Agent(id="ORYN",  name_id="Oryn Flux",     department_id="UIT", is_ceo=True,  ticks=18, mode="Custom"),
-            models.Agent(id="PIKE",  name_id="Pike Render",   department_id="ING", is_ceo=False, ticks=60, mode="Creator"),
-            models.Agent(id="MIRI",  name_id="Miri Solv",     department_id="FIN", is_ceo=False, ticks=45, mode="Invester"),
-            models.Agent(id="TOVA",  name_id="Tova Bright",   department_id="UIT", is_ceo=False, ticks=80, mode="Points Accounter"),
+            models.Agent(id="ATLAS", name_id="Atlas Prime",   department_id="ING", is_ceo=True,  ticks=22, system_prompt=default_sys, user_prompt=default_user),
+            models.Agent(id="VERA",  name_id="Vera Nexus",    department_id="STP", is_ceo=True,  ticks=35, system_prompt=default_sys, user_prompt=default_user),
+            models.Agent(id="KIRO",  name_id="Kiro Banks",    department_id="FIN", is_ceo=True,  ticks=28, system_prompt=default_sys, user_prompt=default_user),
+            models.Agent(id="SANA",  name_id="Sana Vell",     department_id="HF",  is_ceo=True,  ticks=50, system_prompt=default_sys, user_prompt=default_user),
+            models.Agent(id="ORYN",  name_id="Oryn Flux",     department_id="UIT", is_ceo=True,  ticks=18, system_prompt=default_sys, user_prompt=default_user),
+            models.Agent(id="PIKE",  name_id="Pike Render",   department_id="ING", is_ceo=False, ticks=60, system_prompt=default_sys, user_prompt=default_user),
+            models.Agent(id="MIRI",  name_id="Miri Solv",     department_id="FIN", is_ceo=False, ticks=45, system_prompt=default_sys, user_prompt=default_user),
+            models.Agent(id="TOVA",  name_id="Tova Bright",   department_id="UIT", is_ceo=False, ticks=80, system_prompt=default_sys, user_prompt=default_user),
         ]
         db.add_all(agents)
         db.commit()
@@ -302,12 +237,12 @@ def get_state(db: Session = Depends(database.get_db)):
     depts   = db.query(models.Department).all()
     agents  = db.query(models.Agent).all()
     threads = db.query(models.Thread).all()
-    prompts = db.query(models.PromptTemplate).all()
     settings = db.query(models.Setting).all()
     dept_ledgers  = db.query(models.LogLedger).all()
     agent_actions = db.query(models.LogAction).order_by(models.LogAction.id.desc()).all()
     thread_msgs   = db.query(models.Message).all()
     tools         = db.query(models.AgentTool).all()
+    agent_prompts = db.query(models.AgentPrompt).all()
 
     state_departments = {}
     for d in depts:
@@ -324,11 +259,12 @@ def get_state(db: Session = Depends(database.get_db)):
     for a in agents:
         acts    = [{"when": act.when, "what": act.what, "points": act.points} for act in agent_actions if act.agent_id == a.id]
         own_t   = [t.id for t in threads if t.owner_agent_id == a.id]
+        my_prompts = {p.mode: {"system_prompt": p.system_prompt, "user_prompt": p.user_prompt} for p in agent_prompts if p.agent_id == a.id}
         state_agents[a.id] = {
             "id": a.id, "name_id": a.name_id, "born": a.born, "department": a.department_id,
-            "is_ceo": a.is_ceo, "ticks": a.ticks,
+            "is_ceo": a.is_ceo, "ticks": a.ticks, "mode": a.mode, "next_mode": a.next_mode,
             "wallet": {"current": a.wallet_current, "log": []},
-            "mode": a.mode, "next_mode": a.next_mode, "custom_prompt": a.custom_prompt,
+            "prompts": my_prompts,
             "log_actions": acts, "memory": a.memory, "own_threads": own_t
         }
 
@@ -377,7 +313,6 @@ def get_state(db: Session = Depends(database.get_db)):
         "departments": state_departments,
         "agents":      state_agents,
         "threads":     state_threads,
-        "prompts":     {p.id: {"id": p.id, "name": p.name, "system_prompt": p.system_prompt, "user_prompt_template": p.user_prompt_template, "custom_directives": p.custom_directives} for p in prompts},
         "settings":    {s.key: s.value for s in settings},
         "tools":       {t.id: {
             "id": t.id, "name": t.name, "description": t.description,
@@ -701,10 +636,44 @@ def update_setting(setting_key: str, payload: dict, db: Session = Depends(databa
 def update_agent(agent_id: str, payload: dict, db: Session = Depends(database.get_db)):
     a = db.query(models.Agent).filter(models.Agent.id == agent_id).first()
     if not a: return {"error": "Agent not found"}
-    for field in ("mode", "custom_prompt", "memory"):
-        if field in payload: setattr(a, field, payload[field])
+    
+    if "memory" in payload: a.memory = payload["memory"]
+    if "mode" in payload: a.mode = payload["mode"]
+    
+    edit_mode = payload.get("edit_mode")
+    if edit_mode and ("system_prompt" in payload or "user_prompt" in payload):
+        ap = db.query(models.AgentPrompt).filter(models.AgentPrompt.agent_id == agent_id, models.AgentPrompt.mode == edit_mode).first()
+        if not ap:
+            ap = models.AgentPrompt(agent_id=agent_id, mode=edit_mode)
+            db.add(ap)
+        if "system_prompt" in payload: ap.system_prompt = payload["system_prompt"]
+        if "user_prompt" in payload: ap.user_prompt = payload["user_prompt"]
+        
     db.commit()
     return {"status": "success"}
+
+@app.post("/api/agents/{agent_id}/parse-prompt")
+async def parse_prompt(agent_id: str, payload: dict, db: Session = Depends(database.get_db)):
+    agent = db.query(models.Agent).filter(models.Agent.id == agent_id).first()
+    if not agent: return {"error": "Agent not found"}
+    
+    system_prompt_raw = payload.get("system_prompt", "")
+    user_prompt_raw = payload.get("user_prompt", "")
+    thread_id = payload.get("thread_id")
+    
+    last_q = None
+    if thread_id:
+        last_q = db.query(models.JoinQuest).filter(models.JoinQuest.agent_id == agent.id, models.JoinQuest.thread_id == thread_id).order_by(models.JoinQuest.id.desc()).first()
+    else:
+        last_q = db.query(models.JoinQuest).filter(models.JoinQuest.agent_id == agent.id).order_by(models.JoinQuest.id.desc()).first()
+
+    s_prefix = db.query(models.Setting).filter(models.Setting.key == "tools_instruction_prefix").first()
+    tools_block = (s_prefix.value + "\n" if s_prefix else "AVAILABLE TOOLS:\n") + sim_engine.get_tools(db)
+    extra_ctx = {"actions": "Mock recent actions summary.", "tools": tools_block}
+    
+    sys_parsed = await sim_engine.resolve_placeholders(system_prompt_raw, db, agent, last_q, None, extra_ctx=extra_ctx)
+    usr_parsed = await sim_engine.resolve_placeholders(user_prompt_raw, db, agent, last_q, None, extra_ctx=extra_ctx)
+    return {"system_prompt": sys_parsed, "user_prompt": usr_parsed}
 
 @app.post("/api/agents/{agent_id}/points")
 def add_agent_points(agent_id: str, payload: dict, db: Session = Depends(database.get_db)):
@@ -759,17 +728,12 @@ async def agent_chat(agent_id: str, req: schemas.ChatRequest, db: Session = Depe
     user_msg = models.Message(thread_id=thread.id, who="FOUNDER", what=req.message)
     db.add(user_msg); db.commit()
 
-    chat_template = db.query(models.PromptTemplate).filter(models.PromptTemplate.id == "Chat").first()
-    mode_template = db.query(models.PromptTemplate).filter(models.PromptTemplate.id == agent.mode).first()
-    system_instr  = chat_template.system_prompt if chat_template else (mode_template.system_prompt if mode_template else "You act logically.")
-    user_instr    = (chat_template.user_prompt_template if chat_template
-                     else "THE FOUNDER SAYS: {message}\n\nTASK: Respond directly and stay in character.")
+    system_instr  = agent.system_prompt or "You act logically."
+    user_instr    = "THE FOUNDER SAYS: {message}\n\nTASK: Respond directly and stay in character."
 
     chat_prompt = (
         f"System: {system_instr}\n"
         f"IDENTITY: You are {agent.name_id}.\n"
-        f"Current Mode: {agent.mode}\n"
-        f"Directives: {agent.custom_prompt or 'None'}\n"
         f"Memory: {agent.memory}\n\n"
         f"{user_instr.format(message=req.message)}"
     )

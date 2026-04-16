@@ -15,13 +15,7 @@ class Department(Base):
     agents = relationship("Agent", back_populates="department")
     threads = relationship("Thread", back_populates="owner_department")
 
-class PromptTemplate(Base):
-    __tablename__ = "prompt_templates"
-    id = Column(String, primary_key=True, index=True)
-    name = Column(String, nullable=True)
-    system_prompt = Column(Text)
-    user_prompt_template = Column(Text, nullable=True)
-    custom_directives = Column(Text, nullable=True)
+
 
 class Setting(Base):
     __tablename__ = "settings"
@@ -44,11 +38,22 @@ class Agent(Base):
     is_ceo = Column(Boolean, default=False)
     ticks = Column(Integer, default=60)
     wallet_current = Column(Integer, default=50)
-    mode = Column(String, ForeignKey("prompt_templates.id"), default="Points Accounter")
-    next_mode = Column(String, ForeignKey("prompt_templates.id"), nullable=True)
-    custom_prompt = Column(Text, default="")
+    system_prompt = Column(Text, default="")
+    user_prompt = Column(Text, default="")
+    mode = Column(String, default="custom")
+    next_mode = Column(String, nullable=True)
     memory = Column(String, default="")
     department = relationship("Department", back_populates="agents")
+    prompts = relationship("AgentPrompt", back_populates="agent", cascade="all, delete-orphan")
+
+class AgentPrompt(Base):
+    __tablename__ = "agent_prompts"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    agent_id = Column(String, ForeignKey("agents.id"), index=True)
+    mode = Column(String, nullable=False)
+    system_prompt = Column(Text, default="")
+    user_prompt = Column(Text, default="")
+    agent = relationship("Agent", back_populates="prompts")
 
 class Thread(Base):
     __tablename__ = "threads"
