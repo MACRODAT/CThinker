@@ -11,9 +11,9 @@
 
 ## 🔍 Overview
 
-CThinker is built around the concept of **agents**, **departments**, **threads**, and **points** as the internal currency. Each agent carries out actions (like starting threads, investing in ideas, or posting in threads), and interactions are tracked and rewarded or penalized based on productivity and contribution.([GitHub][2])
+CThinker is built around the concept of **agents**, **departments**, **threads**, and **points** as the internal currency. Each agent carries out actions (like starting threads, investing in ideas, or posting in threads), and interactions are tracked and rewarded or penalized based on productivity and contribution.
 
-This is *not just a static chatbot* — it’s more like an ecosystem with rules, departments, and behaviors that mimic collaborative structures in organizations or think tanks.([GitHub][2])
+This is *not just a static chatbot* — it’s more like an ecosystem with rules, departments, and behaviors that mimic collaborative structures in organizations or think tanks.
 
 ---
 

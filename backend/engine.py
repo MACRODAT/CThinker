@@ -275,7 +275,7 @@ class SimEngine:
                             "prompt": USER_PROMPT_SUMMER,
                             "stream": False
                         },
-                        timeout=160.0
+                        timeout=360.0
                     )
                     raw_summary = resp.json().get("response", "")
                     actions_str = raw_summary
@@ -338,10 +338,18 @@ class SimEngine:
 
                         if mode_match:
                             next_val = mode_match.group(1).strip()
-                            valid_modes = ["Creator", "Points Accounter", "Investor", "Custom"]
-                            if next_val in valid_modes:
-                                agent.next_mode = next_val
-                                add_step("system", f"Mode change queued: {next_val}")
+                            def normalize_mode(m):
+                                m_low = m.lower().strip().replace("_", " ")
+                                if "creator" in m_low: return "Creator"
+                                if "investor" in m_low: return "Investor"
+                                if "points" in m_low: return "Points Accounter"
+                                if "custom" in m_low: return "Custom"
+                                return None
+                            
+                            norm_mode = normalize_mode(next_val)
+                            if norm_mode:
+                                agent.next_mode = norm_mode
+                                add_step("system", f"Mode change queued: {norm_mode}")
                             raw = raw.replace(mode_match.group(0), "").strip()
 
                         # 5. Handle Tools
@@ -376,6 +384,54 @@ class SimEngine:
                                 break
                         else:
                             break
+                    
+                    # 5b. Force Mode if missing
+                    if not agent.next_mode:
+                        add_step("system", "Asking for Mode (Final Round)")
+                        mode_prompt_system = (
+                            "You have finished your turn. Now you must decide your NEXT MODE for the next tick.\n"
+                            "Available modes: Creator, Points Accounter, Investor.\n"
+                            "Please provide it in the format:\n"
+                            "[MODE]\n"
+                            "NEXT MODE\n"
+                            "[END MODE]"
+                        )
+                        mode_prompt_user = "[MODE]\nNEXT MODE\n[END MODE]"
+                        
+                        resp = await client.post(
+                            f"{server}/api/generate",
+                            json={
+                                "model": model,
+                                "system": mode_prompt_system,
+                                "prompt": mode_prompt_user,
+                                "stream": False,
+                                "options": {
+                                    "temperature": 0.3,
+                                    "num_predict": 100,
+                                }
+                            },
+                            timeout=timeout_val
+                        )
+                        mode_raw = resp.json().get("response", "")
+                        add_step("response", "Mode response received", {"raw": mode_raw})
+                        
+                        m_match = re.search(r"\[MODE\](.*?)\s*\[END MODE\]", mode_raw, re.DOTALL | re.IGNORECASE)
+                        if m_match:
+                            m_val = m_match.group(1).strip()
+                            def normalize_mode_final(m):
+                                m_low = m.lower().strip().replace("_", " ")
+                                if "creator" in m_low: return "Creator"
+                                if "investor" in m_low: return "Investor"
+                                if "points" in m_low: return "Points Accounter"
+                                return None
+                            norm_m = normalize_mode_final(m_val)
+                            if norm_m:
+                                agent.next_mode = norm_m
+                                add_step("system", f"Mode determined: {norm_m}")
+                            else:
+                                add_step("system", "Mode normalization failed or unrecognized mode.")
+                        else:
+                            add_step("system", "Format error in mode response.")
                 
             # 6. Final Logic: Log Action
             action_snippet = final_processed_raw[:250] + ("..." if len(final_processed_raw) > 250 else "")
@@ -620,7 +676,18 @@ class SimEngine:
 
         # ── join_thread ────────────────────────────────────────────────────────
         elif tool_name == "join_thread":
-            tid, offer = args[0].upper(), int(args[1])
+            if len(args) < 2: return "JOIN_ERROR: Missing ID/offer."
+            if len(args) == 0:
+                return "JOIN_ERROR: Missing ID and offer. Syntax is [CALL_TOOL]\n- join_thread\n- thread_id\n- offer_points\n[END_CALL_TOOL]"
+            elif len(args) == 1:
+                tid = args[0].upper().strip()
+                offer = 0
+                await self.log(db, "INFO", "AGENT",\
+                    "THREAD_JOIN_REQUEST NO OFFER POINTS ASSUMED 0. IF YOU WANT TO OFFER POINTS, USE THE FULL SYNTAX.",\
+                    {"agent": agent.name_id, "thread_id": tid, "offer": -offer}, agent_id=agent.id)
+            else:
+                tid, offer = args[0], int(args[1])
+            tid = tid.upper().strip()
             t = db.query(Thread).filter(Thread.id == tid).first()
             if not t: return "JOIN_ERROR"
 
