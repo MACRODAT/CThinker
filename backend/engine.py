@@ -1705,7 +1705,7 @@ class SimEngine:
                     return "GLUE_QUERY_ERROR: Missing question. Format */glue_query|HF|{question}|{save}/*."
                 res = await glue.query_wiki(db, vid, question, save=save)
                 pages = ", ".join(res.get("pages_used", [])[:3])
-                result = f"GLUE_ANSWER:\n{res.get('answer','')}\n\nPages: {pages}\nYOU CAN READ PAGES WITH [/]! */glue_read|HF|_path_/* [\]."
+                result = f"GLUE_ANSWER:\n{res.get('answer','')}\n\nPages: {pages}\n"+ "[/]! READ PAGES WITH */glue_read|HF|{path}/* [\].  Use [/]! */web_search|{thread_id}|{topic}/* [\] to research topic."
                 if res.get("saved_to"):
                     result += f"\nSaved to: {res['saved_to']}"
             except Exception as e:
@@ -1813,7 +1813,7 @@ class SimEngine:
                     result = "GLUE_RECENT: No pages."
                 else:
                     lines = [f"• Path:{p['path']} ({p['modified'][:16]})" for p in pages]
-                    result = f"GLUE_RECENT ({len(pages)}):\n" + "\n".join(lines) + "\n [/]! YOU CAN READ PAGES WITH */glue_read|HF|_path_/* [\]."
+                    result = f"GLUE_RECENT ({len(pages)}):\n" + "\n".join(lines) + "\n [/]! READ PAGES WITH */glue_read|HF|_path_/* [\].  Use [/]! */web_search|{thread_id}|{topic}/* [\] to research topic."
             except Exception as e:
                 result = f"GLUE_RECENT_ERROR: {e}"
 
