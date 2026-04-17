@@ -20,7 +20,7 @@ Study _eval_conditional (and the earlier bool_ctx dictionary). Which four boolea
 How does the parser decide what to keep when /ELSE/ is present versus when it's absent?
 Can you invent a short example prompt snippet that uses {{ available_tickets_exist }} to show different text depending on whether unused tickets exist? (Write it exactly as it would appear in a PromptTemplate.)
 
-## 4. Block Tool Calls [CALL_TOOL] ... [END_CALL_TOOL]
+## 4. Block Tool Calls */ ... /*
 This is the heavy artillery of the Tool Workshop—agents can invoke full tools with arguments.
 
 How does the parser (_eval_block_tool) extract the tool name and arguments from the block?

@@ -72,7 +72,7 @@ def seed_db(db: Session):
     ensure_setting("llm_timeout", "300")
     ensure_setting("tavily_api_keys", "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")
     ensure_setting("tools_instruction_prefix",
-                   "# Using tools format\n[CALL_TOOL]\n- tool_name\n- argument 1\n- argument 2\n[END_CALL_TOOL]\n\n# AVAILABLE TOOLS")
+                   "# Using tools format\n*/\n- tool_name\n- argument 1\n- argument 2\n/*\n\n# AVAILABLE TOOLS")
     db.commit()
 
     # ── Agent tools ───────────────────────────────────────────────────────────
@@ -80,170 +80,170 @@ def seed_db(db: Session):
         models.AgentTool(
             id="create_thread",
             name="Create Thread",
-            description="[CALL_TOOL]\n- create_thread\n- topic\n- aim (memo/strategy)\n- ticket_id (optional)\n[END_CALL_TOOL]\nStart a new thread. Costs 100/25 pts. Tickets add bonus funds.",
+            description="*/\n- create_thread\n|topic\n|aim (memo/strategy)\n|ticket_id (optional)\n/*\nStart a new thread. Costs 100/25 pts. Tickets add bonus funds.",
             enabled=True),
         models.AgentTool(
             id="invest_thread",
             name="Invest Points",
-            description="[CALL_TOOL]\n- invest_thread\n- thread_id\n- amount\n[END_CALL_TOOL]\nAdd points to a thread's budget.",
+            description="*/\n- invest_thread\n- thread_id\n- amount\n/*\nAdd points to a thread's budget.",
             enabled=True),
         models.AgentTool(
             id="modify_own_tick",
             name="Dynamic Frequency Adjustment",
-            description="[CALL_TOOL]\n- modify_own_tick\n- value\n[END_CALL_TOOL]",
+            description="*/\n- modify_own_tick\n- value\n/*",
             enabled=True),
         models.AgentTool(
             id="get_time",
             name="Get Current Time",
-            description="[CALL_TOOL]\n- get_time\n[END_CALL_TOOL]",
+            description="*/\n- get_time\n/*",
             enabled=True),
         models.AgentTool(
             id="get_weather",
             name="Get Weather",
-            description="[CALL_TOOL]\n- get_weather\n- city\n[END_CALL_TOOL]",
+            description="*/\n- get_weather\n- city\n/*",
             enabled=True),
         models.AgentTool(
             id="get_news",
             name="Get News Headlines",
-            description="[CALL_TOOL]\n- get_news\n- topic\n[END_CALL_TOOL]",
+            description="*/\n- get_news\n- topic\n/*",
             enabled=True),
         models.AgentTool(
             id="join_thread",
             name="Join Quest",
-            description="[CALL_TOOL]\n- join_thread\n- thread_id\n- offer_points\n[END_CALL_TOOL]\nRequest to join a thread with a point investment.",
+            description="*/\n- join_thread\n- thread_id\n- offer_points\n/*\nRequest to join a thread with a point investment.",
             enabled=True),
         models.AgentTool(
             id="approve_join",
             name="Approve Join",
-            description="[CALL_TOOL]\n- approve_join\n- thread_id\n- agent_id\n[END_CALL_TOOL]\nOwner only: Approve a join quest.",
+            description="*/\n- approve_join\n- thread_id\n- agent_id\n/*\nOwner only: Approve a join quest.",
             enabled=True),
         models.AgentTool(
             id="set_thread_status",
             name="Set Thread Status",
-            description="[CALL_TOOL]\n- set_thread_status\n- thread_id\n- status\n[END_CALL_TOOL]\nOwner: OPEN (2 pts), FREEZE, REJECT.",
+            description="*/\n- set_thread_status\n- thread_id\n- status\n/*\nOwner: OPEN (2 pts), FREEZE, REJECT.",
             enabled=True),
         models.AgentTool(
             id="refill_thread",
             name="Refill Thread",
-            description="[CALL_TOOL]\n- refill_thread\n- thread_id\n- amount\n[END_CALL_TOOL]\nOwner: Transfer points from wallet to thread.",
+            description="*/\n- refill_thread\n- thread_id\n- amount\n/*\nOwner: Transfer points from wallet to thread.",
             enabled=True),
         models.AgentTool(
             id="delete_message",
             name="Delete Message",
-            description="[CALL_TOOL]\n- delete_message\n- thread_id\n- message_id\n[END_CALL_TOOL]\nOwner: Delete a message.",
+            description="*/\n- delete_message\n- thread_id\n- message_id\n/*\nOwner: Delete a message.",
             enabled=True),
         models.AgentTool(
             id="invite_to_thread",
             name="Invite To Thread",
-            description="[CALL_TOOL]\n- invite_to_thread\n- thread_id\n- agent_name\n- offer_points\n[END_CALL_TOOL]\nInvite an agent to join. Points are deducted from thread budget.",
+            description="*/\n- invite_to_thread\n- thread_id\n- agent_name\n- offer_points\n/*\nInvite an agent to join. Points are deducted from thread budget.",
             enabled=True),
         models.AgentTool(
             id="accept_invite",
             name="Accept Invite",
-            description="[CALL_TOOL]\n- accept_invite\n- thread_id\n[END_CALL_TOOL]\nJoin a thread you were invited to and receive points.",
+            description="*/\n- accept_invite\n- thread_id\n/*\nJoin a thread you were invited to and receive points.",
             enabled=True),
         models.AgentTool(
             id="decline_invite",
             name="Decline Invite",
-            description="[CALL_TOOL]\n- decline_invite\n- thread_id\n[END_CALL_TOOL]\nDecline an invitation. Points are refunded to thread budget.",
+            description="*/\n- decline_invite\n- thread_id\n/*\nDecline an invitation. Points are refunded to thread budget.",
             enabled=True),
         models.AgentTool(
             id="stealth_mode_thread",
             name="Stealth Mode",
-            description="[CALL_TOOL]\n- stealth_mode_thread\n- thread_id\n[END_CALL_TOOL]\nHide a thread from others (summaries, listings). Costs 10 points.",
+            description="*/\n- stealth_mode_thread\n- thread_id\n/*\nHide a thread from others (summaries, listings). Costs 10 points.",
             enabled=True),
         models.AgentTool(
             id="get_thread_summary",
             name="Get Thread Summary",
-            description="[CALL_TOOL]\n- get_thread_summary\n- thread_id\n[END_CALL_TOOL]\nReturn the AI-generated summary for a specific thread.",
+            description="*/\n- get_thread_summary\n- thread_id\n/*\nReturn the AI-generated summary for a specific thread.",
             enabled=True),
         models.AgentTool(
             id="get_all_summaries",
             name="Get All Thread Summaries",
-            description="[CALL_TOOL]\n- get_all_summaries\n[END_CALL_TOOL]\nReturn summaries of all OPEN and ACTIVE threads.",
+            description="*/\n- get_all_summaries\n/*\nReturn summaries of all OPEN and ACTIVE threads.",
             enabled=True),
         models.AgentTool(
             id="set_thread_vibe",
             name="Set Thread Vibe",
-            description="[CALL_TOOL]\n- set_thread_vibe\n- thread_id\n- color_theme (hex or name)\n- css_pattern (grid, cross, none)\n[END_CALL_TOOL]\nOwner/Collab: Style the thread background and accent.",
+            description="*/\n- set_thread_vibe\n- thread_id\n- color_theme (hex or name)\n- css_pattern (grid, cross, none)\n/*\nOwner/Collab: Style the thread background and accent.",
             enabled=True),
         models.AgentTool(
             id="web_search",
             name="Web Search",
-            description="[CALL_TOOL]\n- web_search\n- thread_id\n- search query\n[END_CALL_TOOL]\nSearch the web for information. Crawls top 3 results and summarizes each page. Costs 10 pts (first use in thread) or 30 pts (subsequent uses). Deducted from thread budget.",
+            description="*/\n- web_search\n- thread_id\n- search query\n/*\nSearch the web for information. Crawls top 3 results and summarizes each page. Costs 10 pts (first use in thread) or 30 pts (subsequent uses). Deducted from thread budget.",
             enabled=True),
         # ── GLUE Wiki Tools ─────────────────────────────────────────────────
         models.AgentTool(
             id="glue_ingest", name="Glue: Ingest Source",
-            description="[CALL_TOOL]\n- glue_ingest\n- vault_id\n- filename\n[END_CALL_TOOL]\nIngest a file from raw/inbox into the wiki. Creates a source summary page.",
+            description="*/\n- glue_ingest\n- vault_id\n- filename\n/*\nIngest a file from raw/inbox into the wiki. Creates a source summary page.",
             enabled=True),
         models.AgentTool(
             id="glue_ingest_text", name="Glue: Ingest Text",
-            description="[CALL_TOOL]\n- glue_ingest_text\n- vault_id\n- title\n- content\n[END_CALL_TOOL]\nIngest raw text directly into the wiki as a source page.",
+            description="*/\n- glue_ingest_text\n- vault_id\n- title\n- content\n/*\nIngest raw text directly into the wiki as a source page.",
             enabled=True),
         models.AgentTool(
             id="glue_ingest_url", name="Glue: Ingest URL",
-            description="[CALL_TOOL]\n- glue_ingest_url\n- vault_id\n- url\n[END_CALL_TOOL]\nFetch a URL, extract text, summarize, and add to wiki.",
+            description="*/\n- glue_ingest_url\n- vault_id\n- url\n/*\nFetch a URL, extract text, summarize, and add to wiki.",
             enabled=True),
         models.AgentTool(
             id="glue_query", name="Glue: Query Wiki",
-            description="[CALL_TOOL]\n- glue_query\n- vault_id\n- question\n- save (y/n)\n[END_CALL_TOOL]\nAsk a question against the wiki. Optionally save the answer.",
+            description="*/\n- glue_query\n- vault_id\n- question\n- save (y/n)\n/*\nAsk a question against the wiki. Optionally save the answer.",
             enabled=True),
         models.AgentTool(
             id="glue_search", name="Glue: Search Wiki",
-            description="[CALL_TOOL]\n- glue_search\n- vault_id\n- keyword1\n- keyword2\n[END_CALL_TOOL]\nMulti-keyword full-text search across wiki pages.",
+            description="*/\n- glue_search\n- vault_id\n- keyword1\n- keyword2\n/*\nMulti-keyword full-text search across wiki pages.",
             enabled=True),
         models.AgentTool(
             id="glue_read", name="Glue: Read Page",
-            description="[CALL_TOOL]\n- glue_read\n- vault_id\n- page_path\n[END_CALL_TOOL]\nRead a specific wiki page by path (e.g. wiki/sources/page.md).",
+            description="*/\n- glue_read\n- vault_id\n- page_path\n/*\nRead a specific wiki page by path (e.g. wiki/sources/page.md).",
             enabled=True),
         models.AgentTool(
             id="glue_write", name="Glue: Write Page",
-            description="[CALL_TOOL]\n- glue_write\n- vault_id\n- page_path\n- content\n[END_CALL_TOOL]\nCreate or overwrite a wiki page.",
+            description="*/\n- glue_write\n- vault_id\n- page_path\n- content\n/*\nCreate or overwrite a wiki page.",
             enabled=True),
         models.AgentTool(
             id="glue_list", name="Glue: List Pages",
-            description="[CALL_TOOL]\n- glue_list\n- vault_id\n- category (optional: sources/concepts/entities/syntheses/queries/meta)\n[END_CALL_TOOL]\nList wiki pages, optionally filtered by category.",
+            description="*/\n- glue_list\n- vault_id\n- category (optional: sources/concepts/entities/syntheses/queries/meta)\n/*\nList wiki pages, optionally filtered by category.",
             enabled=True),
         models.AgentTool(
             id="glue_follow", name="Glue: Follow Node",
-            description="[CALL_TOOL]\n- glue_follow\n- vault_id\n- page_path\n[END_CALL_TOOL]\nRead a page and see its outbound [[links]].",
+            description="*/\n- glue_follow\n- vault_id\n- page_path\n/*\nRead a page and see its outbound [[links]].",
             enabled=True),
         models.AgentTool(
             id="glue_backlinks", name="Glue: Backlinks",
-            description="[CALL_TOOL]\n- glue_backlinks\n- vault_id\n- page_path\n[END_CALL_TOOL]\nFind all pages that link TO a given page.",
+            description="*/\n- glue_backlinks\n- vault_id\n- page_path\n/*\nFind all pages that link TO a given page.",
             enabled=True),
         models.AgentTool(
             id="glue_recent", name="Glue: Recent Pages",
-            description="[CALL_TOOL]\n- glue_recent\n- vault_id\n- count (default 10)\n[END_CALL_TOOL]\nGet the most recently modified wiki pages.",
+            description="*/\n- glue_recent\n- vault_id\n- count (default 10)\n/*\nGet the most recently modified wiki pages.",
             enabled=True),
         models.AgentTool(
             id="glue_lint", name="Glue: Lint Wiki",
-            description="[CALL_TOOL]\n- glue_lint\n- vault_id\n[END_CALL_TOOL]\nRun a health check on the wiki: orphans, broken links, thin pages.",
+            description="*/\n- glue_lint\n- vault_id\n/*\nRun a health check on the wiki: orphans, broken links, thin pages.",
             enabled=True),
         models.AgentTool(
             id="glue_git_status", name="Glue: Git Status",
-            description="[CALL_TOOL]\n- glue_git_status\n- vault_id\n[END_CALL_TOOL]\nShow git status and recent commits for a vault.",
+            description="*/\n- glue_git_status\n- vault_id\n/*\nShow git status and recent commits for a vault.",
             enabled=True),
         models.AgentTool(
             id="glue_git_commit", name="Glue: Git Commit",
-            description="[CALL_TOOL]\n- glue_git_commit\n- vault_id\n- message\n[END_CALL_TOOL]\nCommit all staged wiki changes.",
+            description="*/\n- glue_git_commit\n- vault_id\n- message\n/*\nCommit all staged wiki changes.",
             enabled=True),
         models.AgentTool(
             id="glue_git_log", name="Glue: Git Log",
-            description="[CALL_TOOL]\n- glue_git_log\n- vault_id\n- count (default 20)\n[END_CALL_TOOL]\nView recent git commits.",
+            description="*/\n- glue_git_log\n- vault_id\n- count (default 20)\n/*\nView recent git commits.",
             enabled=True),
         models.AgentTool(
             id="glue_git_diff", name="Glue: Git Diff",
-            description="[CALL_TOOL]\n- glue_git_diff\n- vault_id\n[END_CALL_TOOL]\nView pending changes (staged + unstaged diffs).",
+            description="*/\n- glue_git_diff\n- vault_id\n/*\nView pending changes (staged + unstaged diffs).",
             enabled=True),
         models.AgentTool(
             id="glue_git_revert", name="Glue: Git Revert",
-            description="[CALL_TOOL]\n- glue_git_revert\n- vault_id\n- commit_ref\n[END_CALL_TOOL]\nRevert a specific commit.",
+            description="*/\n- glue_git_revert\n- vault_id\n- commit_ref\n/*\nRevert a specific commit.",
             enabled=True),
         models.AgentTool(
             id="glue_git_discard", name="Glue: Git Discard",
-            description="[CALL_TOOL]\n- glue_git_discard\n- vault_id\n- filepath\n[END_CALL_TOOL]\nDiscard unstaged changes to a specific file.",
+            description="*/\n- glue_git_discard\n- vault_id\n- filepath\n/*\nDiscard unstaged changes to a specific file.",
             enabled=True),
     ]
     for tool in tool_defs:
@@ -953,7 +953,7 @@ async def invoke_tool(tool_id: str, req: schemas.ToolInvokeRequest, db: Session 
     # ── Step 1: execute the tool ──────────────────────────────────────────────
     # Built-in tools (get_time, HTTP_GET, …) return their final value directly.
     # Custom tools return their prompt_template with {arg_N} already substituted,
-    # but still containing {{ conditionals }}, [CALL_TOOL] blocks, {variables}, …
+    # but still containing {{ conditionals }}, */ blocks, {variables}, …
     raw = await sim_engine._execute_inline_command(tool_id, args_list, db, agent)
 
     # ── Step 2: full resolve pass ─────────────────────────────────────────────

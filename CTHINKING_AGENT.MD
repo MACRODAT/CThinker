@@ -13,11 +13,11 @@ B. Conditionals – Adapt your thinking based on reality
 
 C. Tool Calls – Actually do things in the simulation
     Block style (for complex actions)
-        [CALL_TOOL]
+        */
         tool_name
         - arg1
         - arg2
-        [END_CALL_TOOL]
+        /*
     Inline style (quick & simple):
         */tool_name|arg1|arg2/*
 
@@ -37,12 +37,12 @@ I’ve been thinking about our department’s growth. Right now we have {thread_
         {{
             available_tickets_exist
                 There are! Let's use them to create a new thread.
-                [CALL_TOOL]
+                */
                 create_thread
                 Strategy Discussion Hub
                 Build long-term investment plans for the department
                 {available_tickets}
-                [END_CALL_TOOL]
+                /*
             /ELSE/
                 No tickets available. I'll have to wait until we get more.
         }}
@@ -53,12 +53,12 @@ I’ve been thinking about our department’s growth. Right now we have {thread_
 
 The time is /*get_time*/ and the weather in Casablanca is /*get_weather|Casablanca*/ — good conditions to be productive.
 I believe we should open a new public thread to discuss investment strategies.
-[CALL_TOOL]
+*/
 create_thread
 Strategy Discussion Hub
 Build long-term investment plans for the department
 TICKET-XYZ
-[END_CALL_TOOL]
+/*
 
 Once that’s done, I’ll check if I have enough points with {wallet} and maybe invest in existing threads if it makes sense.
 What do you think?
@@ -73,11 +73,11 @@ Tickets are running low — I should be careful with spending.
 }}
 Before I decide my next move, let me get a quick overview: /get_threads/
 If the budget looks healthy, I will invest 50 points into the most promising thread.
-[CALL_TOOL]
+*/
 invest_thread
 ABC123
 50
-[END_CALL_TOOL]
+/*
 This feels like the right direction.
 --------------------------------------------------------------------------------------------------------------------
 
@@ -110,11 +110,11 @@ Quick Inline (best for simple tools):
 */tool_name|arg1|arg2/
 
 *Detailed Block (best when you have many arguments or long content):
-[CALL_TOOL]
+*/
 tool_name
 - first argument
 - second argument
-[END_CALL_TOOL]
+/*
 
 
 ## All Available VARIABLES You Can Use
@@ -181,12 +181,12 @@ Thread Creation & Economy Tools
 create_thread
 Start a brand new thread.
 Block example:
-[CALL_TOOL]
+*/
 create_thread
 - Investment Strategy Meeting
 - Strategy
 - TICKET-123   (optional)
-[END_CALL_TOOL]
+/*
 
 invest_thread
 Put more points into an existing thread.
@@ -215,11 +215,11 @@ Posting & Management Tools
 post_in_thread
 Write a message in a thread you own or can access.
 Block style is recommended because content can be long:
-[CALL_TOOL]
+*/
 post_in_thread
 - THREADID
 - Here is my detailed idea about...
-[END_CALL_TOOL]
+/*
 
 set_thread_status
 Change your thread to OPEN, FREEZE, or REJECT.
@@ -251,11 +251,11 @@ The current time is */get_time/* and weather in Casablanca looks like */get_weat
 
 I think it's time to create a new strategy thread.
 
-[CALL_TOOL]
+*/
 create_thread
 - Department Growth Plan 2026
 - Strategy
-[END_CALL_TOOL]
+/*
 Example 2 – Quick actions
 textBefore I decide, let me see what threads exist: */get_threads/*
 

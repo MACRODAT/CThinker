@@ -3160,7 +3160,7 @@ function ToolWorkshop({ tools, agents, state, fetchState }) {
           <div>
             <label style={{ fontSize: 9, color: "#6b7280", display: "block", marginBottom: 3, fontWeight: 600 }}>DESCRIPTION (shown to agents)</label>
             <textarea value={form.description} onChange={e => setField("description", e.target.value)}
-              placeholder="[CALL_TOOL]\n- my_tool\n- arg\n[END_CALL_TOOL]\nDescribes what this tool does…"
+              placeholder="*/\n- my_tool\n- arg\n/*\nDescribes what this tool does…"
               rows={3} style={{ ...inputSt, resize: "vertical", fontFamily: "monospace", fontSize: 11 }} />
           </div>
         </div>

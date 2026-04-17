@@ -9,20 +9,20 @@ IT WORKS WELL. IT PARSES THOSE VARIABLES CORRECTLY.
 But the functions/tools do NOT work.
 But I need to implement:
 - functions without args, format: 
-[CALL_TOOL]
+*/
 func
-[END_CALL_TOOL]
+/*
 - functions with arguments, format: 
-[CALL_TOOL]
+*/
 func
 arg1
 arg2
-[END_CALL_TOOL]
+/*
 - other custom_tools with/without args, format: 
-[CALL_TOOL]
+*/
 custom_tool
 arg1
-[END_CALL_TOOL]
+/*
 - Also, when a paid external tool is called, you must pay its owner. (may be implemented)
 
 Also, why call an LLM in execute_custom_tool? => DO NOT! PARSE the prompt in code.
@@ -49,27 +49,27 @@ Correct all these to handle the prompt below (as example):
         When you get in here, it should call an external tool. Current time: *\/get_time\/*
         I could also call another external paid tool with arguments like so. Result: *\/external_paid_tool|arg1|arg2\/*
         I may also produce complex stuff like:
-        [CALL_TOOL]
+        */
         READ_FILE
         file.txt
-        [END_CALL_TOOL]
+        /*
         OR even:
-        [CALL_TOOL]
+        */
         HTTP_POST
-          [CALL_TOOL]
+          */
           READ_FILE
           url.txt
-          [END_CALL_TOOL]
-        [END_CALL_TOOL]
+          /*
+        /*
         Basically, the parser needs to be perfect to handle every single prompt!
         {{
             pending_invitations_exist
                 Returns this sentence with the name of the agent which is {agent}
                 Now we'll send it to server. Result:
-                [CALL_TOOL]
+                */
                 HTTP_POST
                 http://localhost:98327/seen/{agent}
-                [END_CALL_TOOL]
+                /*
             /ELSE/
                 Returns another sentence with the name of the agent which is {agent}
         }}
@@ -85,6 +85,6 @@ THE PROMPT PARSER FUNCTION WORKS WELL. BUT THE WORKSHOP PROMPT IS NOT PARSER COR
 - CONDITIONALS ARE NOT PARSED! (BAD)
 - SIMPLE VARIABLES ARE PARSED. (GOOD)
 - FUNCTIONS AND external TOOLS DO NOT WORK (BAD)
-[CALL_TOOL]
+*/
 get_time
-[END_CALL_TOOL]
+/*

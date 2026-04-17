@@ -1,16 +1,16 @@
 Change tool format and parser
 To simpler format:
-[CALL_TOOL]
+*/
 - tool_name: "post_in_thread"
 - arg1
 - arg2
-[END_CALL_TOOL]
+/*
 
-[CALL_TOOL]
+*/
 - tool_name: "get_threads"
 - arg1
 
-[CALL_TOOL]
+*/
 - tool_name: "get_agents"
 - args: ["filter_department"]
 

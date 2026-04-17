@@ -1282,8 +1282,8 @@ function Agents({ state, createThread, updateAgent, setView }) {
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                     <div>
                       <label style={{ display: "block", fontSize: 11, marginBottom: 6, color: "#6b7280" }}>Lifecycle Status</label>
-                      <button 
-                        className={`btn ${agent.is_halted ? 'btn-soft' : 'btn-primary'}`} 
+                      <button
+                        className={`btn ${agent.is_halted ? 'btn-soft' : 'btn-primary'}`}
                         onClick={() => updateAgent(sel, { is_halted: !agent.is_halted })}
                         style={{ width: "100%", fontSize: 11, background: agent.is_halted ? "#450a0a" : "#064e3b", color: agent.is_halted ? "#fca5a5" : "#34d399", borderColor: agent.is_halted ? "#991b1b" : "#059669" }}
                       >
@@ -1292,11 +1292,11 @@ function Agents({ state, createThread, updateAgent, setView }) {
                     </div>
                     <div>
                       <label style={{ display: "block", fontSize: 11, marginBottom: 6, color: "#6b7280" }}>Tick Interval (s)</label>
-                      <input 
-                        type="number" 
-                        min="1" 
-                        value={agent.ticks} 
-                        onChange={e => updateAgent(sel, { ticks: parseInt(e.target.value) || 1 })} 
+                      <input
+                        type="number"
+                        min="1"
+                        value={agent.ticks}
+                        onChange={e => updateAgent(sel, { ticks: parseInt(e.target.value) || 1 })}
                         style={{ width: "100%", background: "#0b0c10", border: "1px solid #1e222d", color: "#fff", padding: "6px 10px", borderRadius: 6 }}
                       />
                     </div>
@@ -1446,7 +1446,7 @@ function Agenting({ state, updateAgent }) {
                 <span style={{ fontWeight: 600, color: "#fff", fontSize: 15 }}>{selectedAgent.name_id}</span>
                 <div style={{ textTransform: "uppercase", fontSize: 10, color: "#6b7280", fontWeight: 700, marginLeft: 10 }}>Mode:</div>
                 <select value={selectedMode} onChange={e => setSelectedMode(e.target.value)} style={{ padding: "4px 8px", background: "#11141a", color: "#f59e0b", border: "1px solid #78350f", borderRadius: 4, fontWeight: 600 }}>
-                   {["Creator", "Points Accounter", "Investor", "Custom"].map(m => <option key={m} value={m}>{m}</option>)}
+                  {["Creator", "Points Accounter", "Investor", "Custom"].map(m => <option key={m} value={m}>{m}</option>)}
                 </select>
                 <div style={{ textTransform: "uppercase", fontSize: 10, color: "#6b7280", fontWeight: 700, marginLeft: 10 }}>Type:</div>
                 <select value={promptType} onChange={e => { setPromptType(e.target.value); setTab("edit"); }} style={{ padding: "4px 8px", background: "#11141a", color: "#e2e8f0", border: "1px solid #1e222d", borderRadius: 4 }}>
@@ -1501,7 +1501,7 @@ function Agenting({ state, updateAgent }) {
                     <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 700, letterSpacing: 1, marginBottom: 12 }}>Common Tools</div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 300, overflowY: "auto", paddingRight: 4 }}>
                       {Object.values(state.tools || {}).map(t => (
-                        <div key={t.id} onClick={() => insertHelper(`\n[CALL_TOOL]\n{"tool":"${t.id}", "args":{}}\n[/CALL_TOOL]`)} style={{ fontSize: 10, padding: "6px 8px", background: "#1c1400", border: "1px solid #78350f", borderRadius: 4, cursor: "pointer", textAlign: "left" }}>
+                        <div key={t.id} onClick={() => insertHelper(`\n*/\n{"tool":"${t.id}", "args":{}}\n[/CALL_TOOL]`)} style={{ fontSize: 10, padding: "6px 8px", background: "#1c1400", border: "1px solid #78350f", borderRadius: 4, cursor: "pointer", textAlign: "left" }}>
                           <div style={{ color: "#fbbf24", fontWeight: 600, marginBottom: 2 }}>{t.id}</div>
                           <div style={{ color: "#d97706", fontSize: 9, whiteSpace: "normal", lineHeight: 1.2 }}>{t.description.slice(0, 80)}{t.description.length > 80 ? "..." : ""}</div>
                         </div>
@@ -1679,7 +1679,7 @@ function Glue({ state, fetchState }) {
             <select value={selVault || ""} onChange={e => setSelVault(e.target.value)} style={{ width: "100%", fontSize: 12, border: "1px solid #3730a3", color: "#a5b4fc", background: "#1e1b4b11" }}>
               {vaults.map(v => <option key={v} value={v}>{v}</option>)}
             </select>
-            <button 
+            <button
               onClick={() => {
                 const name = window.prompt("New Vault ID (e.g. PROJECT_X):");
                 if (name) {
@@ -2359,8 +2359,8 @@ function Threads({ state, approveThread, rejectThread, deleteThread, updateThrea
                     {/* Vault Link */}
                     <div>
                       <div style={{ fontSize: 10, fontWeight: 800, color: "#9ca3af", letterSpacing: 1, marginBottom: 8 }}>GLUE LINK</div>
-                      <select 
-                        value={thread.vault_id || ""} 
+                      <select
+                        value={thread.vault_id || ""}
                         onChange={e => updateThread(sel, { vault_id: e.target.value })}
                         style={{ width: "100%", fontSize: 12, border: "1px solid #3730a3", color: "#a5b4fc", background: "#1e1b4b11" }}
                       >
@@ -2722,7 +2722,7 @@ function Departments({ state, updateAgent }) {
                       {ceo.is_halted && <span style={{ fontSize: 9, marginLeft: 8, background: "#450a0a", color: "#fca5a5", padding: "1px 6px", borderRadius: 4, fontWeight: 700 }}>HALTED</span>}
                     </div>
                     <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                      <button 
+                      <button
                         onClick={() => updateAgent(ceo.id, { is_halted: !ceo.is_halted })}
                         style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, padding: 0, opacity: 0.8 }}
                         title={ceo.is_halted ? "Resume" : "Suspend"}
@@ -2753,7 +2753,7 @@ function Departments({ state, updateAgent }) {
                     </div>
                   </div>
                   <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                    <button 
+                    <button
                       onClick={() => updateAgent(a.id, { is_halted: !a.is_halted })}
                       style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, padding: 0, opacity: 0.8 }}
                       title={a.is_halted ? "Resume" : "Suspend"}

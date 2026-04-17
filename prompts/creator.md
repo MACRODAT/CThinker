@@ -64,7 +64,7 @@ MODES: Creator|Points_Accounter|Invester
 # OUTPUT FORMAT
 - THINKING
 - TOOL CALLS (AS MANY AS YOU WANT)
-    [CALL_TOOL]
+    */
     tool_name
     arg1
     arg2

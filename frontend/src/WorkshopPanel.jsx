@@ -8,57 +8,57 @@ const API_BASE = 'http://127.0.0.1:8000/api';
 
 // ── CTHINKING reference data ──────────────────────────────────────────────────
 export const CT_VARS = [
-  { v: "{agent}",              color: "#38bdf8", desc: "Agent name/ID" },
-  { v: "{wallet}",             color: "#38bdf8", desc: "Agent wallet balance" },
-  { v: "{thread_summary}",     color: "#38bdf8", desc: "Active thread list" },
-  { v: "{available_tickets}",  color: "#38bdf8", desc: "Unused ticket list" },
-  { v: "{pending_quests}",     color: "#38bdf8", desc: "Pending join quests" },
+  { v: "{agent}", color: "#38bdf8", desc: "Agent name/ID" },
+  { v: "{wallet}", color: "#38bdf8", desc: "Agent wallet balance" },
+  { v: "{thread_summary}", color: "#38bdf8", desc: "Active thread list" },
+  { v: "{available_tickets}", color: "#38bdf8", desc: "Unused ticket list" },
+  { v: "{pending_quests}", color: "#38bdf8", desc: "Pending join quests" },
   { v: "{pending_invitation}", color: "#38bdf8", desc: "Pending invitations" },
-  { v: "{invitation_status}",  color: "#38bdf8", desc: "Latest quest status" },
-  { v: "{memory}",             color: "#38bdf8", desc: "Agent memory" },
-  { v: "{arg_0}",              color: "#34d399", desc: "First argument" },
-  { v: "{arg_1}",              color: "#34d399", desc: "Second argument" },
-  { v: "{arg_2}",              color: "#34d399", desc: "Third argument" },
+  { v: "{invitation_status}", color: "#38bdf8", desc: "Latest quest status" },
+  { v: "{memory}", color: "#38bdf8", desc: "Agent memory" },
+  { v: "{arg_0}", color: "#34d399", desc: "First argument" },
+  { v: "{arg_1}", color: "#34d399", desc: "Second argument" },
+  { v: "{arg_2}", color: "#34d399", desc: "Third argument" },
 ];
 
 export const CT_CONDS = [
   { k: "available_tickets_exist", color: "#fbbf24", desc: "Has unused tickets" },
-  { k: "pending_quests_exist",    color: "#fbbf24", desc: "Has pending quests" },
-  { k: "pending_invitation_exist",color: "#fbbf24", desc: "Has pending invitations" },
+  { k: "pending_quests_exist", color: "#fbbf24", desc: "Has pending quests" },
+  { k: "pending_invitation_exist", color: "#fbbf24", desc: "Has pending invitations" },
 ];
 
 export const CT_BUILTINS = [
-  { id: "get_time",               color: "#a78bfa" },
-  { id: "get_weather",            color: "#a78bfa" },
-  { id: "get_news",               color: "#a78bfa" },
-  { id: "get_threads",            color: "#a78bfa" },
-  { id: "get_agents",             color: "#a78bfa" },
-  { id: "get_marketplace",        color: "#c084fc" },
-  { id: "get_owned_tools",        color: "#c084fc" },
-  { id: "own_tool",               color: "#c084fc" },
-  { id: "get_agent_info",         color: "#a78bfa" },
-  { id: "get_thread_info",        color: "#a78bfa" },
-  { id: "get_agent_ranking",      color: "#a78bfa" },
-  { id: "get_dept_ranking",       color: "#a78bfa" },
-  { id: "get_recent_transactions",color: "#a78bfa" },
-  { id: "create_thread",          color: "#f97316" },
-  { id: "invest_thread",          color: "#f97316" },
-  { id: "join_thread",            color: "#f97316" },
-  { id: "approve_join",           color: "#f97316" },
-  { id: "post_in_thread",         color: "#4ade80" },
-  { id: "set_thread_status",      color: "#f97316" },
-  { id: "refill_thread",          color: "#f97316" },
-  { id: "produce_transaction",    color: "#f97316" },
-  { id: "batch_invest",           color: "#f97316" },
-  { id: "accept_invite",          color: "#f97316" },
-  { id: "decline_invite",         color: "#f97316" },
+  { id: "get_time", color: "#a78bfa" },
+  { id: "get_weather", color: "#a78bfa" },
+  { id: "get_news", color: "#a78bfa" },
+  { id: "get_threads", color: "#a78bfa" },
+  { id: "get_agents", color: "#a78bfa" },
+  { id: "get_marketplace", color: "#c084fc" },
+  { id: "get_owned_tools", color: "#c084fc" },
+  { id: "own_tool", color: "#c084fc" },
+  { id: "get_agent_info", color: "#a78bfa" },
+  { id: "get_thread_info", color: "#a78bfa" },
+  { id: "get_agent_ranking", color: "#a78bfa" },
+  { id: "get_dept_ranking", color: "#a78bfa" },
+  { id: "get_recent_transactions", color: "#a78bfa" },
+  { id: "create_thread", color: "#f97316" },
+  { id: "invest_thread", color: "#f97316" },
+  { id: "join_thread", color: "#f97316" },
+  { id: "approve_join", color: "#f97316" },
+  { id: "post_in_thread", color: "#4ade80" },
+  { id: "set_thread_status", color: "#f97316" },
+  { id: "refill_thread", color: "#f97316" },
+  { id: "produce_transaction", color: "#f97316" },
+  { id: "batch_invest", color: "#f97316" },
+  { id: "accept_invite", color: "#f97316" },
+  { id: "decline_invite", color: "#f97316" },
 ];
 
 export const CT_ACTIONS = [
-  { id: "http_get",    label: "HTTP_GET",    color: "#22d3ee", snippet: "*/HTTP_GET|https://api.example.com/*" },
-  { id: "http_post",   label: "HTTP_POST",   color: "#22d3ee", snippet: "[CALL_TOOL]\nHTTP_POST\nhttps://api.example.com\n{\"key\":\"val\"}\n[END_CALL_TOOL]" },
-  { id: "create_file", label: "CREATE_FILE", color: "#22d3ee", snippet: "[CALL_TOOL]\nCREATE_FILE\noutput.txt\nContent here\n[END_CALL_TOOL]" },
-  { id: "read_file",   label: "READ_FILE",   color: "#22d3ee", snippet: "*/READ_FILE|output.txt/*" },
+  { id: "http_get", label: "HTTP_GET", color: "#22d3ee", snippet: "*/HTTP_GET|https://api.example.com/*" },
+  { id: "http_post", label: "HTTP_POST", color: "#22d3ee", snippet: "*/\nHTTP_POST\nhttps://api.example.com\n{\"key\":\"val\"}\n/*" },
+  { id: "create_file", label: "CREATE_FILE", color: "#22d3ee", snippet: "*/\nCREATE_FILE\noutput.txt\nContent here\n/*" },
+  { id: "read_file", label: "READ_FILE", color: "#22d3ee", snippet: "*/READ_FILE|output.txt/*" },
 ];
 
 // ── Pill chip helper ──────────────────────────────────────────────────────────
@@ -112,11 +112,11 @@ export function CollapseSection({ title, accent = "#6366f1", defaultOpen = true,
 
 // ── CTHINKING Toolbar ─────────────────────────────────────────────────────────
 export function CThinkingToolbar({ onInsert, argCount = 0, tools = [] }) {
-  const insertVar   = v => onInsert(v);
-  const insertTool  = id => onInsert(`\n[CALL_TOOL]\n${id}\n- arg1\n[END_CALL_TOOL]\n`);
-  const insertInline= id => onInsert(`*/` + id + `/*`);
-  const insertCond  = k  => onInsert(`{{\n  ${k}\n    Value if TRUE\n  /ELSE/\n    Value if FALSE\n}}`);
-  const insertAction= snip => onInsert(snip);
+  const insertVar = v => onInsert(v);
+  const insertTool = id => onInsert(`\n*/\n${id}\n- arg1\n/*\n`);
+  const insertInline = id => onInsert(`*/` + id + `/*`);
+  const insertCond = k => onInsert(`{{\n  ${k}\n    Value if TRUE\n  /ELSE/\n    Value if FALSE\n}}`);
+  const insertAction = snip => onInsert(snip);
 
   return (
     <div style={{
@@ -181,8 +181,8 @@ export function CThinkingToolbar({ onInsert, argCount = 0, tools = [] }) {
           ))}
         </div>
         <div style={{ marginTop: 6 }}>
-          <Chip label="BLOCK: [CALL_TOOL]...[END_CALL_TOOL]" color="#22d3ee"
-            onClick={() => insertAction("\n[CALL_TOOL]\ntool_name\n- argument1\n- argument2\n[END_CALL_TOOL]\n")} />
+          <Chip label="BLOCK: */.../*" color="#22d3ee"
+            onClick={() => insertAction("\n*/\ntool_name\n- argument1\n- argument2\n/*\n")} />
         </div>
       </CollapseSection>
     </div>
@@ -196,14 +196,14 @@ export function ToolWorkshop({ tools, agents, state, fetchState }) {
     args: [], call_tools: [], allowed_actions: [], owner_id: "FOUNDER", price: 0,
   };
 
-  const [form, setForm]             = useState(blankForm);
+  const [form, setForm] = useState(blankForm);
   const [testAgentId, setTestAgent] = useState("");
-  const [testArgs, setTestArgs]     = useState([]);
+  const [testArgs, setTestArgs] = useState([]);
   const [testResult, setTestResult] = useState(null);
-  const [testing, setTesting]       = useState(false);
-  const [saving, setSaving]         = useState(false);
-  const [saved, setSaved]           = useState(false);
-  const [search, setSearch]         = useState("");
+  const [testing, setTesting] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [search, setSearch] = useState("");
   const [showToolbar, setShowToolbar] = useState(true);
   const promptRef = useRef(null);
 
@@ -212,10 +212,10 @@ export function ToolWorkshop({ tools, agents, state, fetchState }) {
     !search || t.name.toLowerCase().includes(search.toLowerCase()) || t.id.toLowerCase().includes(search.toLowerCase())
   );
 
-  const setField   = (k, v) => setForm(f => ({ ...f, [k]: v }));
-  const addArg     = () => setField("args", [...form.args, { name: "", description: "" }]);
-  const removeArg  = i => setField("args", form.args.filter((_, j) => j !== i));
-  const setArg     = (i, k, v) => setForm(f => { const a = [...f.args]; a[i] = { ...a[i], [k]: v }; return { ...f, args: a }; });
+  const setField = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const addArg = () => setField("args", [...form.args, { name: "", description: "" }]);
+  const removeArg = i => setField("args", form.args.filter((_, j) => j !== i));
+  const setArg = (i, k, v) => setForm(f => { const a = [...f.args]; a[i] = { ...a[i], [k]: v }; return { ...f, args: a }; });
   const toggleCallTool = tid => setField("call_tools",
     form.call_tools.includes(tid) ? form.call_tools.filter(x => x !== tid) : [...form.call_tools, tid]);
   const toggleAction = id => setField("allowed_actions",
@@ -233,12 +233,14 @@ export function ToolWorkshop({ tools, agents, state, fetchState }) {
 
   const loadTool = t => {
     let args = [], callTools = [], actions = [];
-    try { args = JSON.parse(t.args_definition || "[]"); } catch {}
-    try { callTools = JSON.parse(t.call_tools || "[]"); } catch {}
-    try { actions = JSON.parse(t.allowed_actions || "[]"); } catch {}
-    setForm({ id: t.id, name: t.name, description: t.description || "",
+    try { args = JSON.parse(t.args_definition || "[]"); } catch { }
+    try { callTools = JSON.parse(t.call_tools || "[]"); } catch { }
+    try { actions = JSON.parse(t.allowed_actions || "[]"); } catch { }
+    setForm({
+      id: t.id, name: t.name, description: t.description || "",
       prompt_template: t.prompt_template || "", args, call_tools: callTools,
-      allowed_actions: actions, owner_id: t.owner_id || "FOUNDER", price: t.price || 0 });
+      allowed_actions: actions, owner_id: t.owner_id || "FOUNDER", price: t.price || 0
+    });
     setTestResult(null);
   };
 
@@ -408,7 +410,7 @@ export function ToolWorkshop({ tools, agents, state, fetchState }) {
           <textarea
             value={form.description}
             onChange={e => setField("description", e.target.value)}
-            placeholder={"[CALL_TOOL]\n- my_tool\n- arg\n[END_CALL_TOOL]\nDescribes what this tool does."}
+            placeholder={"*/\n- my_tool\n- arg\n/*\nDescribes what this tool does."}
             style={{ ...inp, height: 72, resize: "vertical", fontFamily: "monospace", fontSize: 11, lineHeight: 1.5 }}
           />
         </div>
