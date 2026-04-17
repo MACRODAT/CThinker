@@ -264,7 +264,7 @@ def write_wiki_page(vault_id: str, page_rel: str, content: str) -> dict:
     is_new = not p.exists()
     write_file(p, content)
     git_stage(vault_id, [page_rel])
-    return {"status": "created" if is_new else "updated", "rel": page_rel}
+    return {"status": "created" if is_new else "updated", "path": page_rel}
 
 
 def update_wiki_section(vault_id: str, page_rel: str, section: str, new_content: str) -> dict:
@@ -288,7 +288,7 @@ def update_wiki_section(vault_id: str, page_rel: str, section: str, new_content:
     
     write_file(p, content)
     git_stage(vault_id, [page_rel])
-    return {"status": "section_updated", "rel": page_rel, "section": section}
+    return {"status": "section_updated", "path": page_rel, "section": section}
 
 
 def delete_wiki_page(vault_id: str, page_rel: str) -> dict:
@@ -507,7 +507,7 @@ SYS_QUERY = """You are a wiki assistant. Answer using only the wiki pages provid
 Be concise. Cite page filenames like [source: filename]. Under 350 words."""
 
 def _collect_wiki_pages(vault_id: str) -> list[dict]:
-    """Return list of {path, rel, content} for all wiki pages."""
+    """Return list of {path, content} for all wiki pages."""
     pages = []
     for p in wiki_path(vault_id).rglob("*.md"):
         rel = str(p.relative_to(vault_path(vault_id))).replace("\\", "/")
@@ -601,17 +601,17 @@ async def query_wiki(db, vault_id: str, question: str, save: bool = False) -> di
     # Collect content of hit pages (truncated for small LLMs)
     context_parts = []
     for h in hits:
-        page = vault_path(vault_id) / h["rel"]
+        page = vault_path(vault_id) / h["path"]
         content = read_file(page)[:800]
-        context_parts.append(f"=== {h['rel']} ===\n{content}")
+        context_parts.append(f"=== {h['path']} ===\n{content}")
     
     context = "\n\n".join(context_parts) if context_parts else idx[:1500]
     prompt = f"QUESTION: {question}\n\nWIKI PAGES:\n{context}"
     answer = await _llm(db, SYS_QUERY, prompt, max_tokens=400)
     
-    result = {"question": question, "answer": answer, "pages_used": [h["rel"] for h in hits]}
+    result = {"question": question, "answer": answer, "pages_used": [h["path"] for h in hits]}
     
-    if save:
+    if save or True:
         slug = re.sub(r"[^\w\-]", "-", question.lower())[:40]
         page_name = f"{today()}-{slug}.md"
         page_path = wiki_path(vault_id) / "queries" / page_name
@@ -643,8 +643,8 @@ async def lint_wiki(db, vault_id: str) -> dict:
     Writes report to wiki/meta/lint-YYYY-MM-DD.md
     """
     pages = _collect_wiki_pages(vault_id)
-    all_rels = {p["rel"] for p in pages}
-    all_stems = {Path(p["rel"]).stem for p in pages}
+    all_paths = {p["path"] for p in pages}
+    all_stems = {Path(p["path"]).stem for p in pages}
     
     issues = {
         "orphans": [],      # pages with no inbound links
@@ -655,31 +655,31 @@ async def lint_wiki(db, vault_id: str) -> dict:
     }
     
     # Build inbound link map
-    inbound = {p["rel"]: [] for p in pages}
+    inbound = {p["path"]: [] for p in pages}
     for page in pages:
         links = re.findall(r"\[\[([^\]]+)\]\]", page["content"])
         for link in links:
             # Try to find matching page
             matched = False
-            for rel in all_rels:
-                if link in rel or Path(rel).stem == link:
-                    inbound[rel].append(page["rel"])
+            for path in all_paths:
+                if link in path or Path(path).stem == link:
+                    inbound[path].append(page["path"])
                     matched = True
                     break
             if not matched and link not in all_stems:
-                issues["broken_links"].append({"from": page["rel"], "link": link})
+                issues["broken_links"].append({"from": page["path"], "link": link})
                 issues["missing_pages"].add(link)
     
     for page in pages:
         # Skip meta and index files
-        if "meta/" in page["rel"] or page["rel"] in ("index.md", "log.md"):
+        if "meta/" in page["path"] or page["path"] in ("index.md", "log.md"):
             continue
-        if not inbound.get(page["rel"]):
-            issues["orphans"].append(page["rel"])
+        if not inbound.get(page["path"]):
+            issues["orphans"].append(page["path"])
         if len(page["content"]) < 200:
-            issues["thin"].append(page["rel"])
+            issues["thin"].append(page["path"])
         if "## Links" not in page["content"]:
-            issues["no_links_section"].append(page["rel"])
+            issues["no_links_section"].append(page["path"])
     
     issues["missing_pages"] = list(issues["missing_pages"])
     

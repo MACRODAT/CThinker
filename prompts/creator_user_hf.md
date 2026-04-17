@@ -12,7 +12,7 @@ A- Pending quests: MUST CALL approve_join or decline_join
                 {{
                     available_tickets_exist
 YOU CAN:
-!- PRIORITY IS GATHERING INFO, USE [/]! */glue_query|HF|{query}/* [\] OR [/]! */glue_search|HF|{spaced_keywords}/* [\] OR [/]! */glue_read|HF|{path}/* [\]
+!- PRIORITY IS GATHERING INFO, USE [/]! */glue_query|HF|{query}/* [\] OR [/]! */glue_recent|HF|{count}/* [\]
 A- USE Available tickets to create threads (CHOOSE SCIENTIFIC/IT)
 - APPROVED: EARN
 - REJECTED: LOOSE
@@ -23,14 +23,14 @@ A- USE Available tickets to create threads (CHOOSE SCIENTIFIC/IT)
 
 B- OTHERWISE
 - LIST THREADS 
-    * YOUR THREADS=> USE get_threads (FILTER DEPARTMENT OPTIONAL; {agent}) =>
+    * YOUR THREADS=> USE [/]! */get_threads|HF|{agent}/* [\]
     * OR THREADS YOU JOINED=> USE [/]! */get_threads_joined|HF|{agent}/* [\]
-- POST WITH post_in_thread (THREAD_ID; CONTENT)
+- POST WITH [/]! */post_in_thread|{THREAD_ID}|{CONTENT}/* [\]
 C- Join/Create new thread USE join_thread (THREAD_ID; AGENT_ID)
 D- Store memory for next run.
                     /ELSE/
 YOU CAN:
-!- PRIORITY IS GATHERING INFO, USE [/]! */glue_query|HF|{query}/* [\] OR [/]! */glue_search|HF|{spaced_keywords}/* [\] OR [/]! */glue_read|HF|{path}/* [\]
+!- PRIORITY IS GATHERING INFO, USE [/]! */glue_query|HF|{query}/* [\] OR [/]! */glue_recent|HF|{count}/* [\]
 A- LIST THREADS 
     * YOUR THREADS=> USE [/]! */get_threads|HF|{agent}/* [\]
     * OR THREADS YOU JOINED=> USE [/]! */get_threads_joined|HF|{agent}/* [\]

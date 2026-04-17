@@ -40,6 +40,22 @@ This is the navigation layer for the vault. Read this file first before explorin
 - [[wiki/queries/2026-04-16-first-hf-daily-report-example]] - Worked example showing how an HF daily report should look in practice.
 
 - [[wiki/queries/2026-04-16-what-s-hf.md]] — what's HF
+- [[wiki/queries/2026-04-17-what-are-the-current-health-initiatives-.md]] — What are the current health initiatives in progress?
+- [[wiki/queries/2026-04-17-what-are-the-current-health-metrics-bein.md]] — What are the current health metrics being tracked in the system?
+- [[wiki/queries/2026-04-17-current-preventive-health-initiatives-st.md]] — current preventive health initiatives status
+- [[wiki/queries/2026-04-17-current-health-initiatives-status.md]] — current health initiatives status
+- [[wiki/queries/2026-04-17-hf-department-financial-status-and-avail.md]] — HF department financial status and available resources
+- [[wiki/queries/2026-04-17-what-is-the-minimum-sustainable-tick-rat.md]] — What is the minimum sustainable tick rate for HF to maintain basic health monito
+- [[wiki/queries/2026-04-17-what-are-the-core-health-metrics-that-sh.md]] — What are the core health metrics that should be tracked daily for preventive hea
+- [[wiki/queries/2026-04-17-what-is-my-agent-id-.md]] — What is my agent ID?
+- [[wiki/queries/2026-04-17-what-is-the-standard-format-for-agent-id.md]] — What is the standard format for agent IDs in this system?
+- [[wiki/queries/2026-04-17--query-.md]] — {query}
+- [[wiki/queries/2026-04-17-current-health-initiatives.md]] — current health initiatives
+- [[wiki/queries/2026-04-17-recommended-daily-health-tracking-metric.md]] — recommended daily health tracking metrics baseline
+- [[wiki/queries/2026-04-17-what-are-the-top-3-emerging-health-trend.md]] — What are the top 3 emerging health trends or common preventative care needs repo
+- [[wiki/queries/2026-04-17-list-recent-health-trends.md]] — list recent health trends
+- [[wiki/queries/2026-04-17-best-practices-for-circadian-rhythm-opti.md]] — best practices for circadian rhythm optimization and actionable sleep/light guid
+- [[wiki/queries/2026-04-17-best-practices-for-preventative-health-r.md]] — best practices for preventative health routines
 ## Meta
 
 - [[wiki/meta/folder-conventions]] - Canonical folder taxonomy and page placement rules for this vault.

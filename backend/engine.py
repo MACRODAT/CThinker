@@ -189,8 +189,6 @@ class SimEngine:
             if not s_halt or s_halt.value != "true":
                 add_step("wallet", "Tick starting (1 pt cost)", {"amount": -1, "reason": "tick"})
 
-
-
             # 2. Context
             # Find last quest for status placeholder
             last_q = db.query(JoinQuest).filter(JoinQuest.agent_id == agent.id).order_by(JoinQuest.id.desc()).first()
@@ -1704,10 +1702,10 @@ class SimEngine:
                 question = args[1].strip() if len(args) > 1 else ""
                 save = len(args) > 2 and args[2].strip().lower() in ("y", "yes", "true", "save")
                 if not question:
-                    return "GLUE_QUERY_ERROR: Missing question."
+                    return "GLUE_QUERY_ERROR: Missing question. Format */glue_query|HF|{question}|{save}/*."
                 res = await glue.query_wiki(db, vid, question, save=save)
                 pages = ", ".join(res.get("pages_used", [])[:3])
-                result = f"GLUE_ANSWER:\n{res.get('answer','')}\n\nPages: {pages}"
+                result = f"GLUE_ANSWER:\n{res.get('answer','')}\n\nPages: {pages}\nYOU CAN READ PAGES WITH [/]! */glue_read|HF|_path_/* [\]."
                 if res.get("saved_to"):
                     result += f"\nSaved to: {res['saved_to']}"
             except Exception as e:
@@ -1724,8 +1722,8 @@ class SimEngine:
                 if not hits:
                     result = "GLUE_SEARCH: No results."
                 else:
-                    lines = [f"• {h['rel']} (hits:{h['hits']}): {h['snippet'][:120]}" for h in hits[:8]]
-                    result = f"GLUE_SEARCH ({len(hits)} results):\n" + "\n".join(lines)
+                    lines = [f"• Path:{h['path']} (hits:{h['hits']}): {h['snippet'][:120]}" for h in hits[:8]]
+                    result = f"GLUE_SEARCH ({len(hits)} results):\n" + "\n".join(lines) + "\nYOU CAN READ PAGES WITH [/]! */glue_read|HF|_path_/* [\]."
             except Exception as e:
                 result = f"GLUE_SEARCH_ERROR: {e}"
 
@@ -1739,11 +1737,12 @@ class SimEngine:
                 res = glue.read_wiki_page(vid, page_rel)
                 if "error" in res:
                     result = f"GLUE_READ_ERROR: {res['error']}"
+                    print("READ ERROR GLUE")
                 else:
                     # Truncate for small LLM context
                     content = res["content"][:2000]
                     links = ", ".join(res.get("links", [])[:10])
-                    result = f"GLUE_PAGE [{page_rel}]:\n{content}\n\nLinks: {links}"
+                    result = f"GLUE_PAGE [Path:{page_rel}]:\n{content}\n\nLinks: {links}"
             except Exception as e:
                 result = f"GLUE_READ_ERROR: {e}"
 
@@ -1756,7 +1755,7 @@ class SimEngine:
                 if not page_rel or not content:
                     return "GLUE_WRITE_ERROR: Missing page path or content."
                 res = glue.write_wiki_page(vid, page_rel, content)
-                result = f"GLUE_WRITE_OK: {res['status']} → {res['rel']}"
+                result = f"GLUE_WRITE_OK: {res['status']} → {res['path']}"
             except Exception as e:
                 result = f"GLUE_WRITE_ERROR: {e}"
 
@@ -1769,7 +1768,7 @@ class SimEngine:
                 if not pages:
                     result = "GLUE_LIST: No pages found."
                 else:
-                    lines = [f"• {p['rel']} ({p['category']}, {p['size']}b)" for p in pages[:20]]
+                    lines = [f"• Path:{p['path']} ({p['category']}, {p['size']}b)" for p in pages[:20]]
                     result = f"GLUE_LIST ({len(pages)} pages):\n" + "\n".join(lines)
             except Exception as e:
                 result = f"GLUE_LIST_ERROR: {e}"
@@ -1799,7 +1798,7 @@ class SimEngine:
                 if not hits:
                     result = f"GLUE_BACKLINKS [{page_rel}]: No pages link to this."
                 else:
-                    lines = [f"• {h['rel']} (via [[{h['link_text']}]])" for h in hits]
+                    lines = [f"• {h['path']} (via [[{h['link_text']}]])" for h in hits]
                     result = f"GLUE_BACKLINKS [{page_rel}] ({len(hits)}):\n" + "\n".join(lines)
             except Exception as e:
                 result = f"GLUE_BACKLINKS_ERROR: {e}"
@@ -1813,8 +1812,8 @@ class SimEngine:
                 if not pages:
                     result = "GLUE_RECENT: No pages."
                 else:
-                    lines = [f"• {p['rel']} ({p['modified'][:16]})" for p in pages]
-                    result = f"GLUE_RECENT ({len(pages)}):\n" + "\n".join(lines)
+                    lines = [f"• Path:{p['path']} ({p['modified'][:16]})" for p in pages]
+                    result = f"GLUE_RECENT ({len(pages)}):\n" + "\n".join(lines) + "\n [/]! YOU CAN READ PAGES WITH */glue_read|HF|_path_/* [\]."
             except Exception as e:
                 result = f"GLUE_RECENT_ERROR: {e}"
 
