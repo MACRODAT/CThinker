@@ -14,6 +14,8 @@ from models import (
     ThreadCollaborator, JoinQuest, Message, Ticket,
     Transaction, ToolOwnership, AgentPrompt
 )
+import glue
+
 
 # Legacy hardcoded tool lists removed in favour of dynamic Tool model injection.
 
@@ -348,6 +350,9 @@ class SimEngine:
                         processed_raw, iter_tool_results = await self.handle_tools(db, agent, raw, add_step)
                         
                         final_processed_raw += processed_raw + "\n"
+
+                        # SEE IF FINAL_PROCESSED_RAW HAS [STOP]...[END_STOP]
+                        stop_match = re.search(r"\[STOP\](.*?)\[END_STOP\]", final_processed_raw, re.DOTALL | re.IGNORECASE)
                         
                         if iter_tool_results:
                             if full_tool_results is None:
@@ -363,19 +368,21 @@ class SimEngine:
                                 add_step("wallet", "Thinking Iteration Tax: -1 pt", {"amount": -1, "reason": "thinking_iteration_tax"})
                                 
                                 prompt_continuation = (
-                                    f"\n\nAssistant:\n{processed_raw}\n\nSystem (Tool Results):\n{iter_tool_results}\n\n"
-                                    f"You can either continue your turn based on these tool results or you can stop. (Tax of 1 point was deducted from your department to continue). "
-                                    f"Your department has {dept.ledger_current} points remaining.\n"
-                                    "Call another tool if needed, otherwise provide your final reply."
+                                    f"\n\nTool results:\n{iter_tool_results}\n\n"
+                                    f"EITHER CONTINUE (-1 PT, USE MORE TOOLS) OR STOP BY SAYING '[STOP]RESPONSE...[END_STOP]'"
+                                    f"DEPT HAVE {dept.ledger_current} PTS REMAINING.\n"
                                 )
-                                current_user_prompt += prompt_continuation
+                                current_user_prompt = await self.resolve_placeholders(user_prompt_raw + "\n" + prompt_continuation, db, agent, None, add_step, extra_ctx)
                                 add_step("system", "Continuing to next iteration")
                             else:
                                 if iter_count < MAX_ITERATIONS - 1:
                                     add_step("system", "Iteration stopped due to insufficient department points or no dept.")
                                 break
                         else:
-                            break
+                            # break
+                            if stop_match:
+                                break
+                            continue
                     
                     # 5b. Force Mode if missing
                     if not agent.next_mode:
@@ -804,6 +811,8 @@ class SimEngine:
                 await self.log(db, "POINT", "AGENT", "THREAD_POST_FEE", {"agent": agent.name_id, "thread_id": tid, "cost": -cost}, agent_id=agent.id)
             db.add(Message(thread_id=tid, who=agent.id, what=content, points=-cost if cost > 0 else 0))
             asyncio.create_task(self.compute_thread_summary(tid))
+            if t.vault_id:
+                await glue.update_glue_topic(db, t.vault_id, tid, t.topic, agent.name_id, content, add_step_cb=add_step_cb)
             result = "POST_SUCCESS"
 
         # ── set_thread_status ──────────────────────────────────────────────────
@@ -1705,7 +1714,8 @@ class SimEngine:
                     return "GLUE_QUERY_ERROR: Missing question. Format */glue_query|HF|{question}|{save}/*."
                 res = await glue.query_wiki(db, vid, question, save=save)
                 pages = ", ".join(res.get("pages_used", [])[:3])
-                result = f"GLUE_ANSWER:\n{res.get('answer','')}\n\nPages: {pages}\n"+ "[/]! READ PAGES WITH */glue_read|HF|{path}/* [\].  Use [/]! */web_search|{thread_id}|{topic}/* [\] to research topic."
+                result = f"GLUE_ANSWER:\n{res.get('answer','')}\n\nPages: {pages}\n"
+                result += "\nOPTIONS\nREAD PAGES WITH */glue_read|HF|{path}/* \nRESEARCH WITH */web_search|{thread_id}|{topic}/*\nPOST WITH */post_in_thread|thread_id|message/*"
                 if res.get("saved_to"):
                     result += f"\nSaved to: {res['saved_to']}"
             except Exception as e:
@@ -1743,6 +1753,7 @@ class SimEngine:
                     content = res["content"][:2000]
                     links = ", ".join(res.get("links", [])[:10])
                     result = f"GLUE_PAGE [Path:{page_rel}]:\n{content}\n\nLinks: {links}"
+                    result += "\nRESEARCH WITH */web_search|{thread_id}|{topic}/*\nPOST WITH */post_in_thread|thread_id|message/*"
             except Exception as e:
                 result = f"GLUE_READ_ERROR: {e}"
 

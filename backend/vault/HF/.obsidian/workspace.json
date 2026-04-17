@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "Welcome.md",
+                "file": "PROMPT_FOR_GLUE.MD",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "Welcome"
+              "title": "PROMPT_FOR_GLUE"
             }
           }
         ]
@@ -33,12 +33,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "wiki/entities/hf-department.md",
+                "file": "wiki/queries/2026-04-17-best-practices-for-integrating-holistic-.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "hf-department"
+              "title": "2026-04-17-best-practices-for-integrating-holistic-"
             }
           }
         ]
@@ -202,31 +202,31 @@
   },
   "active": "ebb926133cd5d5aa",
   "lastOpenFiles": [
-    "log.md",
-    "index.md",
-    "Agents.md",
-    "wiki/sources/2026-04-16-hf-builder.md",
-    "wiki/sources/2026-04-16-llm-wiki-idea.md",
-    "wiki/concepts/schema-index-log.md",
-    "wiki/concepts/llm-wiki.md",
-    "wiki/concepts/ingest-query-lint.md",
-    "wiki/concepts/heartbeat-tick-model.md",
-    "wiki/concepts/agent-economy.md",
-    "wiki/entities/hf-department.md",
-    "wiki/entities/sana.md",
-    "wiki/entities/cthinker.md",
-    "wiki/queries/2026-04-17-what-is-the-minimum-sustainable-tick-rat.md",
-    "wiki/queries/2026-04-17-what-is-the-standard-format-for-agent-id.md",
-    "wiki/queries/2026-04-16-first-hf-daily-report-example.md",
-    "wiki/queries/2026-04-17-what-are-the-current-health-metrics-bein.md",
-    "wiki/queries/2026-04-17-what-is-my-agent-id-.md",
-    "wiki/queries/2026-04-17-what-are-the-core-health-metrics-that-sh.md",
-    "wiki/queries/2026-04-17-hf-department-financial-status-and-avail.md",
-    "wiki/queries/2026-04-17-current-health-initiatives-status.md",
-    "wiki/queries/2026-04-17-current-preventive-health-initiatives-st.md",
-    "wiki/queries/2026-04-17-what-are-the-current-health-initiatives-.md",
-    "wiki/syntheses/hf-daily-operating-system.md",
-    "wiki/syntheses/second-brain-blueprint.md",
-    "wiki/syntheses/hf-handbook.md"
+    "wiki/queries/2026-04-17-current-best-practices-for-preventative-.md",
+    "wiki/queries/2026-04-17-latest-best-practices-in-preventive-heal.md",
+    "wiki/queries/2026-04-17-best-practices-in-preventive-health-rout.md",
+    "wiki/queries/2026-04-17-what-are-the-evidence-based-best-practic.md",
+    "wiki/queries/2026-04-17-wiki-queries-2026-04-17-wh.md",
+    "wiki/queries/2026-04-17-what-are-the-key-indicators-or-emerging-.md",
+    "wiki/queries/2026-04-17-wiki-queries-2026-04-17-k.md",
+    "wiki/queries/2026-04-17-key-takeaways-from-activity-guidelines-f.md",
+    "wiki/queries/2026-04-17-preventive-health-guidelines-for-routine.md",
+    "wiki/queries/2026-04-17-best-practices-for-building-sustainable-.md",
+    "wiki/queries/2026-04-17-latest-trends-in-preventive-health-and-l.md",
+    "wiki/queries/2026-04-17-best-practices-for-preventative-health-a.md",
+    "wiki/queries/2026-04-17-latest-trends-in-preventative-health-and.md",
+    "wiki/queries/2026-04-17-what-are-the-foundational-pillars-of-pre.md",
+    "wiki/queries/2026-04-17-current-preventative-health-focus-areas.md",
+    "wiki/queries/2026-04-17-best-practices-for-preventive-health-and.md",
+    "wiki/queries/2026-04-17-best-practices-for-preventative-body-and.md",
+    "wiki/queries/2026-04-17-what-are-the-latest-research-findings-on.md",
+    "wiki/queries/2026-04-17-comprehensive-guidelines-for-preventive-.md",
+    "wiki/queries/2026-04-17-best-practices-for-holistic-preventive-h.md",
+    "wiki/queries/2026-04-17-best-practices-for-establishing-sustaina.md",
+    "wiki/queries/2026-04-17-preventative-health-routines-for-optimal.md",
+    "wiki/queries/2026-04-17-actionable-preventative-health-routines-.md",
+    "wiki/syntheses/hf-handbook.md",
+    "wiki/queries/2026-04-17-current-preventive-health-strategies-and.md",
+    "wiki/queries/2026-04-17-preventive-health-strategies.md"
   ]
 }

@@ -72,6 +72,7 @@ const getStepColor = (type) => {
     case 'iteration': return '#94a3b8';
     case 'error': return '#d61717ff';
     case 'complete': return '#10b981';
+    case 'glue_reformat': return '#38bdf8';
     default: return '#374151';
   }
 };
@@ -182,7 +183,40 @@ function RunItem({ run, isExp, onToggle, setFullScreenRunId }) {
                   </div>
                 )}
 
-                {s.type !== 'thought' && s.type !== 'tool_call' && s.type !== 'tool_result' && s.type !== 'response' && (
+                {s.type === 'glue_reformat' && (
+                  <div style={{ marginTop: 8, background: "#0b0c10", borderRadius: 8, border: "1px solid #1a1d24", overflow: "hidden" }}>
+                    <div style={{ padding: "6px 10px", background: "#1a1d24", fontSize: 10, fontWeight: 700, color: "#38bdf8", borderBottom: "1px solid #1a1d24", display: "flex", justifyContent: "space-between" }}>
+                      <span>GLUE WIKI SYNC</span>
+                      <span style={{ opacity: 0.6 }}>[[{s.metadata?.topic}]]</span>
+                    </div>
+                    <div style={{ padding: 10, borderBottom: "1px solid #1a1d24" }}>
+                       <div style={{ fontSize: 9, color: "#9ca3af", fontStyle: "italic" }}>
+                         {s.metadata?.report || "Wiki concepts synchronized."}
+                       </div>
+                    </div>
+                    <div style={{ padding: 10 }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                        <div>
+                          <div style={{ fontSize: 8, color: "#4b5563", marginBottom: 4, fontWeight: 800 }}>UNPARSED</div>
+                          <div style={{ fontSize: 10, color: "#6b7280", maxByteLength: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {s.metadata?.prompt_keywords_parsing || s.metadata?.old}
+                          </div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 8, color: "#10b981", marginBottom: 4, fontWeight: 800 }}>PARSED (WIKI)</div>
+                          <div style={{ fontSize: 10, color: "#9ca3af", maxByteLength: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {s.metadata?.parsed_prompt_keywords || s.metadata?.new}
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{ marginTop: 8, fontSize: 9, color: "#38bdf8", fontStyle: "italic", textAlign: "right", cursor: "pointer" }}>
+                        View full transformation in detail viewer →
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {s.type !== 'thought' && s.type !== 'tool_call' && s.type !== 'tool_result' && s.type !== 'response' && s.type !== 'glue_reformat' && (
                   <div style={{ color: s.type === 'complete' ? '#10b981' : '#9ca3af' }}>{s.content}</div>
                 )}
               </div>
@@ -333,7 +367,39 @@ function RunDetailsModal({ run, onClose }) {
                     </div>
                   )}
 
-                  {s.type !== 'thought' && s.type !== 'tool_call' && s.type !== 'tool_result' && s.type !== 'response' && (
+                  {s.type === 'glue_reformat' && (
+                    <div style={{ marginTop: 12 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                          <div style={{ fontSize: 11, color: "#38bdf8", fontWeight: 700, letterSpacing: 1 }}>GLUE WIKI SYNCHRONIZATION</div>
+                          <div style={{ fontSize: 13, color: "#9ca3af", fontWeight: 500 }}>{s.metadata?.report || "Wiki concepts synchronized."}</div>
+                        </div>
+                        <div style={{ fontSize: 12, color: "#fff", background: "#1e1b4b", padding: "4px 12px", borderRadius: 6, border: "1px solid #312e81" }}>
+                          Topic: <span style={{ color: "#818cf8" }}>[[{s.metadata?.topic}]]</span>
+                        </div>
+                      </div>
+
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                          <div style={{ fontSize: 10, color: "#4b5563", fontWeight: 800 }}>UNPARSED (NO KEYWORDS)</div>
+                          <div style={{ flex: 1, background: "#070809", padding: 16, borderRadius: 10, border: "1px solid #1a1d24", color: "#6b7280", fontSize: 13, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+                            {s.metadata?.prompt_keywords_parsing || s.metadata?.old}
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                          <div style={{ fontSize: 10, color: "#10b981", fontWeight: 800 }}>PARSED (WITH [[KEYWORDS]])</div>
+                          <div style={{ flex: 1, background: "#070809", padding: 16, borderRadius: 10, border: "1px solid #065f46", color: "#e2e8f0", fontSize: 13, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+                            <div dangerouslySetInnerHTML={{ __html: renderMd(s.metadata?.parsed_prompt_keywords || s.metadata?.new) }} />
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{ marginTop: 16, padding: 12, background: "rgba(56, 189, 248, 0.05)", borderRadius: 8, border: "1px dashed rgba(56, 189, 248, 0.2)", fontSize: 12, color: "#38bdf8", textAlign: "center" }}>
+                        ✨ Automation complete: Keywords identified and linked to the Knowledge Vault.
+                      </div>
+                    </div>
+                  )}
+
+                  {s.type !== 'thought' && s.type !== 'tool_call' && s.type !== 'tool_result' && s.type !== 'response' && s.type !== 'glue_reformat' && (
                     <div style={{
                       fontSize: 14, color: s.type === 'complete' ? '#10b981' : '#9ca3af',
                       fontWeight: s.type === 'complete' ? 600 : 400

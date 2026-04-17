@@ -810,3 +810,82 @@ def list_library(vault_id: str) -> list[dict]:
         for f in lib.iterdir()
         if f.is_file()
     ]
+
+# ── Automated Integration ──────────────────────────────────────────────────────
+
+SYS_FORMAT_GLUE = """You are a keyword extractor for an Obsidian-style wiki.
+Identify key concepts, entities, and important terms in the text.
+Wrap these terms in [[double brackets]]. 
+Also automatically wrap all bold (**text**) and italic (*text*) terms in [[double brackets]], stripping the formatting markers inside.
+Output ONLY the final formatted markdown. No preamble."""
+
+async def apply_obsidian_formatting(db, text: str) -> str:
+    """Uses LLM to wrap important keywords/bold/emphasis in [[ ]] for easy wiki search."""
+    if not text.strip():
+        return text
+    from models import Setting
+    formatted = await _llm(db, SYS_FORMAT_GLUE, f"TEXT TO FORMAT:\n{text}", max_tokens=1000)
+    if "[LLM_ERR" in formatted:
+        return text
+    return formatted
+
+async def update_glue_topic(db, vault_id: str, thread_id: str, topic: str, agent_name: str, content: str, add_step_cb=None):
+    """
+    Automated Glue update for a thread post:
+    1. Slugify topic -> wiki/concepts/{slug}.md
+    2. Format content with [[keywords]]
+    3. Append to topic page with attribution
+    """
+    slug = re.sub(r"[^\w\-]", "-", topic.lower())[:40]
+    page_rel = f"wiki/concepts/{slug}.md"
+    p = vault_path(vault_id) / page_rel
+    
+    # 1. Formatting
+    formatted_content = await apply_obsidian_formatting(db, content)
+    
+    if add_step_cb:
+        status = "Wiki concepts synchronized successfully." if formatted_content.strip() != content.strip() else "Synchronized (no new keywords detected)."
+        pretty_log = (
+            f"### 💠 Glue Wiki Synchronization\n"
+            f"---\n"
+            f"**Status**: {status}\n"
+            f"**Topic**: [[{topic}]]\n\n"
+            f"**Original**:\n{content}\n\n"
+            f"**Obsidian-Linked**:\n{formatted_content}\n"
+            f"---"
+        )
+        add_step_cb("glue_reformat", pretty_log, {
+            "report": status,
+            "prompt_keywords_parsing": content,
+            "parsed_prompt_keywords": formatted_content,
+            "topic": topic
+        })
+    
+    # 2. Attribution
+    timestamp = today()
+    agent_link = f"[[{agent_name}]]"
+    thread_log_rel = f"wiki/meta/thread-{thread_id}.md"
+    thread_link = f"[[{thread_log_rel}|Thread {thread_id}]]"
+    
+    entry = f"\n### {timestamp} | {agent_link}\n> {formatted_content}\n\n_Ref: {thread_link}_\n"
+    
+    # 3. Write/Update Page
+    if not p.exists():
+        header = f"---\ntype: concept\ntopic: {topic}\ncreated: {timestamp}\n---\n\n# {topic}\n\n## Discussion\n"
+        write_file(p, header + entry)
+        update_index_entry(vault_id, "Concepts", page_rel, f"Automated capture from Thread {thread_id}")
+    else:
+        orig = read_file(p)
+        if "## Discussion" not in orig:
+            if "## Links" in orig:
+                orig = orig.replace("## Links", f"## Discussion\n\n## Links")
+            else:
+                orig += "\n## Discussion\n"
+        
+        orig += entry
+        write_file(p, orig)
+    
+    git_stage(vault_id, [page_rel, "index.md"])
+    # Also log message to the general thread log
+    log_message_to_wiki(vault_id, thread_id, agent_name, content)
+

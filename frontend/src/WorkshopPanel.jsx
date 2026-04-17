@@ -46,6 +46,7 @@ export const CT_BUILTINS = [
   { id: "join_thread", color: "#f97316" },
   { id: "approve_join", color: "#f97316" },
   { id: "post_in_thread", color: "#4ade80" },
+  { id: "glue_write", color: "#6a4adeff" },
   { id: "set_thread_status", color: "#f97316" },
   { id: "refill_thread", color: "#f97316" },
   { id: "produce_transaction", color: "#f97316" },

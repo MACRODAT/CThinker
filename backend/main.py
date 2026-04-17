@@ -10,6 +10,9 @@ import re
 
 import models, schemas, database
 from engine import engine as sim_engine
+import glue
+import uuid
+import datetime
 
 
 
@@ -488,6 +491,44 @@ def create_thread(thread: schemas.ThreadCreate, db: Session = Depends(database.g
     db.refresh(db_thread)
     return db_thread
     return db_thread
+    
+async def _run_glue_and_broadcast(vault_id, thread_id, topic, agent_name, agent_id, dept_id, content):
+    run_id = str(uuid.uuid4())[:8].upper()
+    run_steps = []
+    
+    def add_step(stype, content_str, metadata=None):
+        run_steps.append({
+            "time": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "type": stype,
+            "content": content_str,
+            "metadata": metadata or {}
+        })
+    
+    from database import SessionLocal
+    _db = SessionLocal()
+    try:
+        # Perform Glue sync (this will call add_step via callback)
+        await glue.update_glue_topic(_db, vault_id, thread_id, topic, agent_name, content, add_step_cb=add_step)
+        _db.commit()
+        
+        # Broadcast the run
+        await sim_engine.broadcast({
+            "type": "run",
+            "run": {
+                "id": run_id,
+                "agent": agent_name,
+                "dept": dept_id or "SYS",
+                "time": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "msg": f"Manual post in [[{topic}]] triggered Glue Wiki sync.",
+                "steps": run_steps
+            }
+        })
+    except Exception as e:
+        import traceback
+        print(f"GLUE MANUAL BROADCAST ERROR: {e}")
+        traceback.print_exc()
+    finally:
+        _db.close()
 
 @app.post("/api/threads/{thread_id}/messages")
 async def create_message(thread_id: str, message: schemas.MessageCreate, db: Session = Depends(database.get_db)):
@@ -564,10 +605,8 @@ async def create_message(thread_id: str, message: schemas.MessageCreate, db: Ses
         msg = models.Message(thread_id=thread_id, who="Founder", what=msg_what, points=0)
         db.add(msg); db.commit(); db.refresh(msg)
         asyncio.create_task(sim_engine.compute_thread_summary(thread_id))
-        # GLUE: Log message to wiki if thread is linked to a vault
         if t.vault_id:
-            import glue
-            glue.log_message_to_wiki(t.vault_id, thread_id, "Founder", msg_what)
+            asyncio.create_task(_run_glue_and_broadcast(t.vault_id, thread_id, t.topic, "Founder", "FOUNDER", None, msg_what))
         return msg
     agent = db.query(models.Agent).filter(models.Agent.id == message.who).first()
     if not agent: return {"error": "Agent not found"}
@@ -579,6 +618,8 @@ async def create_message(thread_id: str, message: schemas.MessageCreate, db: Ses
     msg = models.Message(thread_id=thread_id, who=agent.id, what=message.what, points=-cost)
     db.add(msg); db.commit(); db.refresh(msg)
     asyncio.create_task(sim_engine.compute_thread_summary(thread_id))
+    if t.vault_id:
+        asyncio.create_task(_run_glue_and_broadcast(t.vault_id, thread_id, t.topic, agent.name_id, agent.id, agent.department_id, message.what))
     return msg
 
 @app.delete("/api/threads/{thread_id}")
