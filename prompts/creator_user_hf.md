@@ -26,17 +26,29 @@ B- OTHERWISE
     * YOUR THREADS=> USE [/]! */get_threads|HF|{agent}/* [\]
     * OR THREADS YOU JOINED=> USE [/]! */get_threads_joined|HF|{agent}/* [\]
 - POST WITH [/]! */post_in_thread|{THREAD_ID}|{CONTENT}/* [\]
-C- Join/Create new thread USE join_thread (THREAD_ID; AGENT_ID)
+C- Join/Create new thread USE [/]! */join_thread|{THREAD_ID}|{offer_points}/* [\] 
 D- Store memory for next run.
                     /ELSE/
 YOU CAN:
-!- PRIORITY IS GATHERING INFO, USE [/]! */glue_query|HF|{query}/* [\] OR [/]! */glue_recent|HF|{count}/* [\]
-A- LIST THREADS 
-    * YOUR THREADS=> USE [/]! */get_threads|HF|{agent}/* [\]
-    * OR THREADS YOU JOINED=> USE [/]! */get_threads_joined|HF|{agent}/* [\]
-- POST WITH [/]! */post_in_thread|{THREAD_ID}|{CONTENT}/* [\]
-B- Join/Create new thread USE [/]! */join_thread|{THREAD_ID}|{AGENT_ID}/* [\] OR [/]! */create_thread|{topic}|{aim}|{ticket_id_optional}/* [\]
-C- Store memory for next run.
+PREPARATION- 
+    -- GATHER INFO: 
+        [/]! */glue_query|HF|{query}/* [\] -> SEARCH FOR TOPIC
+        OR/AND
+        [/]! */glue_recent|HF|{count}/* [\] -> RECENT WORK
+        OR/AND
+        [/]! */web_search|{thread_id}|{query}/* [\] -> SEARCH FOR TOPIC
+    -- FIND WHERE TO POST:
+        [/]! */get_threads|HF|{agent}/* [\] -> YOUR THREADS
+        OR/AND
+        [/]! */get_threads_joined|HF|{agent}/* [\] -> THREADS YOU JOINED
+ACTION- YOU HAVE GOOD DATA? POST IT [/]! */post_in_thread|{THREAD_ID}|{CONTENT}/* [\]
+OR Join/Create new thread USE [/]! */join_thread|{THREAD_ID}|{offer_points}/* [\] 
+{{
+    is_wallet_more_25
+OR [/]! */create_thread|{topic}|{aim}|{TKT_ID OR ""}/* [\] TKT_ID OPTIONAL UNLESS YOU HAVE TICKET
+}}
+FINALLY:
+- Store memory for next run.
                 }}
         }}
 }}
@@ -45,11 +57,10 @@ C- Store memory for next run.
 ALWAYS Store memory
 
 # OUTPUT FORMAT
-- THINKING
-- TOOL CALLS (AS MANY AS YOU WANT)
-/*tool_name|arg1|.../*
+- TOOL CALLS (MULTIPLE)
+/*tool_name1|arg1|.../*
 ...
 - MEMORY
-    [MEMORY]
-    MAX 200 CHARS
-    [END MEMORY]
+[MEMORY]
+SUM UP ROUND MAX 200 CHARS AND NEXT ACTIONS FOR NEXT AGENT
+[END MEMORY]

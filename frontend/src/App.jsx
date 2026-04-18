@@ -73,6 +73,7 @@ const getStepColor = (type) => {
     case 'error': return '#d61717ff';
     case 'complete': return '#10b981';
     case 'glue_reformat': return '#38bdf8';
+    case 'chat_history': return '#3b82f6';
     default: return '#374151';
   }
 };
@@ -190,9 +191,9 @@ function RunItem({ run, isExp, onToggle, setFullScreenRunId }) {
                       <span style={{ opacity: 0.6 }}>[[{s.metadata?.topic}]]</span>
                     </div>
                     <div style={{ padding: 10, borderBottom: "1px solid #1a1d24" }}>
-                       <div style={{ fontSize: 9, color: "#9ca3af", fontStyle: "italic" }}>
-                         {s.metadata?.report || "Wiki concepts synchronized."}
-                       </div>
+                      <div style={{ fontSize: 9, color: "#9ca3af", fontStyle: "italic" }}>
+                        {s.metadata?.report || "Wiki concepts synchronized."}
+                      </div>
                     </div>
                     <div style={{ padding: 10 }}>
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -216,7 +217,7 @@ function RunItem({ run, isExp, onToggle, setFullScreenRunId }) {
                   </div>
                 )}
 
-                {s.type !== 'thought' && s.type !== 'tool_call' && s.type !== 'tool_result' && s.type !== 'response' && s.type !== 'glue_reformat' && (
+                {s.type !== 'thought' && s.type !== 'tool_call' && s.type !== 'tool_result' && s.type !== 'response' && s.type !== 'glue_reformat' && s.type !== 'chat_history' && (
                   <div style={{ color: s.type === 'complete' ? '#10b981' : '#9ca3af' }}>{s.content}</div>
                 )}
               </div>
@@ -399,7 +400,26 @@ function RunDetailsModal({ run, onClose }) {
                     </div>
                   )}
 
-                  {s.type !== 'thought' && s.type !== 'tool_call' && s.type !== 'tool_result' && s.type !== 'response' && s.type !== 'glue_reformat' && (
+                  {s.type === 'chat_history' && (
+                    <div style={{ marginTop: 12 }}>
+                      <div style={{ fontSize: 10, color: "#3b82f6", marginBottom: 6, fontWeight: 800 }}>LLM CONVERSATION HISTORY (NATIVE)</div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                        {s.metadata?.messages?.map((msg, midx) => (
+                          <div key={midx} style={{
+                            padding: 16, borderRadius: 10,
+                            background: msg.role === 'user' ? '#111827' : (msg.role === 'assistant' ? '#064e3b' : '#0b0c10'),
+                            border: `1px solid ${msg.role === 'user' ? '#1f2937' : (msg.role === 'assistant' ? '#065f46' : '#1e222d')}`,
+                            color: '#e2e8f0', fontSize: 12, lineHeight: 1.6
+                          }}>
+                            <div style={{ fontSize: 9, fontWeight: 800, color: msg.role === 'user' ? '#818cf8' : (msg.role === 'assistant' ? '#34d399' : '#9ca3af'), textTransform: 'uppercase', marginBottom: 6 }}>{msg.role} MESSAGE</div>
+                            <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{msg.content}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {s.type !== 'thought' && s.type !== 'tool_call' && s.type !== 'tool_result' && s.type !== 'response' && s.type !== 'glue_reformat' && s.type !== 'chat_history' && (
                     <div style={{
                       fontSize: 14, color: s.type === 'complete' ? '#10b981' : '#9ca3af',
                       fontWeight: s.type === 'complete' ? 600 : 400
@@ -1226,6 +1246,253 @@ const PARSER_FORMAT_VARS = [
   { key: "message", desc: "Founder message (chat)" },
 ];
 const CAT_COLORS = { tickets: "#10b981", invitations: "#818cf8", quests: "#f59e0b" };
+
+function PromptParser({ state }) {
+  const [prompt, setPrompt] = useState("");
+  const [agentId, setAgentId] = useState("");
+  const [threadId, setThreadId] = useState("");
+  const [parsed, setParsed] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [showSug, setShowSug] = useState(false);
+  const [sugFilter, setSugFilter] = useState("");
+  const taRef = useRef(null);
+
+  const agents = Object.values(state.agents || {});
+  const threads = Object.values(state.threads || {}).filter(t => t.aim !== "Chat");
+
+  // ── Autocomplete trigger ──────────────────────────────────────────────────
+  const handleChange = (e) => {
+    const val = e.target.value;
+    setPrompt(val);
+    const pos = e.target.selectionStart;
+    const before = val.slice(0, pos);
+    const lo = before.lastIndexOf("{{");
+    const lc = before.lastIndexOf("}}");
+    if (lo > lc) { setSugFilter(before.slice(lo + 2)); setShowSug(true); }
+    else { setShowSug(false); }
+  };
+
+  // ── Insert helpers ────────────────────────────────────────────────────────
+  const insertAt = (snippet) => {
+    const ta = taRef.current;
+    const pos = ta?.selectionStart ?? prompt.length;
+    const before = prompt.slice(0, pos);
+    const lo = before.lastIndexOf("{{");
+    const lc = before.lastIndexOf("}}");
+    const start = (lo > lc) ? lo : pos;
+    setPrompt(prompt.slice(0, start) + snippet + prompt.slice(pos));
+    setShowSug(false);
+    setTimeout(() => { ta?.focus(); }, 10);
+  };
+
+  const insertPlaceholder = (key) => insertAt(`{{${key}}}`);
+  const insertConditional = (key) => insertAt(
+    `{{${key} ??\n- Value if TRUE\n- Value if FALSE\n}}`
+  );
+  const insertFormatVar = (key) => {
+    const ta = taRef.current;
+    const pos = ta?.selectionStart ?? prompt.length;
+    setPrompt(p => p.slice(0, pos) + `{${key}}` + p.slice(pos));
+  };
+
+  // ── Parse ─────────────────────────────────────────────────────────────────
+  const parsePrompt = async () => {
+    if (!prompt.trim() || !agentId) return;
+    setLoading(true); setParsed(null);
+    try {
+      const r = await fetch(`${API_BASE}/debug/parse-prompt`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt, agent_id: agentId, thread_id: threadId || null }),
+      });
+      setParsed(await r.json());
+    } catch (e) { setParsed({ error: e.message }); }
+    setLoading(false);
+  };
+
+  const filtered = PARSER_PLACEHOLDERS.filter(p =>
+    p.key.toLowerCase().includes(sugFilter.toLowerCase())
+  );
+
+  const chipSt = (col) => ({
+    fontSize: 10, padding: "3px 8px", cursor: "pointer", borderRadius: 4,
+    background: col + "18", border: `1px solid ${col}55`, color: col,
+    fontFamily: "monospace", userSelect: "none",
+  });
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      {/* ── Controls row ── */}
+      <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+        <div style={{ flex: "1 1 200px" }}>
+          <label style={{ fontSize: 10, color: "#6b7280", fontWeight: 700, letterSpacing: 1, display: "block", marginBottom: 5 }}>EXECUTE AS AGENT *</label>
+          <select value={agentId} onChange={e => setAgentId(e.target.value)} style={{ width: "100%" }}>
+            <option value="">— select agent —</option>
+            {agents.map(a => <option key={a.id} value={a.id}>{a.name_id} ({a.department || "no dept"}) — {a.wallet?.current}pt</option>)}
+          </select>
+        </div>
+        <div style={{ flex: "1 1 200px" }}>
+          <label style={{ fontSize: 10, color: "#6b7280", fontWeight: 700, letterSpacing: 1, display: "block", marginBottom: 5 }}>THREAD CONTEXT (optional)</label>
+          <select value={threadId} onChange={e => setThreadId(e.target.value)} style={{ width: "100%" }}>
+            <option value="">— none —</option>
+            {threads.map(t => <option key={t.id} value={t.id}>{t.id} · {t.topic.slice(0, 35)}</option>)}
+          </select>
+        </div>
+        <button className="btn btn-primary" onClick={parsePrompt}
+          disabled={loading || !agentId || !prompt.trim()}
+          style={{ minWidth: 120, height: 36, flexShrink: 0 }}>
+          {loading ? "⏳ Parsing…" : "▶ Parse Prompt"}
+        </button>
+        <button className="btn btn-soft" onClick={() => { setPrompt(""); setParsed(null); }}
+          style={{ height: 36, flexShrink: 0, fontSize: 11 }}>
+          Clear
+        </button>
+      </div>
+
+      {/* ── Placeholder helper chips ── */}
+      <div style={{ background: "#0a0b0e", border: "1px solid #1a1d24", borderRadius: 8, padding: 16 }}>
+        <div style={{ fontSize: 10, color: "#6b7280", fontWeight: 700, letterSpacing: 1, marginBottom: 10 }}>
+          DOUBLE-BRACE PLACEHOLDERS — click to insert at cursor
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
+          {PARSER_PLACEHOLDERS.map(p => (
+            <span key={p.key} style={{ display: "inline-flex", gap: 3 }}>
+              <button onClick={() => insertPlaceholder(p.key)} title={p.desc} style={chipSt(CAT_COLORS[p.cat])}>
+                {`{{${p.key}}}`}
+              </button>
+              {p.conditional && (
+                <button onClick={() => insertConditional(p.key)} title={`Insert conditional block for ${p.key}`}
+                  style={{ ...chipSt("#64748b"), fontSize: 9, padding: "3px 6px" }}>
+                  ??
+                </button>
+              )}
+            </span>
+          ))}
+        </div>
+        <div style={{ fontSize: 10, color: "#6b7280", fontWeight: 700, letterSpacing: 1, marginBottom: 8 }}>
+          SINGLE-BRACE FORMAT VARIABLES
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {PARSER_FORMAT_VARS.map(v => (
+            <button key={v.key} onClick={() => insertFormatVar(v.key)} title={v.desc}
+              style={{
+                fontSize: 10, padding: "3px 8px", cursor: "pointer", borderRadius: 4,
+                background: "#0a1f0a", border: "1px solid #166534", color: "#86efac",
+                fontFamily: "monospace", userSelect: "none"
+              }}>
+              {`{${v.key}}`}
+            </button>
+          ))}
+        </div>
+        <div style={{ marginTop: 10, fontSize: 10, color: "#374151" }}>
+          Conditional syntax: <code style={{ color: "#a5b4fc" }}>{"{{KEY ??"}</code>
+          <code style={{ color: "#86efac" }}>{" \\n- TRUE value\\n- FALSE value\\n"}</code>
+          <code style={{ color: "#a5b4fc" }}>{"}}"}  </code>
+          · Use the <strong style={{ color: "#9ca3af" }}>??</strong> button next to any boolean placeholder to insert one.
+        </div>
+      </div>
+
+      {/* ── Editor + Output split ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, alignItems: "start" }}>
+        {/* Input textarea */}
+        <div style={{ position: "relative" }}>
+          <div style={{ fontSize: 10, color: "#9ca3af", fontWeight: 700, letterSpacing: 1, marginBottom: 6 }}>
+            PROMPT INPUT — type <code style={{ color: "#a5b4fc" }}>{"{{"}</code> for autocomplete
+          </div>
+          <textarea
+            ref={taRef}
+            value={prompt}
+            onChange={handleChange}
+            onBlur={() => setTimeout(() => setShowSug(false), 550)}
+            placeholder={"Enter prompt text here…\n\nExample:\nHello {name}, you have {wallet} pts.\n{{available_tickets_exist ??\n- Tickets available: {{available_tickets}}\n- No tickets right now.\n}}"}
+            style={{
+              width: "100%", height: 340, fontFamily: "'JetBrains Mono', monospace",
+              fontSize: 12, resize: "vertical", background: "#0a0b0e",
+              border: "1px solid #1e222d", color: "#d4d8e8", padding: 12,
+              borderRadius: 8, lineHeight: 1.65, outline: "none",
+            }}
+          />
+          {/* Autocomplete dropdown */}
+          {showSug && filtered.length > 0 && (
+            <div style={{
+              position: "absolute", bottom: "calc(100% - 338px)", left: 0, width: "100%",
+              background: "#11141a", border: "1px solid #6366f1", borderRadius: 8,
+              zIndex: 200, maxHeight: 200, overflowY: "auto",
+              boxShadow: "0 8px 32px rgba(0,0,0,0.7)",
+            }}>
+              {filtered.map(p => (
+                <div key={p.key} onMouseDown={() => insertPlaceholder(p.key)}
+                  style={{
+                    padding: "8px 12px", cursor: "pointer", borderBottom: "1px solid #1a1d24",
+                    display: "flex", justifyContent: "space-between", alignItems: "center"
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = "#1e1b4b"}
+                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                  <span style={{ fontFamily: "monospace", fontSize: 12, color: CAT_COLORS[p.cat] || "#a5b4fc" }}>
+                    {`{{${p.key}}}`}
+                  </span>
+                  <span style={{ fontSize: 10, color: "#6b7280" }}>{p.desc}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Parsed output */}
+        <div>
+          <div style={{ fontSize: 10, color: "#9ca3af", fontWeight: 700, letterSpacing: 1, marginBottom: 6 }}>
+            PARSED OUTPUT {parsed?.agent && <span style={{ color: "#6366f1", fontWeight: 400 }}>— as {parsed.agent}</span>}
+            {parsed?.thread_context && <span style={{ color: "#f59e0b", fontWeight: 400 }}> · {parsed.thread_context}</span>}
+          </div>
+          <div style={{
+            height: 340, overflowY: "auto", background: "#040506",
+            border: `1px solid ${parsed?.error ? "#ef4444" : "#1a1d24"}`,
+            borderRadius: 8, padding: 12, fontFamily: "'JetBrains Mono', monospace",
+            fontSize: 12, color: "#9ca3af", lineHeight: 1.65,
+            whiteSpace: "pre-wrap", wordBreak: "break-word",
+          }}>
+            {!parsed && !loading && <span style={{ color: "#374151", fontStyle: "italic" }}>Parsed output will appear here…</span>}
+            {loading && <span style={{ color: "#6366f1" }}>Resolving placeholders…</span>}
+            {parsed?.error && <span style={{ color: "#ef4444" }}>⚠ {parsed.error}</span>}
+            {parsed?.parsed}
+          </div>
+
+          {/* Diagnostics */}
+          {parsed && !parsed.error && (
+            <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+              {parsed.placeholders_found?.length > 0 && (
+                <div style={{ fontSize: 10, color: "#6b7280" }}>
+                  <span style={{ color: "#818cf8", fontWeight: 700 }}>Placeholders resolved: </span>
+                  {parsed.placeholders_found.map(k => (
+                    <code key={k} style={{ marginRight: 4, color: "#a5b4fc", background: "#1e1b4b", padding: "1px 5px", borderRadius: 3 }}>{`{{${k}}}`}</code>
+                  ))}
+                </div>
+              )}
+              {parsed.format_vars_found?.length > 0 && (
+                <div style={{ fontSize: 10, color: "#6b7280" }}>
+                  <span style={{ color: "#86efac", fontWeight: 700 }}>Format vars: </span>
+                  {parsed.format_vars_found.map(k => (
+                    <code key={k} style={{ marginRight: 4, color: "#86efac", background: "#0a1f0a", padding: "1px 5px", borderRadius: 3 }}>{`{${k}}`}</code>
+                  ))}
+                </div>
+              )}
+              {parsed.parse_errors?.length > 0 && (
+                <div style={{ fontSize: 10, color: "#ef4444" }}>
+                  ⚠ {parsed.parse_errors.join("; ")}
+                </div>
+              )}
+              <button className="btn btn-soft"
+                onClick={() => navigator.clipboard.writeText(parsed.parsed || "")}
+                style={{ fontSize: 10, padding: "3px 10px", alignSelf: "flex-start", marginTop: 2 }}>
+                📋 Copy Parsed
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 function Dashboard({ state }) {
@@ -3277,19 +3544,21 @@ function ToolEconomy({ state }) {
 // ── Settings ──────────────────────────────────────────────────────────────────
 function Settings({ state, updateSetting }) {
   const [ollamaModel, setOllamaModel] = useState("");
+  const [ollamaModelSmall, setOllamaModelSmall] = useState("");
   const [ollamaServer, setOllamaServer] = useState("");
   const [llmHalt, setLlmHalt] = useState(false);
+  const [tavilyApiKeys, setTavilyApiKeys] = useState("");
   const [availableModels, setAvailableModels] = useState([]);
   const [loadingModels, setLoadingModels] = useState(false);
   const [testResult, setTestResult] = useState(null);
   const [testing, setTesting] = useState(false);
   const [saved, setSaved] = useState(false);
   const [settingsTab, setSettingsTab] = useState("general");
-  const [tavilyApiKeys, setTavilyApiKeys] = useState("");
 
   useEffect(() => {
     if (state.settings) {
       if (state.settings.ollama_model !== undefined) setOllamaModel(state.settings.ollama_model);
+      if (state.settings.ollama_model_small !== undefined) setOllamaModelSmall(state.settings.ollama_model_small);
       if (state.settings.ollama_server !== undefined) setOllamaServer(state.settings.ollama_server);
       if (state.settings.llm_halt !== undefined) setLlmHalt(state.settings.llm_halt === "true");
       if (state.settings.tavily_api_keys !== undefined) setTavilyApiKeys(state.settings.tavily_api_keys);
@@ -3309,6 +3578,7 @@ function Settings({ state, updateSetting }) {
 
   const saveSettings = async () => {
     await updateSetting("ollama_model", ollamaModel);
+    await updateSetting("ollama_model_small", ollamaModelSmall);
     await updateSetting("ollama_server", ollamaServer);
     await updateSetting("llm_halt", llmHalt ? "true" : "false");
     await updateSetting("tavily_api_keys", tavilyApiKeys);
@@ -3328,82 +3598,118 @@ function Settings({ state, updateSetting }) {
 
   return (
     <div style={{ maxWidth: 900, margin: "0 auto" }}>
-      <div className="card" style={{ maxWidth: 640 }}>
-        <div className="card-header" style={{ fontSize: 14, fontWeight: 600, color: "#fff" }}>Global Settings</div>
-        <div className="card-body" style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-          <div>
-            <label style={{ display: "block", fontSize: 12, marginBottom: 6, color: "#9ca3af", fontWeight: 500 }}>Ollama Server URL</label>
-            <input value={ollamaServer} onChange={e => setOllamaServer(e.target.value)} placeholder="http://localhost:11434" style={{ width: "100%" }} />
-          </div>
-          <div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-              <label style={{ fontSize: 12, color: "#9ca3af", fontWeight: 500 }}>Active Model</label>
-              <button className="btn btn-soft" style={{ fontSize: 11, padding: "3px 10px" }} onClick={fetchModels} disabled={loadingModels}>
-                {loadingModels ? "…" : "↻ Refresh"}
-              </button>
-            </div>
-            {availableModels.length > 0 ? (
-              <select value={ollamaModel} onChange={e => setOllamaModel(e.target.value)} style={{ width: "100%" }}>
-                {availableModels.map(m => <option key={m} value={m}>{m}</option>)}
-              </select>
-            ) : (
-              <input value={ollamaModel} onChange={e => setOllamaModel(e.target.value)} placeholder="e.g. gemma3:4b" style={{ width: "100%" }} />
-            )}
-            <div style={{ fontSize: 11, color: "#4b5563", marginTop: 6 }}>Model used for all agent reasoning loops. Default: gemma3:4b</div>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <input type="checkbox" id="llmHaltCheckbox" checked={llmHalt} onChange={e => setLlmHalt(e.target.checked)} style={{ width: 16, height: 16, cursor: "pointer" }} />
-            <label htmlFor="llmHaltCheckbox" style={{ fontSize: 13, color: "#e2e8f0", cursor: "pointer", fontWeight: 500 }}>
-              Halt LLM Calls
-              <span style={{ display: "block", fontSize: 11, color: "#9ca3af", fontWeight: 400, marginTop: 2 }}>Pauses all agents' LLM API requests while keeping the engine running</span>
-            </label>
-          </div>
-          <div>
-            <label style={{ display: "block", fontSize: 12, marginBottom: 6, color: "#9ca3af", fontWeight: 500 }}>Tavily API Keys (Comma or space separated)</label>
-            <textarea
-              value={tavilyApiKeys}
-              onChange={e => setTavilyApiKeys(e.target.value)}
-              placeholder="tvly-xxx, tvly-yyy"
-              style={{ width: "100%", height: 80, background: "#0b0c10", border: "1px solid #1e222d", color: "#e2e8f0", borderRadius: 8, padding: 12, fontSize: 12 }}
-            />
-            <div style={{ fontSize: 11, color: "#4b5563", marginTop: 6 }}>One key will be picked randomly for each search request.</div>
-          </div>
-          <button className="btn btn-primary" onClick={saveSettings} style={{ minWidth: 120 }}>
-            {saved ? "✓ Saved!" : "Save Settings"}
-          </button>
+      {/* Tab bar */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 24, borderBottom: "1px solid #1a1d24", paddingBottom: 12 }}>
+        {[["general", "⚙️ General"], ["debugging", "🔬 Prompt Debugger"]].map(([id, lbl]) => (
+          <button key={id} onClick={() => setSettingsTab(id)} style={{
+            padding: "7px 18px", fontSize: 12, cursor: "pointer", borderRadius: 6, fontWeight: 600,
+            background: settingsTab === id ? "#6366f1" : "#11141a",
+            border: `1px solid ${settingsTab === id ? "#6366f1" : "#1e222d"}`,
+            color: settingsTab === id ? "#fff" : "#6b7280", transition: "all 0.15s",
+          }}>{lbl}</button>
+        ))}
+      </div>
 
-          <div style={{ borderTop: "1px solid #1a1d24", paddingTop: 20 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
-              <div>
-                <div style={{ fontWeight: 500, color: "#e2e8f0", fontSize: 14 }}>Connection Test</div>
-                <div style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>Sends a live prompt to verify server + model. May take 20–90s on cold start.</div>
-              </div>
-              <button className="btn btn-soft" onClick={testConnection} disabled={testing} style={{ minWidth: 130, flexShrink: 0, marginLeft: 16 }}>
-                {testing ? (
-                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <span style={{ display: "inline-block", width: 10, height: 10, border: "2px solid #374151", borderTopColor: "#818cf8", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />
-                    Waiting…
-                  </span>
-                ) : "▶ Test Connection"}
-              </button>
+      {settingsTab === "debugging" && <PromptParser state={state} />}
+
+      {settingsTab === "general" && (
+        <div className="card" style={{ maxWidth: 640 }}>
+          <div className="card-header" style={{ fontSize: 14, fontWeight: 600, color: "#fff" }}>Global Settings</div>
+          <div className="card-body" style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+            <div>
+              <label style={{ display: "block", fontSize: 12, marginBottom: 6, color: "#9ca3af", fontWeight: 500 }}>Ollama Server URL</label>
+              <input value={ollamaServer} onChange={e => setOllamaServer(e.target.value)} placeholder="http://localhost:11434" style={{ width: "100%" }} />
             </div>
-            {testResult && (
-              <div style={{ padding: "12px 16px", borderRadius: 8, background: testResult.status === "success" ? "#064e3b" : "#450a0a", border: `1px solid ${testResult.status === "success" ? "#059669" : "#991b1b"}` }}>
-                <div style={{ color: testResult.status === "success" ? "#34d399" : "#fca5a5", fontWeight: 700, fontSize: 12, marginBottom: 6 }}>
-                  {testResult.status === "success" ? "✓ CONNECTION OK" : "✗ FAILED"}
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                  <label style={{ fontSize: 12, color: "#9ca3af", fontWeight: 500 }}>Main Model Selection</label>
+                  <button className="btn btn-soft" style={{ fontSize: 10, padding: "2px 8px" }} onClick={fetchModels} disabled={loadingModels}>
+                    {loadingModels ? "…" : "↻ Refresh"}
+                  </button>
                 </div>
-                <div style={{ color: testResult.status === "success" ? "#a7f3d0" : "#fecaca", fontSize: 12 }}>{testResult.message}</div>
-                {testResult.llm_response && (
-                  <div style={{ marginTop: 12, padding: "10px 14px", background: "#065f46", border: "1px solid #047857", borderRadius: 6, color: "#d1fae5", fontSize: 12, lineHeight: 1.6 }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, marginBottom: 6, opacity: 0.7 }}>LLM RESPONSE</div>
-                    {testResult.llm_response}
-                  </div>
+                {availableModels.length > 0 ? (
+                  <select value={ollamaModel} onChange={e => setOllamaModel(e.target.value)} style={{ width: "100%" }}>
+                    {availableModels.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                ) : (
+                  <input value={ollamaModel} onChange={e => setOllamaModel(e.target.value)} placeholder="e.g. gemma4:e4b" style={{ width: "100%" }} />
                 )}
+                <div style={{ fontSize: 11, color: "#4b5563", marginTop: 6 }}>Used for all agent reasoning loops.</div>
               </div>
-            )}
+
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                  <label style={{ fontSize: 12, color: "#9ca3af", fontWeight: 500 }}>Small Model Selection</label>
+                </div>
+                {availableModels.length > 0 ? (
+                  <select value={ollamaModelSmall} onChange={e => setOllamaModelSmall(e.target.value)} style={{ width: "100%" }}>
+                    {availableModels.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                ) : (
+                  <input value={ollamaModelSmall} onChange={e => setOllamaModelSmall(e.target.value)} placeholder="e.g. gemma4:e4b" style={{ width: "100%" }} />
+                )}
+                <div style={{ fontSize: 11, color: "#4b5563", marginTop: 6 }}>Used for summaries and "small stuff".</div>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <input type="checkbox" id="llmHaltCheckbox" checked={llmHalt} onChange={e => setLlmHalt(e.target.checked)} style={{ width: 16, height: 16, cursor: "pointer" }} />
+              <label htmlFor="llmHaltCheckbox" style={{ fontSize: 13, color: "#e2e8f0", cursor: "pointer", fontWeight: 500 }}>
+                Halt LLM Calls
+                <span style={{ display: "block", fontSize: 11, color: "#9ca3af", fontWeight: 400, marginTop: 2 }}>Pauses all agents' LLM API requests while keeping the engine running</span>
+              </label>
+            </div>
+
+            <div>
+              <label style={{ display: "block", fontSize: 12, marginBottom: 6, color: "#9ca3af", fontWeight: 500 }}>Tavily API Keys (Comma or space separated)</label>
+              <textarea
+                value={tavilyApiKeys}
+                onChange={e => setTavilyApiKeys(e.target.value)}
+                placeholder="tvly-xxx, tvly-yyy"
+                style={{ width: "100%", height: 80, background: "#0b0c10", border: "1px solid #1e222d", color: "#e2e8f0", borderRadius: 8, padding: 12, fontSize: 12 }}
+              />
+              <div style={{ fontSize: 11, color: "#4b5563", marginTop: 6 }}>One key will be picked randomly for each search request.</div>
+            </div>
+
+            <button className="btn btn-primary" onClick={saveSettings} style={{ minWidth: 120 }}>
+              {saved ? "✓ Saved!" : "Save Settings"}
+            </button>
+
+            <div style={{ borderTop: "1px solid #1a1d24", paddingTop: 20 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+                <div>
+                  <div style={{ fontWeight: 500, color: "#e2e8f0", fontSize: 14 }}>Connection Test</div>
+                  <div style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>Sends a live prompt to verify server + model. May take 20–90s on cold start.</div>
+                </div>
+                <button className="btn btn-soft" onClick={testConnection} disabled={testing} style={{ minWidth: 130, flexShrink: 0, marginLeft: 16 }}>
+                  {testing ? (
+                    <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ display: "inline-block", width: 10, height: 10, border: "2px solid #374151", borderTopColor: "#818cf8", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />
+                      Waiting…
+                    </span>
+                  ) : "▶ Test Connection"}
+                </button>
+              </div>
+              {testResult && (
+                <div style={{ padding: "12px 16px", borderRadius: 8, background: testResult.status === "success" ? "#064e3b" : "#450a0a", border: `1px solid ${testResult.status === "success" ? "#059669" : "#991b1b"}` }}>
+                  <div style={{ color: testResult.status === "success" ? "#34d399" : "#fca5a5", fontWeight: 700, fontSize: 12, marginBottom: 6 }}>
+                    {testResult.status === "success" ? "✓ CONNECTION OK" : "✗ FAILED"}
+                  </div>
+                  <div style={{ color: testResult.status === "success" ? "#a7f3d0" : "#fecaca", fontSize: 12 }}>{testResult.message}</div>
+                  {testResult.llm_response && (
+                    <div style={{ marginTop: 12, padding: "10px 14px", background: "#065f46", border: "1px solid #047857", borderRadius: 6, color: "#d1fae5", fontSize: 12, lineHeight: 1.6 }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, marginBottom: 6, opacity: 0.7 }}>LLM RESPONSE</div>
+                      {testResult.llm_response}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

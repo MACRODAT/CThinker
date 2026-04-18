@@ -728,3 +728,221 @@ Open questions:
 ## [2026-04-17] query | Best practices for building sustainable preventive health ro
 - Saved: `wiki/queries/2026-04-17-best-practices-for-building-sustainable-.md`
 - Pages: wiki/queries/2026-04-17-actionable-preventative-health-routines-.md, wiki/queries/2026-04-17-best-practices-for-building-sustainable-.md, wiki/queries/2026-04-17-best-practices-in-preventive-health-rout.md
+
+## [2026-04-17] query | current_health_trends workplace_wellness
+- Saved: `wiki/queries/2026-04-17-current_health_trends-workplace_wellness.md`
+- Pages: 
+
+## [2026-04-17] query | current workplace health trends and wellness data
+- Saved: `wiki/queries/2026-04-17-current-workplace-health-trends-and-well.md`
+- Pages: wiki/queries/2026-04-17-current_health_trends-workplace_wellness.md, wiki/queries/2026-04-17-current-best-practices-in-preventive-hea.md, wiki/queries/2026-04-17-current-global-health-trends-and-prevent.md
+
+## [2026-04-17] query | current employee health metrics and common workplace health 
+- Saved: `wiki/queries/2026-04-17-current-employee-health-metrics-and-comm.md`
+- Pages: wiki/queries/2026-04-17-current-employee-health-metrics-and-well.md, wiki/queries/2026-04-17-current-preventative-health-focus-areas.md, wiki/queries/2026-04-17-current-workplace-health-trends-and-well.md
+
+## [2026-04-17] query | current employee health metrics and common workplace health 
+- Saved: `wiki/queries/2026-04-17-current-employee-health-metrics-and-comm.md`
+- Pages: wiki/queries/2026-04-17-current-employee-health-metrics-and-comm.md, wiki/queries/2026-04-17-current-employee-health-metrics-and-well.md, wiki/queries/2026-04-17-current-preventative-health-focus-areas.md
+
+## [2026-04-17] query | current employee health survey data and common workplace hea
+- Saved: `wiki/queries/2026-04-17-current-employee-health-survey-data-and-.md`
+- Pages: wiki/queries/2026-04-17-current-employee-health-metrics-and-comm.md, wiki/queries/2026-04-17-current-employee-health-metrics-and-well.md, wiki/queries/2026-04-17-current-employee-health-statistics-and-w.md
+
+## [2026-04-17] lint | vault health-check
+- Added: `wiki/meta/2026-04-17-lint-report.md`
+- Updated: `index.md`
+- Findings: query sprawl in `wiki/queries/`, unsupported statistical/current-state claims, orphan/thin query artifacts, overloaded `index.md`, and repeated low-signal query log patterns
+- Open questions: whether to merge or retire low-value query pages, and whether representative queries only should remain in `index.md`
+
+## [2026-04-17] query | workplace_health_issues
+- Saved: `wiki/queries/2026-04-17-workplace_health_issues.md`
+- Pages: 
+
+## [2026-04-17] query | employee_health_metrics
+- Saved: `wiki/queries/2026-04-17-employee_health_metrics.md`
+- Pages: 
+
+## [2026-04-17] query | common workplace health complaints and absenteeism patterns
+- Saved: `wiki/queries/2026-04-17-common-workplace-health-complaints-and-a.md`
+- Pages: wiki/queries/2026-04-17-current-employee-health-metrics-and-comm.md, wiki/queries/2026-04-17-current-employee-health-survey-data-and-.md, wiki/queries/2026-04-17-workplace_health_issues.md
+
+## [2026-04-17] query | current employee health metrics and biometric screening data
+- Saved: `wiki/queries/2026-04-17-current-employee-health-metrics-and-biom.md`
+- Pages: wiki/queries/2026-04-17-common-workplace-health-complaints-and-a.md, wiki/queries/2026-04-17-current-employee-health-metrics-and-comm.md, wiki/queries/2026-04-17-current-employee-health-metrics-and-well.md
+
+## [2026-04-17] query | most common health insurance claims patterns
+- Saved: `wiki/queries/2026-04-17-most-common-health-insurance-claims-patt.md`
+- Pages: wiki/queries/2026-04-17-current-employee-health-survey-data-and-.md, wiki/meta/folder-conventions.md, wiki/queries/2026-04-17-common-workplace-health-complaints-and-a.md
+
+## [2026-04-17] query | recent workplace wellness program participation
+- Saved: `wiki/queries/2026-04-17-recent-workplace-wellness-program-partic.md`
+- Pages: wiki/queries/2026-04-17-current-employee-health-statistics-and-w.md, wiki/queries/2026-04-17-current-preventive-health-initiatives-an.md, wiki/queries/2026-04-17-current-workplace-health-trends-and-well.md
+
+## [2026-04-17] query | employee biometric screening data
+- Saved: `wiki/queries/2026-04-17-employee-biometric-screening-data.md`
+- Pages: wiki/queries/2026-04-17-current-employee-health-metrics-and-biom.md, wiki/queries/2026-04-17-common-workplace-health-complaints-and-a.md, wiki/queries/2026-04-17-current-employee-health-metrics-and-comm.md
+
+## [2026-04-17] query | employee sleep patterns and dietary habits survey data
+- Saved: `wiki/queries/2026-04-17-employee-sleep-patterns-and-dietary-habi.md`
+- Pages: wiki/queries/2026-04-17-current-employee-health-and-wellness-pro.md, wiki/queries/2026-04-17-current-employee-health-metrics-and-well.md, wiki/queries/2026-04-17-current-employee-health-statistics-and-w.md
+
+## [2026-04-17] query | common workplace health complaints and reported symptoms
+- Saved: `wiki/queries/2026-04-17-common-workplace-health-complaints-and-r.md`
+- Pages: wiki/queries/2026-04-17-common-workplace-health-complaints-and-a.md, wiki/queries/2026-04-17-current-employee-health-metrics-and-biom.md, wiki/queries/2026-04-17-employee-biometric-screening-data.md
+
+## [2026-04-17] query | recent wellness program participation rates and feedback
+- Saved: `wiki/queries/2026-04-17-recent-wellness-program-participation-ra.md`
+- Pages: wiki/queries/2026-04-17-current-employee-health-statistics-and-w.md, wiki/queries/2026-04-17-recent-workplace-wellness-program-partic.md, wiki/queries/2026-04-17-current-health-initiatives-and-prioritie.md
+
+## [2026-04-17] query | employee biometric screening data results and trends 2026
+- Saved: `wiki/queries/2026-04-17-employee-biometric-screening-data-result.md`
+- Pages: wiki/queries/2026-04-17-common-workplace-health-complaints-and-r.md, wiki/queries/2026-04-17-current-employee-health-metrics-and-biom.md, wiki/queries/2026-04-17-employee-biometric-screening-data.md
+
+## [2026-04-17] query | current health initiatives organizational wellness
+- Saved: `wiki/queries/2026-04-17-current-health-initiatives-organizationa.md`
+- Pages: wiki/queries/2026-04-17-best-practices-for-establishing-sustaina.md, wiki/queries/2026-04-17-best-practices-for-holistic-preventive-h.md, wiki/queries/2026-04-17-current-employee-wellness-programs-and-h.md
+
+## [2026-04-17] query | current organizational health metrics and wellness program p
+- Saved: `wiki/queries/2026-04-17-current-organizational-health-metrics-an.md`
+- Pages: wiki/queries/2026-04-17-current-health-initiatives-organizationa.md, wiki/queries/2026-04-17-actionable-preventative-health-routines-.md, wiki/queries/2026-04-17-best-practices-for-building-sustainable-.md
+
+## [2026-04-17] query | current organizational wellness metrics and health initiativ
+- Saved: `wiki/queries/2026-04-17-current-organizational-wellness-metrics-.md`
+- Pages: wiki/queries/2026-04-17-current-health-initiatives-organizationa.md, wiki/queries/2026-04-17-current-organizational-health-metrics-an.md, wiki/queries/2026-04-17-actionable-preventative-health-routines-.md
+
+## [2026-04-17] query | current organizational health metrics and preventive care st
+- Saved: `wiki/queries/2026-04-17-current-organizational-health-metrics-an.md`
+- Pages: wiki/queries/2026-04-17-current-health-initiatives-organizationa.md, wiki/queries/2026-04-17-current-organizational-health-metrics-an.md, wiki/queries/2026-04-17-current-organizational-wellness-metrics-.md
+
+## [2026-04-17] query | current organizational health metrics
+- Saved: `wiki/queries/2026-04-17-current-organizational-health-metrics.md`
+- Pages: wiki/queries/2026-04-17-current-health-initiatives-organizationa.md, wiki/queries/2026-04-17-current-organizational-health-metrics-an.md, wiki/queries/2026-04-17-current-organizational-wellness-metrics-.md
+
+## [2026-04-17] query | current organizational health metrics
+- Saved: `wiki/queries/2026-04-17-current-organizational-health-metrics.md`
+- Pages: wiki/queries/2026-04-17-current-health-initiatives-organizationa.md, wiki/queries/2026-04-17-current-organizational-health-metrics-an.md, wiki/queries/2026-04-17-current-organizational-health-metrics.md
+
+## [2026-04-17] query | current organizational health metrics
+- Saved: `wiki/queries/2026-04-17-current-organizational-health-metrics.md`
+- Pages: wiki/queries/2026-04-17-current-health-initiatives-organizationa.md, wiki/queries/2026-04-17-current-organizational-health-metrics-an.md, wiki/queries/2026-04-17-current-organizational-health-metrics.md
+
+## [2026-04-17] query | current organizational health metrics
+- Saved: `wiki/queries/2026-04-17-current-organizational-health-metrics.md`
+- Pages: wiki/queries/2026-04-17-current-health-initiatives-organizationa.md, wiki/queries/2026-04-17-current-organizational-health-metrics-an.md, wiki/queries/2026-04-17-current-organizational-health-metrics.md
+
+## [2026-04-17] query | Current organizational health metrics and preventive care in
+- Saved: `wiki/queries/2026-04-17-current-organizational-health-metrics-an.md`
+- Pages: wiki/queries/2026-04-17-current-health-initiatives-organizationa.md, wiki/queries/2026-04-17-current-organizational-health-metrics-an.md, wiki/queries/2026-04-17-current-organizational-health-metrics.md
+
+## [2026-04-17] query | preventive health initiatives
+- Saved: `wiki/queries/2026-04-17-preventive-health-initiatives.md`
+- Pages: wiki/meta/2026-04-17-lint-report.md, wiki/queries/2026-04-17-best-practices-for-holistic-preventive-h.md, wiki/queries/2026-04-17-current-employee-health-and-wellness-pro.md
+
+## [2026-04-17] query | current health metrics team wellness
+- Saved: `wiki/queries/2026-04-17-current-health-metrics-team-wellness.md`
+- Pages: wiki/meta/2026-04-17-lint-report.md, wiki/queries/2026-04-17-actionable-preventative-health-routines-.md, wiki/queries/2026-04-17-common-workplace-health-complaints-and-a.md
+
+## [2026-04-17] query | employee wellness program baseline data 2026
+- Saved: `wiki/queries/2026-04-17-employee-wellness-program-baseline-data-.md`
+- Pages: wiki/queries/2026-04-17-current-employee-health-metrics-and-well.md, wiki/queries/2026-04-17-current-employee-health-statistics-and-w.md, wiki/queries/2026-04-17-current-employee-health-status-and-welln.md
+
+## [2026-04-17] query | preventive health initiatives
+- Saved: `wiki/queries/2026-04-17-preventive-health-initiatives.md`
+- Pages: wiki/meta/2026-04-17-lint-report.md, wiki/queries/2026-04-17-best-practices-for-holistic-preventive-h.md, wiki/queries/2026-04-17-current-employee-health-and-wellness-pro.md
+
+## [2026-04-17] query | sleep hygiene workplace productivity
+- Saved: `wiki/queries/2026-04-17-sleep-hygiene-workplace-productivity.md`
+- Pages: wiki/queries/2026-04-17-common-workplace-health-complaints-and-a.md, wiki/queries/2026-04-17-current-health-metrics-team-wellness.md, wiki/queries/2026-04-17-current-workplace-health-trends-and-well.md
+
+## [2026-04-17] query | preventive health
+- Saved: `wiki/queries/2026-04-17-preventive-health.md`
+- Pages: wiki/meta/2026-04-17-lint-report.md, wiki/queries/2026-04-16-what-s-hf.md, wiki/queries/2026-04-17-actionable-preventative-health-routines-.md
+
+## [2026-04-17] query | preventive health strategies
+- Saved: `wiki/queries/2026-04-17-preventive-health-strategies.md`
+- Pages: wiki/queries/2026-04-17-current-health-initiatives-organizationa.md, wiki/queries/2026-04-17-current-health-priorities-and-concerns.md, wiki/queries/2026-04-17-current-health-priorities-and-initiative.md
+
+## [2026-04-17] query | MORNING
+- Saved: `wiki/queries/2026-04-17-morning.md`
+- Pages: wiki/queries/2026-04-16-first-hf-daily-report-example.md, wiki/queries/2026-04-16-hf-daily-report.md, wiki/syntheses/hf-daily-operating-system.md
+
+## [2026-04-17] query | preventive health initiatives
+- Saved: `wiki/queries/2026-04-17-preventive-health-initiatives.md`
+- Pages: wiki/meta/2026-04-17-lint-report.md, wiki/queries/2026-04-17-best-practices-for-holistic-preventive-h.md, wiki/queries/2026-04-17-current-employee-health-and-wellness-pro.md
+
+## [2026-04-17] query | nutrition fundamentals
+- Saved: `wiki/queries/2026-04-17-nutrition-fundamentals.md`
+- Pages: wiki/queries/2026-04-17-best-practices-for-establishing-sustaina.md, wiki/queries/2026-04-17-current-health-initiatives-organizationa.md, wiki/queries/2026-04-17-current-organizational-health-metrics-an.md
+
+## [2026-04-17] query | sleep hygiene
+- Saved: `wiki/queries/2026-04-17-sleep-hygiene.md`
+- Pages: wiki/queries/2026-04-17-actionable-preventative-health-routines-.md, wiki/queries/2026-04-17-best-practices-for-integrating-sleep-hyg.md, wiki/queries/2026-04-17-current-employee-health-and-wellness-pro.md
+
+## [2026-04-17] query | nutrition habits
+- Saved: `wiki/queries/2026-04-17-nutrition-habits.md`
+- Pages: wiki/queries/2026-04-17-employee-sleep-patterns-and-dietary-habi.md, wiki/queries/2026-04-17-preventive-health-strategies.md, wiki/queries/2026-04-17-preventive-health.md
+
+## [2026-04-17] query | sleep patterns
+- Saved: `wiki/queries/2026-04-17-sleep-patterns.md`
+- Pages: wiki/queries/2026-04-17-current-organizational-health-metrics-an.md, wiki/queries/2026-04-17-employee-biometric-screening-data-result.md, wiki/queries/2026-04-17-employee-sleep-patterns-and-dietary-habi.md
+
+## [2026-04-17] query | preventive health
+- Saved: `wiki/queries/2026-04-17-preventive-health.md`
+- Pages: wiki/meta/2026-04-17-lint-report.md, wiki/queries/2026-04-16-what-s-hf.md, wiki/queries/2026-04-17-actionable-preventative-health-routines-.md
+
+## [2026-04-17] query | preventive health strategies
+- Saved: `wiki/queries/2026-04-17-preventive-health-strategies.md`
+- Pages: wiki/queries/2026-04-17-current-health-initiatives-organizationa.md, wiki/queries/2026-04-17-current-health-priorities-and-concerns.md, wiki/queries/2026-04-17-current-health-priorities-and-initiative.md
+
+## [2026-04-17] query | preventive health strategies
+- Saved: `wiki/queries/2026-04-17-preventive-health-strategies.md`
+- Pages: wiki/concepts/preventive-health-strategies.md, wiki/queries/2026-04-17-current-health-initiatives-organizationa.md, wiki/queries/2026-04-17-current-health-priorities-and-concerns.md
+
+## [2026-04-17] query | preventive health strategies
+- Saved: `wiki/queries/2026-04-17-preventive-health-strategies.md`
+- Pages: wiki/concepts/preventive-health-strategies.md, wiki/meta/thread-F0A75D69.md, wiki/queries/2026-04-17-current-health-initiatives-organizationa.md
+
+## [2026-04-17] query | preventive health strategies
+- Saved: `wiki/queries/2026-04-17-preventive-health-strategies.md`
+- Pages: wiki/concepts/preventive-health-strategies.md, wiki/meta/thread-F0A75D69.md, wiki/queries/2026-04-17-current-health-initiatives-organizationa.md
+
+## [2026-04-17] query | preventive health routines
+- Saved: `wiki/queries/2026-04-17-preventive-health-routines.md`
+- Pages: wiki/concepts/preventive-health-strategies.md, wiki/meta/2026-04-17-lint-report.md, wiki/meta/thread-F0A75D69.md
+
+## [2026-04-17] query | preventive health strategies
+- Saved: `wiki/queries/2026-04-17-preventive-health-strategies.md`
+- Pages: wiki/concepts/preventive-health-strategies.md, wiki/meta/thread-F0A75D69.md, wiki/queries/2026-04-17-current-health-initiatives-organizationa.md
+
+## [2026-04-17] query | preventive health strategies
+- Saved: `wiki/queries/2026-04-17-preventive-health-strategies.md`
+- Pages: wiki/concepts/preventive-health-strategies.md, wiki/meta/thread-F0A75D69.md, wiki/queries/2026-04-17-current-health-initiatives-organizationa.md
+
+## [2026-04-17] query | preventive health strategies
+- Saved: `wiki/queries/2026-04-17-preventive-health-strategies.md`
+- Pages: wiki/concepts/preventive-health-strategies.md, wiki/meta/thread-F0A75D69.md, wiki/queries/2026-04-17-current-health-initiatives-organizationa.md
+
+## [2026-04-17] query | preventive health
+- Saved: `wiki/queries/2026-04-17-preventive-health.md`
+- Pages: wiki/concepts/preventive-health-strategies.md, wiki/meta/2026-04-17-lint-report.md, wiki/meta/thread-F0A75D69.md
+
+## [2026-04-17] query | sleep nutrition exercise preventive
+- Saved: `wiki/queries/2026-04-17-sleep-nutrition-exercise-preventive.md`
+- Pages: wiki/concepts/preventive-health-strategies.md, wiki/meta/thread-F0A75D69.md, wiki/queries/2026-04-17-current-health-initiatives-organizationa.md
+
+## [2026-04-17] query | sleep hygiene
+- Saved: `wiki/queries/2026-04-17-sleep-hygiene.md`
+- Pages: wiki/queries/2026-04-17-actionable-preventative-health-routines-.md, wiki/queries/2026-04-17-best-practices-for-integrating-sleep-hyg.md, wiki/queries/2026-04-17-current-employee-health-and-wellness-pro.md
+
+## [2026-04-18] query | frameworks for integrating physical activity and mental well
+- Saved: `wiki/queries/2026-04-18-frameworks-for-integrating-physical-acti.md`
+- Pages: wiki/queries/2026-04-17-current-employee-health-and-wellness-pro.md, wiki/queries/2026-04-17-current-health-initiatives-and-prioritie.md, wiki/queries/2026-04-17-current-organizational-wellness-program.md
+
+## [2026-04-18] query | foundational principles of preventive health and wellness ro
+- Saved: `wiki/queries/2026-04-18-foundational-principles-of-preventive-he.md`
+- Pages: wiki/queries/2026-04-17-current-health-initiatives-and-prioritie.md, wiki/queries/2026-04-17-current-health-initiatives-or-preventive.md, wiki/queries/2026-04-17-current-health-initiatives-status.md
+
+## [2026-04-18] query | detailed guide to habit stacking for physical activity and m
+- Saved: `wiki/queries/2026-04-18-detailed-guide-to-habit-stacking-for-phy.md`
+- Pages: wiki/concepts/preventive-health-strategies.md, wiki/meta/thread-F0A75D69.md, wiki/queries/2026-04-17-employee-sleep-patterns-and-dietary-habi.md

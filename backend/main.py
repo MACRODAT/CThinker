@@ -71,7 +71,8 @@ def seed_db(db: Session):
 
     ensure_setting("app_name", "CThinker")
     ensure_setting("ollama_server", "http://localhost:11434")
-    ensure_setting("ollama_model",  "gemma3:4b")
+    ensure_setting("ollama_model",  "gemma4:e4b")
+    ensure_setting("ollama_model_small", "gemma4:e4b")
     ensure_setting("llm_timeout", "300")
     ensure_setting("tavily_api_keys", "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")
     ensure_setting("tools_instruction_prefix",
@@ -865,7 +866,7 @@ async def agent_chat(agent_id: str, req: schemas.ChatRequest, db: Session = Depe
         s_server = db.query(models.Setting).filter(models.Setting.key == "ollama_server").first()
         s_timeout = db.query(models.Setting).filter(models.Setting.key == "llm_timeout").first()
         
-        used_model  = s_model.value  if s_model  else "gemma3:4b"
+        used_model  = s_model.value  if s_model  else "gemma4:e4b"
         server_url  = (s_server.value if s_server else "http://localhost:11434").rstrip("/") + "/api/generate"
         timeout_val = float(s_timeout.value) if s_timeout else 300.0
         
@@ -1020,7 +1021,7 @@ async def invoke_tool(tool_id: str, req: schemas.ToolInvokeRequest, db: Session 
 async def test_ollama(db: Session = Depends(database.get_db)):
     s_model  = db.query(models.Setting).filter(models.Setting.key == "ollama_model").first()
     s_server = db.query(models.Setting).filter(models.Setting.key == "ollama_server").first()
-    model_name = s_model.value  if s_model  else "gemma3:4b"
+    model_name = s_model.value  if s_model  else "gemma4:e4b"
     server_url = (s_server.value if s_server else "http://localhost:11434").rstrip("/") + "/api/generate"
     try:
         async with httpx.AsyncClient() as client:

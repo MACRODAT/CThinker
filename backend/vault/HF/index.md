@@ -21,6 +21,7 @@ This is the navigation layer for the vault. Read this file first before explorin
 - [[wiki/concepts/ingest-query-lint]] - Core operating loop for maintaining and using the wiki.
 - [[wiki/concepts/schema-index-log]] - Control documents that keep the wiki navigable and disciplined.
 
+- [[wiki/concepts/preventive-health-strategies.md]] — Automated capture from Thread F0A75D69
 ## Entities
 
 - [[wiki/entities/hf-department]] - Health and Welfare department focused on preventive health strategy and daily maintenance.
@@ -97,7 +98,7 @@ This is the navigation layer for the vault. Read this file first before explorin
 - [[wiki/queries/2026-04-17-preventive-health-initiatives.md]] — preventive health initiatives
 - [[wiki/queries/2026-04-17-current-health-initiatives-and-prioritie.md]] — current health initiatives and priorities
 - [[wiki/queries/2026-04-17-employee-health-data-collection-methods.md]] — employee health data collection methods
-- [[wiki/queries/2026-04-17-current-health-initiatives-organizationa.md]] — current health initiatives organizational wellness programs
+- [[wiki/queries/2026-04-17-current-health-initiatives-organizationa.md]] — current health initiatives organizational wellness
 - [[wiki/queries/2026-04-17-current-organizational-wellness-program.md]] — current organizational wellness program
 - [[wiki/queries/2026-04-17-employee-health-data-collection-methods-.md]] — employee health data collection methods and current status
 - [[wiki/queries/2026-04-17-current-organizational-wellness-programs.md]] — current organizational wellness programs and initiatives
@@ -150,8 +151,41 @@ This is the navigation layer for the vault. Read this file first before explorin
 - [[wiki/queries/2026-04-17-best-practices-in-preventive-health-rout.md]] — best practices in preventive health routines
 - [[wiki/queries/2026-04-17-latest-best-practices-in-preventive-heal.md]] — latest best practices in preventive health and wellness
 - [[wiki/queries/2026-04-17-current-best-practices-for-preventative-.md]] — current best practices for preventative health routines
+- [[wiki/queries/2026-04-17-current_health_trends-workplace_wellness.md]] — current_health_trends workplace_wellness
+- [[wiki/queries/2026-04-17-current-workplace-health-trends-and-well.md]] — current workplace health trends and wellness data
+- [[wiki/queries/2026-04-17-current-employee-health-metrics-and-comm.md]] — current employee health metrics and common workplace health issues
+- [[wiki/queries/2026-04-17-current-employee-health-survey-data-and-.md]] — current employee health survey data and common workplace health concerns
+- [[wiki/queries/2026-04-17-workplace_health_issues.md]] — workplace_health_issues
+- [[wiki/queries/2026-04-17-employee_health_metrics.md]] — employee_health_metrics
+- [[wiki/queries/2026-04-17-common-workplace-health-complaints-and-a.md]] — common workplace health complaints and absenteeism patterns
+- [[wiki/queries/2026-04-17-current-employee-health-metrics-and-biom.md]] — current employee health metrics and biometric screening data
+- [[wiki/queries/2026-04-17-most-common-health-insurance-claims-patt.md]] — most common health insurance claims patterns
+- [[wiki/queries/2026-04-17-recent-workplace-wellness-program-partic.md]] — recent workplace wellness program participation
+- [[wiki/queries/2026-04-17-employee-biometric-screening-data.md]] — employee biometric screening data
+- [[wiki/queries/2026-04-17-employee-sleep-patterns-and-dietary-habi.md]] — employee sleep patterns and dietary habits survey data
+- [[wiki/queries/2026-04-17-common-workplace-health-complaints-and-r.md]] — common workplace health complaints and reported symptoms
+- [[wiki/queries/2026-04-17-recent-wellness-program-participation-ra.md]] — recent wellness program participation rates and feedback
+- [[wiki/queries/2026-04-17-employee-biometric-screening-data-result.md]] — employee biometric screening data results and trends 2026
+- [[wiki/queries/2026-04-17-current-organizational-health-metrics-an.md]] — Current organizational health metrics and preventive care initiatives
+- [[wiki/queries/2026-04-17-current-organizational-wellness-metrics-.md]] — current organizational wellness metrics and health initiatives status
+- [[wiki/queries/2026-04-17-current-organizational-health-metrics.md]] — current organizational health metrics
+- [[wiki/queries/2026-04-17-current-health-metrics-team-wellness.md]] — current health metrics team wellness
+- [[wiki/queries/2026-04-17-employee-wellness-program-baseline-data-.md]] — employee wellness program baseline data 2026
+- [[wiki/queries/2026-04-17-sleep-hygiene-workplace-productivity.md]] — sleep hygiene workplace productivity
+- [[wiki/queries/2026-04-17-preventive-health.md]] — preventive health
+- [[wiki/queries/2026-04-17-morning.md]] — MORNING
+- [[wiki/queries/2026-04-17-nutrition-fundamentals.md]] — nutrition fundamentals
+- [[wiki/queries/2026-04-17-sleep-hygiene.md]] — sleep hygiene
+- [[wiki/queries/2026-04-17-nutrition-habits.md]] — nutrition habits
+- [[wiki/queries/2026-04-17-sleep-patterns.md]] — sleep patterns
+- [[wiki/queries/2026-04-17-preventive-health-routines.md]] — preventive health routines
+- [[wiki/queries/2026-04-17-sleep-nutrition-exercise-preventive.md]] — sleep nutrition exercise preventive
+- [[wiki/queries/2026-04-18-frameworks-for-integrating-physical-acti.md]] — frameworks for integrating physical activity and mental wellness into daily rout
+- [[wiki/queries/2026-04-18-foundational-principles-of-preventive-he.md]] — foundational principles of preventive health and wellness routines
+- [[wiki/queries/2026-04-18-detailed-guide-to-habit-stacking-for-phy.md]] — detailed guide to habit stacking for physical activity and mental wellness
 ## Meta
 
+- [[wiki/meta/2026-04-17-lint-report]] - Health-check of vault structure, query sprawl, unsupported claims, and navigation drift.
 - [[wiki/meta/folder-conventions]] - Canonical folder taxonomy and page placement rules for this vault.
 
 ## Next Suggested Actions

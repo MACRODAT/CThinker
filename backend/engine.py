@@ -220,9 +220,11 @@ class SimEngine:
             # 3. Call LLM
             s_url = db.query(Setting).filter(Setting.key == "ollama_server").first()
             s_mod = db.query(Setting).filter(Setting.key == "ollama_model").first()
+            s_mod_small = db.query(Setting).filter(Setting.key == "ollama_model_small").first()
             s_timeout = db.query(Setting).filter(Setting.key == "llm_timeout").first()
             server = s_url.value if s_url else "http://localhost:11434"
             model  = s_mod.value if s_mod else "gemma4:e4b"
+            small_model = s_mod_small.value if s_mod_small else "gemma4:e4b"
             timeout_val = float(s_timeout.value) if s_timeout else 1500.0
 
             # CONTINUE
@@ -270,7 +272,7 @@ class SimEngine:
                     resp = await client.post(
                         f"{server}/api/generate",
                         json={
-                            "model": "gemma4:e4b",
+                            "model": small_model,
                             "system": SYSTEM_PROMPT_SUMMER,
                             "prompt": USER_PROMPT_SUMMER,
                             "stream": False
@@ -296,28 +298,38 @@ class SimEngine:
                     add_step("thought", "Thinking...", {"system_prompt": system_prompt, "user_prompt": user_prompt})
                     
                     MAX_ITERATIONS = 10
-                    current_user_prompt = user_prompt
                     final_processed_raw = ""
                     full_tool_results = None
                     
+                    chat_messages = []
+                    if system_prompt:
+                        chat_messages.append({"role": "system", "content": system_prompt})
+                    chat_messages.append({"role": "user", "content": user_prompt})
+                    
                     for iter_count in range(MAX_ITERATIONS):
                         add_step("iteration", f"Iteration {iter_count + 1} / {MAX_ITERATIONS}")
+                        
+                        payload = {
+                            "model": model,
+                            "messages": chat_messages,
+                            "stream": False,
+                            "options": {
+                                "temperature": 0.7,   # Adjust for creativity vs. logic
+                                "num_predict": 4096,  # Ensure it doesn't cut off mid-thought
+                                "top_p": 0.9,
+                            }
+                        }
+
                         resp = await client.post(
-                            f"{server}/api/generate",
-                            json={
-                                "model": model,
-                                "system": system_prompt,
-                                "prompt": current_user_prompt,
-                                "stream": False,
-                                "options": {
-                                    "temperature": 0.7,   # Adjust for creativity vs. logic
-                                    "num_predict": 4096,  # Ensure it doesn't cut off mid-thought
-                                    "top_p": 0.9,
-                                }
-                            },
+                            f"{server}/api/chat",
+                            json=payload,
                             timeout=timeout_val
                         )
-                        raw = resp.json().get("response", "")
+                        
+                        resp_data = resp.json()
+                        raw = resp_data.get("message", {}).get("content", "")
+                        if raw:
+                            chat_messages.append({"role": "assistant", "content": raw})
                     
                         print(f"Agent {agent.id} (Iter {iter_count+1}) raw response:\n", raw)
                         add_step("response", f"Response received (Iter {iter_count+1})", {"raw": raw})
@@ -333,6 +345,7 @@ class SimEngine:
                         if mode_match:
                             next_val = mode_match.group(1).strip()
                             def normalize_mode(m):
+                                return "creator" # hardcoded for now
                                 m_low = m.lower().strip().replace("_", " ")
                                 if "creator" in m_low: return "Creator"
                                 if "investor" in m_low: return "Investor"
@@ -368,11 +381,17 @@ class SimEngine:
                                 add_step("wallet", "Thinking Iteration Tax: -1 pt", {"amount": -1, "reason": "thinking_iteration_tax"})
                                 
                                 prompt_continuation = (
+                                    # f"{agent.memory}"
                                     f"\n\nTool results:\n{iter_tool_results}\n\n"
-                                    f"EITHER CONTINUE (-1 PT, USE MORE TOOLS) OR STOP BY SAYING '[STOP]RESPONSE...[END_STOP]'"
-                                    f"DEPT HAVE {dept.ledger_current} PTS REMAINING.\n"
                                 )
-                                current_user_prompt = await self.resolve_placeholders(user_prompt_raw + "\n" + prompt_continuation, db, agent, None, add_step, extra_ctx)
+                                if (iter_count == MAX_ITERATIONS - 1):
+                                    prompt_continuation += "\n\nNext Round is your last, take action."
+                                else:
+                                    prompt_continuation += \
+                                    f"EITHER CONTINUE (-1 PT BUT USE MORE TOOLS) OR STOP WITH '[STOP]RESPONSE...[END_STOP]'"
+                                    f"DEPT HAVE {dept.ledger_current} PTS REMAINING.\n"
+                                current_user_prompt = await self.resolve_placeholders(prompt_continuation, db, agent, None, add_step, extra_ctx)
+                                chat_messages.append({"role": "user", "content": current_user_prompt})
                                 add_step("system", "Continuing to next iteration")
                             else:
                                 if iter_count < MAX_ITERATIONS - 1:
@@ -383,6 +402,8 @@ class SimEngine:
                             if stop_match:
                                 break
                             continue
+                            
+                    add_step("chat_history", "View Full LLM Chat History", {"messages": chat_messages})
                     
                     # 5b. Force Mode if missing
                     if not agent.next_mode:
@@ -781,6 +802,7 @@ class SimEngine:
 
         # ── post_in_thread ─────────────────────────────────────────────────────
         elif tool_name == "post_in_thread":
+            import glue
             tid, content = args[0].upper(), "\n".join(args[1:])
             t = db.query(Thread).filter(Thread.id == tid).first()
             if not t: return "THREAD_ERROR: Not found."
@@ -1082,8 +1104,10 @@ class SimEngine:
                     summaries = []
                     s_url_setting = db.query(Setting).filter(Setting.key == "ollama_server").first()
                     s_mod_setting = db.query(Setting).filter(Setting.key == "ollama_model").first()
+                    s_mod_small = db.query(Setting).filter(Setting.key == "ollama_model_small").first()
                     server = s_url_setting.value if s_url_setting else "http://localhost:11434"
                     model = s_mod_setting.value if s_mod_setting else "gemma4:e4b"
+                    small_model = s_mod_small.value if s_mod_small else "gemma4:e4b"
 
                     async with httpx.AsyncClient() as client:
                         for i, page_url in enumerate(final_urls):
@@ -1129,7 +1153,7 @@ class SimEngine:
                                 llm_resp = await client.post(
                                     f"{server}/api/generate",
                                     json={
-                                        "model": "gemma4:e4b",
+                                        "model": small_model,
                                         "system": summary_system,
                                         "prompt": summary_user,
                                         "stream": False,
@@ -1222,10 +1246,9 @@ class SimEngine:
                     result += "NO input=ASSUME DEFAULT\n"
                     result += "SEARCH USING web_search tool.\n"
                     result += "BE CONCRETE.\n"
-                    result += "DO NOT INVENT\n"
-                    result += "NO NEW ACRONYMS UNLESS EXPLAINED\n"
+                    result += "DO NOT INVENT OR USE NEW ACRONYMS UNLESS EXPLAINED\n"
                     result += "MARKDOWN ALLOWED\n"
-                    result += "TO JOIN CALL join_thread||thread_id\n"
+                    result += "JOIN: */join_thread||thread_id/*\n"
             except Exception as e: result = f"THREADS_ERROR: {str(e)}"
         # ── get_threads which agent joined ────────────────────────────────────────────────────────
         elif (tool_name == "get_threads_joined" or tool_name == "get_threads_not_joined"):
@@ -1960,7 +1983,7 @@ class SimEngine:
             convo = "\n".join(lines)
 
             s_url = db.query(Setting).filter(Setting.key == "ollama_server").first()
-            s_mod = db.query(Setting).filter(Setting.key == "ollama_model").first()
+            s_mod = db.query(Setting).filter(Setting.key == "ollama_model_small").first()
             server = (s_url.value if s_url else "http://localhost:11434").rstrip("/")
             model  = s_mod.value if s_mod else "gemma4:e4b"
 
@@ -2209,6 +2232,9 @@ class SimEngine:
             "mode_is_custom":           agent.mode.upper() == "CUSTOM",
             "mode_is_investor":         agent.mode.upper() == "INVESTOR",
             "is_ceo":                   agent.is_ceo,
+            "IS_WALLET_MORE_0":         agent.wallet_current > 0,
+            "IS_WALLET_MORE_25":        agent.wallet_current > 25,
+            "IS_WALLET_MORE_100":       agent.wallet_current > 100,
         }
         
         simple = {

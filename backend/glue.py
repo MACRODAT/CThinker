@@ -333,9 +333,9 @@ async def _llm(db, system: str, prompt: str, max_tokens: int = 800) -> str:
     """
     from models import Setting
     s_url = db.query(Setting).filter(Setting.key == "ollama_server").first()
-    s_mod = db.query(Setting).filter(Setting.key == "ollama_model").first()
+    s_mod = db.query(Setting).filter(Setting.key == "ollama_model_small").first()
     server = (s_url.value if s_url else "http://localhost:11434").rstrip("/")
-    model = s_mod.value if s_mod else "gemma3:4b"
+    model = s_mod.value if s_mod else "gemma4:e4b"
 
     try:
         async with httpx.AsyncClient() as client:
@@ -611,7 +611,7 @@ async def query_wiki(db, vault_id: str, question: str, save: bool = False) -> di
     
     result = {"question": question, "answer": answer, "pages_used": [h["path"] for h in hits]}
     
-    if save or True:
+    if save:
         slug = re.sub(r"[^\w\-]", "-", question.lower())[:40]
         page_name = f"{today()}-{slug}.md"
         page_path = wiki_path(vault_id) / "queries" / page_name
@@ -867,7 +867,7 @@ async def update_glue_topic(db, vault_id: str, thread_id: str, topic: str, agent
     thread_log_rel = f"wiki/meta/thread-{thread_id}.md"
     thread_link = f"[[{thread_log_rel}|Thread {thread_id}]]"
     
-    entry = f"\n### {timestamp} | {agent_link}\n> {formatted_content}\n\n_Ref: {thread_link}_\n"
+    entry = f"\n### {agent_link} ON {topic}\n At {timestamp} \n> {formatted_content}\n\n_Ref: {thread_link}_\n"
     
     # 3. Write/Update Page
     if not p.exists():
